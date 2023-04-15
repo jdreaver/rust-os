@@ -18,7 +18,10 @@
         nativeBuildInputs = [
           (rust-bin.stable.latest.default.override {
             # extensions = [ "rust-src" ];
-            targets = [ "thumbv7em-none-eabi" ];
+            targets = [
+              "x86_64-unknown-none"
+              "thumbv7em-none-eabi" # TODO: deleteme?
+            ];
           })
 
           # Rust
