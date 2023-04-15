@@ -16,13 +16,15 @@
       {
       devShells.x86_64-linux.default = pkgs.mkShell {
         nativeBuildInputs = [
-          (rust-bin.stable.latest.default.override {
-            # extensions = [ "rust-src" ];
+          (rust-bin.selectLatestNightlyWith (toolchain: toolchain.default.override {
+            extensions = [
+              "rust-src" # Needed to rebuild core with build-std. See https://doc.rust-lang.org/cargo/reference/unstable.html#build-std
+            ];
             targets = [
               "x86_64-unknown-none"
               "thumbv7em-none-eabi" # TODO: deleteme?
             ];
-          })
+          }))
 
           # Rust
           # cargo
