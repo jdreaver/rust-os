@@ -4,5 +4,6 @@ Inspired by [Writing an OS in Rust](https://os.phil-opp.com/) and <https://githu
 
 ## TODO
 
-- <https://os.phil-opp.com/minimal-rust-kernel/#printing-to-screen>
+- <https://os.phil-opp.com/testing/>
 - Add CI
+- Make my own bootloader instead of using `bootloader` crate
