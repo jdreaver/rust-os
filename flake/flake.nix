@@ -19,12 +19,15 @@
           (rust-bin.selectLatestNightlyWith (toolchain: toolchain.default.override {
             extensions = [
               "rust-src" # Needed to rebuild core with build-std. See https://doc.rust-lang.org/cargo/reference/unstable.html#build-std
+              "llvm-tools-preview"
             ];
             targets = [
               "x86_64-unknown-none"
               "thumbv7em-none-eabi" # TODO: deleteme?
             ];
           }))
+
+          qemu
 
           # Rust
           # cargo
