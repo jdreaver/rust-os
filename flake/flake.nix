@@ -27,13 +27,9 @@
             ];
           }))
 
+          # For emulation
           qemu
 
-          # Rust
-          # cargo
-          # rustc
-          # clippy
-          # rustfmt
         ];
       };
     };
