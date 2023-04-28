@@ -110,12 +110,15 @@ set_up_page_tables:
         ; Map each P2 entry to a huge 2MiB page
         mov ecx, 0         ; counter variable
 
-; TODO: This seems incorrect. Shouldn't we be looping over p1_table?
 .map_p2_table:
-        ; map ecx-th P2 entry to a huge page that starts at address 2MiB*ecx
+        .present_bit: equ 1 << 0   ; Page is present (it exists)
+        .writeable_bit: equ 1 << 1 ; Allows writes
+        .page_size_bit: equ 1 << 7 ; Page size is 2MiB (instead of 4KiB)
+
+        ; Map ecx-th P2 entry to a huge page that starts at address 2MiB*ecx
         mov eax, 0x200000  ; 2MiB
         mul ecx            ; start address of ecx-th page
-        or eax, 0b10000011 ; present + writable + huge
+        or eax, .present_bit | .writeable_bit | .page_size_bit
         mov [p2_table + ecx * 8], eax ; map ecx-th entry
 
         inc ecx            ; increase counter
@@ -157,13 +160,33 @@ error:
     hlt
 
 section .bss
-align 4096
+
+; Page table data entries
+;
+; Note that we are using 2 MiB pages, which means that each entry in the P2
+; table will map 2 MiB of memory. This means that we only need 512 entries in
+; the P2 table to map the entire 1 GiB of memory that we have. Each entry is 8
+; bytes, so the entire table is 4096 bytes (4 KiB). Also, it means we don't need
+; to map to a p1 table; if a p2 entry has the "page size" bit set, then the
+; entry points directly to a physical 2 MiB page, not to a p1 entry.
+;
+; Reference: Intel® 64 and IA-32 Architectures Software Developer Manuals
+; (https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)
+; Chapter 4.5.4: Linear Address Translation with 4-Level Paging and 5-Level
+; Paging, specifically Figure 4-9: Linear-Address Translation to a 2-MByte Page
+; using 4-Level Paging
+
+align 4096 ; Page tables must be aligned to 4 KiB
+
 p4_table:
     resb 4096
 p3_table:
     resb 4096
 p2_table:
     resb 4096
+
+; Save some room for the stack.
+; TODO: Designate this in a better spot. Should GRUB2 give us stack space?
 stack_bottom:
     resb 4096
 stack_top:
@@ -177,8 +200,7 @@ gdt64:
 .descriptor_bit: equ 1 << 44
 .present_bit:    equ 1 << 47
 .long_mode_bit:  equ 1 << 53
-
-
+.null_bits:
         ; Define the null sector for the 64 bit gdt, which is 8 bytes of nulls. Null
         ; sector is required for memory integrity check.
         dq 0x0000000000000000
