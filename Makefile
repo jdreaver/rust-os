@@ -1,5 +1,6 @@
 ISO = build/kernel.iso
 KERNEL = build/kernel.bin
+RUST_OS = target/x86_64-rust_os/debug/librust_os.a
 GRUB_CFG = boot/grub.cfg
 
 .DEFAULT_GOAL := all
@@ -10,8 +11,8 @@ all: $(ISO)
 run: $(ISO)
 	qemu-system-x86_64 -cdrom $(ISO)
 
-$(KERNEL): build/multiboot_header.o build/boot.o boot/linker.ld
-	ld -n -o $@ -T boot/linker.ld build/multiboot_header.o build/boot.o
+$(KERNEL): build/multiboot_header.o build/boot.o build/long_mode_init.o boot/linker.ld kernel
+	ld -n -o $@ -T boot/linker.ld build/multiboot_header.o build/boot.o build/long_mode_init.o $(RUST_OS)
 
 build/multiboot_header.o: boot/multiboot_header.asm
 	mkdir -p build
@@ -20,6 +21,14 @@ build/multiboot_header.o: boot/multiboot_header.asm
 build/boot.o: boot/boot.asm
 	mkdir -p build
 	nasm -f elf64 -o $@ $<
+
+build/long_mode_init.o: boot/long_mode_init.asm
+	mkdir -p build
+	nasm -f elf64 -o $@ $<
+
+.PHONY: kernel
+kernel:
+	cargo build
 
 $(ISO): $(KERNEL) $(GRUB_CFG)
 	mkdir -p build/isofiles/boot/grub
