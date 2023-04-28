@@ -1,0 +1,50 @@
+on: push
+
+name: Check
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-x86_64-unknown-linux-gnu
+          components: rustfmt, clippy
+          override: true
+
+      - name: cargo check
+        run: |
+          cargo check
+
+      - name: cargo check
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+
+      - name: cargo fmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --check
+
+      - name: cargo clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+
+      - name: cargo build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
