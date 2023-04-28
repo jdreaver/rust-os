@@ -30,6 +30,8 @@
           # For emulation
           qemu
 
+          # Build
+          xorriso
         ];
       };
     };
