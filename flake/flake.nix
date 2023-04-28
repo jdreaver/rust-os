@@ -30,6 +30,10 @@
           # For emulation
           qemu
 
+          # Builds
+          grub2
+          nasm
+          xorriso
         ];
       };
     };
