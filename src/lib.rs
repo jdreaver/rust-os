@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 
-use core::arch::asm;
 use core::panic::PanicInfo;
 use multiboot2::load;
 
@@ -20,9 +19,7 @@ pub extern "C" fn rust_main(multiboot_info_ptr: u32) -> ! {
     panic!("Some panic message");
 
     loop {
-        unsafe {
-            asm!("hlt", options(nomem, nostack));
-        }
+        x86_64::instructions::hlt();
     }
 }
 
@@ -30,8 +27,6 @@ pub extern "C" fn rust_main(multiboot_info_ptr: u32) -> ! {
 fn panic(info: &PanicInfo) -> ! {
     println!("{}", info);
     loop {
-        unsafe {
-            asm!("hlt", options(nomem, nostack));
-        }
+        x86_64::instructions::hlt();
     }
 }
