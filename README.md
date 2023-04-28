@@ -12,4 +12,6 @@ $ qemu-system-x86_64 -drive format=raw,file=target/x86_64-rust_os/debug/bootimag
 ## TODO
 
 - <https://os.phil-opp.com/testing/>
+  - Might be useful <https://blog.frankel.ch/different-test-scopes-rust/>
+  - Don't integrate with `cargo test`. Do `cargo build --tests` and have a `make test` target
 - Add CI
