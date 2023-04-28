@@ -11,6 +11,15 @@ all: $(ISO)
 run: $(ISO)
 	qemu-system-x86_64 -cdrom $(ISO)
 
+# N.B. Run `make debug` in one terminal, and `make debug-gdb` in another.
+.PHONY: debug
+debug: $(ISO)
+	qemu-system-x86_64 -cdrom $(ISO) -s -S
+
+.PHONY: debug-gdb
+debug-gdb: # No deps because we don't want an accidental rebuild if `make debug` already ran.
+	gdb $(KERNEL) -ex "target remote :1234"
+
 $(KERNEL): build/multiboot_header.o build/boot.o build/long_mode_init.o boot/linker.ld kernel
 	ld -n -o $@ -T boot/linker.ld build/multiboot_header.o build/boot.o build/long_mode_init.o $(RUST_OS)
 

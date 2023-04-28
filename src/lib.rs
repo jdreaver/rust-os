@@ -11,8 +11,11 @@ pub extern "C" fn rust_main() -> ! {
 
     println!("Hello World{}", "!");
     println!("Hello again! Some numbers: {} {}", 42, (1.7 * 3.3) as u64);
-    // TODO: 1.337 in this print causes some sort of error that makes the OS crash
-    // println!("Hello again! Some numbers: {} {}", 42, 1.337);
+    // TODO: This print causes some sort of error that makes the OS crash. Also,
+    // this print by itself doesn't trigger it. If it is the first print we are
+    // fine. I suspect some stack tomfoolery. This only started failing after
+    // switching to GRUB2, but was fine on the `bootloader` crate.
+    // println!("{}", 1.337);
     panic!("Some panic message");
 
     loop {}
