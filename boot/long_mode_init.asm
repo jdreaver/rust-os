@@ -1,10 +1,12 @@
 global long_mode_start
 
+extern gdt64.data_offset
+
 section .text
 bits 64
 long_mode_start:
-    ; load 0 into all data segment registers
-    mov ax, 0
+    ; Point all data segment registers to the GDT data segment
+    mov ax, gdt64.data_offset
     mov ss, ax
     mov ds, ax
     mov es, ax
