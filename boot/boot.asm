@@ -24,6 +24,11 @@ start:
 check_multiboot:
         cmp eax, 0x36d76289
         jne .no_multiboot
+
+        ; Store multiboot header in dedicated memory location so we can retrieve
+        ; it later when we jump to our kernel entrypoint.
+        mov [multiboot_header], ebx
+
         ret
 .no_multiboot:
         mov al, "0"
@@ -190,6 +195,14 @@ p2_table:
 stack_bottom:
     resb 4096
 stack_top:
+
+section .data
+
+; Store the multiboot header here so we can access it when we jump to 64 bit
+; mode.
+global multiboot_header
+multiboot_header:
+        dw 0x00000000
 
 section .rodata
 
