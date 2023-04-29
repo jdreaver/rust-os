@@ -1,13 +1,23 @@
 global long_mode_start
 
-extern gdt64.data_offset
 extern multiboot_header
 
 section .text
 bits 64
 long_mode_start:
-        ; Point all data segment registers to the GDT data segment
-        mov ax, gdt64.data_offset
+        ; Point all data segment registers to the null GDT segment. In 64 bit
+        ; mode you don't need an actual data segment, null is okay. Many
+        ; instructions, including iretq (returning from exception handlers)
+        ; require a data segment descriptor _or_ the null descriptor.
+        ;
+        ; I used to have an actual data segment as the second entry in the GDT
+        ; (or third if you count then null segment), but when I created a new
+        ; GDT with the TSS as the second non-null segment, all of these
+        ; registers were pointing at the TSS. This caused a general protection
+        ; fault when I tried to return from an exception handler (including when
+        ; returning from the general protection fault handler itself, causing an
+        ; infinite loop of exception handling).
+        mov ax, 0
         mov ss, ax
         mov ds, ax
         mov es, ax

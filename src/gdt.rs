@@ -1,4 +1,7 @@
+//! Global Descriptor Table (GDT) and Task State Segment (TSS) setup.
+
 use lazy_static::lazy_static;
+use x86_64::registers::segmentation;
 use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector};
 use x86_64::structures::tss::TaskStateSegment;
 use x86_64::VirtAddr;
@@ -8,7 +11,13 @@ lazy_static! {
         let mut gdt = GlobalDescriptorTable::new();
         let code_selector = gdt.add_entry(Descriptor::kernel_code_segment());
         let tss_selector = gdt.add_entry(Descriptor::tss_segment(&TSS));
-        (gdt, Selectors { code_selector, tss_selector })
+        (
+            gdt,
+            Selectors {
+                code_selector,
+                tss_selector,
+            },
+        )
     };
 }
 
@@ -43,8 +52,8 @@ lazy_static! {
 }
 
 pub fn init() {
+    use x86_64::instructions::segmentation::{Segment, CS};
     use x86_64::instructions::tables::load_tss;
-    use x86_64::instructions::segmentation::{CS, Segment};
 
     GDT.0.load();
     unsafe {
@@ -52,5 +61,22 @@ pub fn init() {
         // the GDT we built for bootstrapping.
         CS::set_reg(GDT.1.code_selector);
         load_tss(GDT.1.tss_selector);
+
+        // NOTE: It is very important that the data segment registers (DS, ES,
+        // FS, GS, SS) are set to zero. If they are not, the CPU will try to
+        // access the GDT to get the segment descriptors for those registers,
+        // but the GDT is not set up yet. This will cause a triple fault.
+        //
+        // I currently do this in the boot.asm bootstrap assembly after jumping
+        // to long mode, but we could do it again here to be safe if we wanted:
+        // asm!(
+        //     "mov ds, ax",
+        //     "mov es, ax",
+        //     "mov fs, ax",
+        //     "mov gs, ax",
+        //     "mov ss, ax",
+        //     in("ax") Segment::kernel_data().0,
+        //     options(nostack, preserves_flags),
+        // );
     }
 }

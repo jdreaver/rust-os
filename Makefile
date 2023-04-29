@@ -10,6 +10,7 @@ all: $(ISO)
 QEMU_ARGS += -cdrom $(ISO)
 QEMU_ARGS += -serial stdio # Add serial output to terminal
 QEMU_ARGS += -d int,cpu_reset,guest_errors # Log some unexpected things. Run qemu-system-x86_64 -d help to see more.
+# QEMU_ARGS += -M q35,accel=tcg # Disable hardware acceleration which makes logging interrupts give more info.
 
 .PHONY: run
 run: $(ISO)

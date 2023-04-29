@@ -11,7 +11,6 @@ $ qemu-system-x86_64 -drive format=raw,file=target/x86_64-rust_os/debug/bootimag
 
 ## TODO
 
-- Finish double faults: <https://os.phil-opp.com/double-fault-exceptions/>
 - Tests
   - <https://www.infinyon.com/blog/2021/04/rust-custom-test-harness/>
   - Useful resource, but I couldn't get this to work with the staticlib setup <https://os.phil-opp.com/testing/>

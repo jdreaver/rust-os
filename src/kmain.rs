@@ -60,15 +60,7 @@ pub extern "C" fn kmain(multiboot_info_ptr: usize) -> ! {
 
     init();
 
-    // invoke a breakpoint exception
-    x86_64::instructions::interrupts::int3(); // new
-
-    // trigger a page fault
-    unsafe {
-        *(0xdeadbee0 as *mut u64) = 42;
-    };
-
-    panic!("Some panic message");
+    run_tests();
 
     loop {
         x86_64::instructions::hlt();
@@ -86,4 +78,26 @@ fn panic(info: &PanicInfo) -> ! {
     loop {
         x86_64::instructions::hlt();
     }
+}
+
+fn run_tests() {
+    println!("interrupt");
+
+    // Invoke a breakpoint exception and ensure we continue on
+    x86_64::instructions::interrupts::int3();
+
+    println!("done with interrupt");
+
+    // Trigger a page fault, which should trigger a double fault if we don't
+    // have a page fault handler.
+    // unsafe {
+    //     // N.B. Rust panics if we try to use 0xdeadbeef as a pointer (address
+    //     // must be a multiple of 0x8), so we use 0xdeadbee0 instead
+    //     *(0xdeadbee0 as *mut u64) = 42;
+    // };
+
+    println!("Tests passed!");
+
+    // Test custom panic handler
+    panic!("Some panic message");
 }

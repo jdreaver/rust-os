@@ -220,9 +220,6 @@ gdt64:
 
 .code_offset: equ $ - gdt64     ; Store offset into GDT, not absolute address
         dq .read_write_bit | .executable_bit | .descriptor_bit | .present_bit | .long_mode_bit
-global .data_offset
-.data_offset: equ $ - gdt64     ; Store offset into GDT, not absolute address
-        dq .read_write_bit | .descriptor_bit | .present_bit | .long_mode_bit
 
 ; This pointer gives the length and address of the GDT. We will feed this
 ; structure to the CPU in order to set the protected mode GDT.
