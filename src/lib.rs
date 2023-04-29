@@ -70,6 +70,11 @@ pub extern "C" fn rust_main(multiboot_info_ptr: usize) -> ! {
     // invoke a breakpoint exception
     x86_64::instructions::interrupts::int3(); // new
 
+    // trigger a page fault
+    unsafe {
+        *(0xdeadbee0 as *mut u64) = 42;
+    };
+
     panic!("Some panic message");
 
     loop {
