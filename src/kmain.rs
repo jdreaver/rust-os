@@ -3,10 +3,25 @@ use multiboot2::load;
 
 use crate::{gdt, interrupts, println, serial_println};
 
+fn init() {
+    gdt::init();
+    interrupts::init_idt();
+}
+
 #[no_mangle]
 pub extern "C" fn kmain(multiboot_info_ptr: usize) -> ! {
     // ATTENTION: we have a somewhat small stack and no guard page
+    init();
 
+    print_multiboot_info(multiboot_info_ptr);
+    serial_println!("Testing serial port! {}", "hello");
+
+    run_tests();
+
+    hlt_loop()
+}
+
+fn print_multiboot_info(multiboot_info_ptr: usize) {
     let boot_info = unsafe { load(multiboot_info_ptr).unwrap() };
 
     let memory_map_tag = boot_info.memory_map_tag().expect("Memory map tag required");
@@ -55,29 +70,18 @@ pub extern "C" fn kmain(multiboot_info_ptr: usize) -> ! {
         "multiboot start: {:#x}, end: {:#x}",
         multiboot_start, multiboot_end
     );
+}
 
-    serial_println!("Testing serial port! {}", "hello");
-
-    init();
-
-    run_tests();
-
+fn hlt_loop() -> ! {
     loop {
         x86_64::instructions::hlt();
     }
-}
-
-fn init() {
-    gdt::init();
-    interrupts::init_idt();
 }
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     println!("{}", info);
-    loop {
-        x86_64::instructions::hlt();
-    }
+    hlt_loop()
 }
 
 fn run_tests() {
