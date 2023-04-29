@@ -7,14 +7,19 @@ GRUB_CFG = boot/grub.cfg
 .PHONY: all
 all: $(ISO)
 
+QEMU_ARGS += -cdrom $(ISO)
+QEMU_ARGS += -serial stdio # Add serial output to terminal
+QEMU_ARGS += -d int,cpu_reset,guest_errors # Log some unexpected things. Run qemu-system-x86_64 -d help to see more.
+
 .PHONY: run
 run: $(ISO)
-	qemu-system-x86_64 -cdrom $(ISO) -serial stdio
+	qemu-system-x86_64 $(QEMU_ARGS)
+
 
 # N.B. Run `make debug` in one terminal, and `make debug-gdb` in another.
 .PHONY: debug
 debug: $(ISO)
-	qemu-system-x86_64 -cdrom $(ISO) -s -S -serial stdio
+	qemu-system-x86_64 $(QEMU_ARGS) -s -S
 
 .PHONY: debug-gdb
 debug-gdb: # No deps because we don't want an accidental rebuild if `make debug` already ran.
