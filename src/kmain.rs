@@ -59,10 +59,7 @@ fn print_multiboot_info(multiboot_info_ptr: usize) {
         .map(|s| s.end_address())
         .max()
         .unwrap();
-    println!(
-        "kernel start: {:#x}, end: {:#x}",
-        kernel_start, kernel_end
-    );
+    println!("kernel start: {:#x}, end: {:#x}", kernel_start, kernel_end);
 
     let multiboot_start = multiboot_info_ptr;
     let multiboot_end = multiboot_start + boot_info.total_size();

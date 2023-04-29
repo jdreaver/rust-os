@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
+use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
 use crate::gdt;
 use crate::println;
@@ -39,7 +39,10 @@ extern "x86-interrupt" fn general_protection_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: u64,
 ) {
-    println!("EXCEPTION: GENERAL PROTECTION FAULT\nerror_code:{error_code}\n{:#?}", stack_frame);
+    println!(
+        "EXCEPTION: GENERAL PROTECTION FAULT\nerror_code:{error_code}\n{:#?}",
+        stack_frame
+    );
 }
 
 extern "x86-interrupt" fn double_fault_handler(
