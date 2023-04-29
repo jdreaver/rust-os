@@ -1,3 +1,4 @@
+KERNEL = kernel.elf
 ISO = kernel.iso
 
 .DEFAULT_GOAL := all
@@ -27,7 +28,7 @@ gdb: # No deps because we don't want an accidental rebuild if `make debug` alrea
 .PHONY: kernel
 kernel:
 	cargo build
-	cp target/x86_64-rust_os/debug/rust-os kernel.elf
+	cp target/x86_64-rust_os/debug/rust-os $(KERNEL)
 
 .PHONY: limine
 limine:
@@ -37,7 +38,7 @@ $(ISO): limine kernel
 	rm -rf iso_root
 	mkdir -p iso_root
 
-	cp kernel.elf \
+	cp $(KERNEL) \
 		limine.cfg limine/limine.sys limine/limine-cd.bin limine/limine-cd-efi.bin iso_root/
 
 	xorriso -as mkisofs -b limine-cd.bin \
