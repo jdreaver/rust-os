@@ -9,12 +9,12 @@ all: $(ISO)
 
 .PHONY: run
 run: $(ISO)
-	qemu-system-x86_64 -cdrom $(ISO)
+	qemu-system-x86_64 -cdrom $(ISO) -serial stdio
 
 # N.B. Run `make debug` in one terminal, and `make debug-gdb` in another.
 .PHONY: debug
 debug: $(ISO)
-	qemu-system-x86_64 -cdrom $(ISO) -s -S
+	qemu-system-x86_64 -cdrom $(ISO) -s -S -serial stdio
 
 .PHONY: debug-gdb
 debug-gdb: # No deps because we don't want an accidental rebuild if `make debug` already ran.
