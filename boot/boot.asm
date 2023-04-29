@@ -168,12 +168,15 @@ section .bss
 
 ; Page table data entries
 ;
+; Each page table entry is 8 bytes long, and each table has 512 entries. This
+; means that each table is 4096 bytes (4 KiB) long.
+;
 ; Note that we are using 2 MiB pages, which means that each entry in the P2
 ; table will map 2 MiB of memory. This means that we only need 512 entries in
-; the P2 table to map the entire 1 GiB of memory that we have. Each entry is 8
-; bytes, so the entire table is 4096 bytes (4 KiB). Also, it means we don't need
-; to map to a p1 table; if a p2 entry has the "page size" bit set, then the
-; entry points directly to a physical 2 MiB page, not to a p1 entry.
+; the P2 table to map to 1 GiB of memory. Each entry is 8 bytes, so the entire
+; table is 4096 bytes (4 KiB). Also, it means we don't need to map to a p1
+; table; if a p2 entry has the "page size" bit set, then the entry points
+; directly to a physical 2 MiB page, not to a p1 entry.
 ;
 ; Reference: Intel® 64 and IA-32 Architectures Software Developer Manuals
 ; (https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)

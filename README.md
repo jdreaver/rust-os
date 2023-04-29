@@ -21,3 +21,4 @@ $ qemu-system-x86_64 -drive format=raw,file=target/x86_64-rust_os/debug/bootimag
     - Double fault handlers work (e.g. stack overflow of kernel stack calls double fault handler)
 - Add CI
   - Check out <https://github.com/phil-opp/blog_os/blob/post-12/.github/workflows/code.yml>
+  - Consider using nix to load dependencies
