@@ -208,11 +208,11 @@ section .rodata
 
 ; Set up Long Mode GDT. See https://wiki.osdev.org/Global_Descriptor_Table
 gdt64:
-.read_write_bit: equ 1 << 41
-.executable_bit: equ 1 << 43
-.descriptor_bit: equ 1 << 44
-.present_bit:    equ 1 << 47
-.long_mode_bit:  equ 1 << 53
+.read_write_bit: equ 1 << 41    ; Allow writing
+.executable_bit: equ 1 << 43    ; Allow execution
+.descriptor_bit: equ 1 << 44    ; Code/data segment, not system segment
+.present_bit:    equ 1 << 47    ; Segment is present
+.long_mode_bit:  equ 1 << 53    ; 64 bit mode
 .null_bits:
         ; Define the null sector for the 64 bit gdt, which is 8 bytes of nulls. Null
         ; sector is required for memory integrity check.
