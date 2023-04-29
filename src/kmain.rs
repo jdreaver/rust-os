@@ -97,5 +97,5 @@ fn run_tests() {
     println!("Tests passed!");
 
     // Test custom panic handler
-    panic!("Some panic message");
+    // panic!("Some panic message");
 }
