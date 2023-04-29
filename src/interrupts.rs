@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
-use crate::{gdt, print, println};
+use crate::{gdt, serial_print, serial_println};
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -57,21 +57,21 @@ pub fn init_idt() {
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
-    println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
+    serial_println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
 }
 
 extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    println!("EXCEPTION: PAGE FAULT\n{:#?}", stack_frame);
+    serial_println!("EXCEPTION: PAGE FAULT\n{:#?}", stack_frame);
 
     use x86_64::registers::control::Cr2;
 
-    println!("EXCEPTION: PAGE FAULT");
-    println!("Accessed Address: {:?}", Cr2::read());
-    println!("Error Code: {:?}", error_code);
-    println!("{:#?}", stack_frame);
+    serial_println!("EXCEPTION: PAGE FAULT");
+    serial_println!("Accessed Address: {:?}", Cr2::read());
+    serial_println!("Error Code: {:?}", error_code);
+    serial_println!("{:#?}", stack_frame);
 
     loop {
         x86_64::instructions::hlt();
@@ -82,8 +82,9 @@ extern "x86-interrupt" fn general_protection_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: u64,
 ) {
-    println!(
-        "EXCEPTION: GENERAL PROTECTION FAULT\nerror_code:{error_code}\n{:#?}",
+    serial_println!(
+        "EXCEPTION: GENERAL PROTECTION FAULT\nerror_code:{}\n{:#?}",
+        error_code,
         stack_frame
     );
 }
@@ -96,7 +97,7 @@ extern "x86-interrupt" fn double_fault_handler(
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    print!(".");
+    serial_print!(".");
 
     unsafe {
         PICS.lock()
@@ -121,7 +122,7 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
     let mut keyboard = KEYBOARD.lock();
     let mut port = Port::new(KEYBOARD_PORT);
 
-    // KEYBAORD has an internal state machine that processes e.g. modifier keys
+    // KEYBOARD has an internal state machine that processes e.g. modifier keys
     // like shift and caps lock. It needs to be fed with the scancodes of the
     // pressed keys. If the scancode is a valid key, the keyboard crate will
     // eventually return a `DecodedKey`.
@@ -129,8 +130,8 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
     if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
         if let Some(key) = keyboard.process_keyevent(key_event) {
             match key {
-                DecodedKey::Unicode(character) => print!("{}", character),
-                DecodedKey::RawKey(key) => print!("{:?}", key),
+                DecodedKey::Unicode(character) => serial_print!("{}", character),
+                DecodedKey::RawKey(key) => serial_print!("{:?}", key),
             }
         }
     }

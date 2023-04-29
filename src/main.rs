@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
 
-use core::arch::asm;
-
 use limine::LimineFramebufferRequest;
+
+use rust_os::{gdt, interrupts, serial_println};
 
 static FRAMEBUFFER_REQUEST: LimineFramebufferRequest = LimineFramebufferRequest::new(0);
 
@@ -12,7 +12,7 @@ unsafe extern "C" fn _start() -> ! {
     // Ensure we got a framebuffer.
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response().get() {
         if framebuffer_response.framebuffer_count < 1 {
-            hcf();
+            hlt_loop();
         }
 
         // Get the first framebuffer's information.
@@ -32,19 +32,47 @@ unsafe extern "C" fn _start() -> ! {
         }
     }
 
-    hcf();
+    init();
+    run_tests();
+
+    hlt_loop()
+}
+
+fn init() {
+    gdt::init();
+    interrupts::init_idt();
 }
 
 #[panic_handler]
 fn rust_panic(_info: &core::panic::PanicInfo) -> ! {
-    hcf();
+    hlt_loop()
 }
 
-fn hcf() -> ! {
-    unsafe {
-        asm!("cli");
-        loop {
-            asm!("hlt");
-        }
+fn hlt_loop() -> ! {
+    loop {
+        x86_64::instructions::hlt();
     }
+}
+
+fn run_tests() {
+    serial_println!("Testing serial port! {}", "hello");
+
+    // Invoke a breakpoint exception and ensure we continue on
+    serial_println!("interrupt");
+    x86_64::instructions::interrupts::int3();
+
+    serial_println!("done with interrupt");
+
+    // Trigger a page fault, which should trigger a double fault if we don't
+    // have a page fault handler.
+    // unsafe {
+    //     // N.B. Rust panics if we try to use 0xdeadbeef as a pointer (address
+    //     // must be a multiple of 0x8), so we use 0xdeadbee0 instead
+    //     *(0xdeadbee0 as *mut u64) = 42;
+    // };
+
+    serial_println!("Tests passed!");
+
+    // Test custom panic handler
+    // panic!("Some panic message");
 }
