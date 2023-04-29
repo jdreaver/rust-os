@@ -11,13 +11,9 @@ fn init() {
 #[no_mangle]
 pub extern "C" fn kmain(multiboot_info_ptr: usize) -> ! {
     // ATTENTION: we have a somewhat small stack and no guard page
-    init();
-
     print_multiboot_info(multiboot_info_ptr);
-    serial_println!("Testing serial port! {}", "hello");
-
+    init();
     run_tests();
-
     hlt_loop()
 }
 
@@ -82,9 +78,10 @@ fn panic(info: &PanicInfo) -> ! {
 }
 
 fn run_tests() {
-    println!("interrupt");
+    serial_println!("Testing serial port! {}", "hello");
 
     // Invoke a breakpoint exception and ensure we continue on
+    println!("interrupt");
     x86_64::instructions::interrupts::int3();
 
     println!("done with interrupt");
