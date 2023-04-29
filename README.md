@@ -22,3 +22,5 @@ $ qemu-system-x86_64 -drive format=raw,file=target/x86_64-rust_os/debug/bootimag
 - Add CI
   - Check out <https://github.com/phil-opp/blog_os/blob/post-12/.github/workflows/code.yml>
   - Consider using nix to load dependencies
+- Try limine again (via <https://github.com/jdreaver/rust-os/pull/1>) and use serial port for output/debugging until I implement writing bitmap text.
+  - This might be really useful for better memory mapping support from the bootloader.
