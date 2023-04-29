@@ -64,8 +64,6 @@ extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    serial_println!("EXCEPTION: PAGE FAULT\n{:#?}", stack_frame);
-
     use x86_64::registers::control::Cr2;
 
     serial_println!("EXCEPTION: PAGE FAULT");
