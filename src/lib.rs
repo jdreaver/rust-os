@@ -49,14 +49,14 @@ pub extern "C" fn rust_main(multiboot_info_ptr: usize) -> ! {
         .max()
         .unwrap();
     println!(
-        "kernel start: 0x{:x}, end: 0x{:x}",
+        "kernel start: {:#x}, end: {:#x}",
         kernel_start, kernel_end
     );
 
     let multiboot_start = multiboot_info_ptr;
     let multiboot_end = multiboot_start + boot_info.total_size();
     println!(
-        "multiboot start: 0x{:x}, end: 0x{:x}",
+        "multiboot start: {:#x}, end: {:#x}",
         multiboot_start, multiboot_end
     );
 
