@@ -16,13 +16,13 @@ run: $(ISO)
 	qemu-system-x86_64 $(QEMU_ARGS)
 
 
-# N.B. Run `make debug` in one terminal, and `make debug-gdb` in another.
-.PHONY: debug
-debug: $(ISO)
+# N.B. Run `make run-debug` in one terminal, and `make gdb` in another.
+.PHONY: run-debug
+run-debug: $(ISO)
 	qemu-system-x86_64 $(QEMU_ARGS) -s -S
 
-.PHONY: debug-gdb
-debug-gdb: # No deps because we don't want an accidental rebuild if `make debug` already ran.
+.PHONY: gdb
+gdb: # No deps because we don't want an accidental rebuild if `make debug` already ran.
 	gdb $(KERNEL) -ex "target remote :1234"
 
 $(KERNEL): build/multiboot_header.o build/boot.o build/long_mode_init.o boot/linker.ld kernel
