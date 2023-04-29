@@ -31,7 +31,7 @@ kernel:
 
 .PHONY: limine
 limine:
-	cd limine && git submodule update --remote --merge && make
+	cd limine && git submodule update --init && make
 
 $(ISO): limine kernel
 	rm -rf iso_root
