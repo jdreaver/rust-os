@@ -51,8 +51,8 @@ lazy_static! {
 }
 
 pub fn init() {
-    use x86_64::instructions::segmentation::{Segment, CS};
     use x86_64::instructions::tables::load_tss;
+    use x86_64::registers::segmentation::{Segment, CS, DS, ES, FS, GS, SS};
 
     GDT.0.load();
     unsafe {
@@ -65,17 +65,10 @@ pub fn init() {
         // FS, GS, SS) are set to zero. If they are not, the CPU will try to
         // access the GDT to get the segment descriptors for those registers,
         // but the GDT is not set up yet. This will cause a triple fault.
-        //
-        // I currently do this in the boot.asm bootstrap assembly after jumping
-        // to long mode, but we could do it again here to be safe if we wanted:
-        // asm!(
-        //     "mov ds, ax",
-        //     "mov es, ax",
-        //     "mov fs, ax",
-        //     "mov gs, ax",
-        //     "mov ss, ax",
-        //     in("ax") Segment::kernel_data().0,
-        //     options(nostack, preserves_flags),
-        // );
+        DS::set_reg(SegmentSelector(0));
+        ES::set_reg(SegmentSelector(0));
+        FS::set_reg(SegmentSelector(0));
+        GS::set_reg(SegmentSelector(0));
+        SS::set_reg(SegmentSelector(0));
     }
 }
