@@ -6,6 +6,7 @@
 use core::panic::PanicInfo;
 use multiboot2::load;
 
+mod gdt;
 mod interrupts;
 mod serial;
 mod vga_buffer;
@@ -83,6 +84,7 @@ pub extern "C" fn rust_main(multiboot_info_ptr: usize) -> ! {
 }
 
 fn init() {
+    gdt::init();
     interrupts::init_idt();
 }
 
