@@ -20,9 +20,9 @@ long_mode_start:
         xor rdi, rdi            ; Clear rax so we can store pointer in eax and not worry about the upper 32 bits
         mov edi, [multiboot_header]
 
-        ; call the rust main
-        extern rust_main
-        call rust_main
+        ; Call the kernel main function
+        extern kmain
+        call kmain
 
         ; print `OKAY` to screen
         mov rax, 0x2f592f412f4b2f4f
