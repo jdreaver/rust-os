@@ -65,6 +65,11 @@ pub fn init() {
         // FS, GS, SS) are set to zero. If they are not, the CPU will try to
         // access the GDT to get the segment descriptors for those registers,
         // but the GDT is not set up yet. This will cause a triple fault.
+        //
+        // In 64 bit mode you don't need an actual data segment; using the null
+        // segment from the GDT is okay. Many instructions, including iretq
+        // (returning from exception handlers) require a data segment descriptor
+        // _or_ the null descriptor.
         DS::set_reg(SegmentSelector(0));
         ES::set_reg(SegmentSelector(0));
         FS::set_reg(SegmentSelector(0));
