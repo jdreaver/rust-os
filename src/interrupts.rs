@@ -16,6 +16,7 @@ lazy_static! {
                 .set_stack_index(gdt::DOUBLE_FAULT_IST_INDEX);
         }
         idt[InterruptIndex::Timer.into()].set_handler_fn(timer_interrupt_handler);
+        idt[InterruptIndex::Keyboard.into()].set_handler_fn(keyboard_interrupt_handler);
 
         idt
     };
@@ -32,21 +33,18 @@ static PICS: spin::Mutex<pic8259::ChainedPics> =
 #[repr(u8)]
 enum InterruptIndex {
     Timer = PIC_1_OFFSET,
+    Keyboard,
 }
 
 impl From<InterruptIndex> for u8 {
     fn from(index: InterruptIndex) -> Self {
-        match index {
-            InterruptIndex::Timer => InterruptIndex::Timer as u8,
-        }
+        index as u8
     }
 }
 
 impl From<InterruptIndex> for usize {
     fn from(index: InterruptIndex) -> Self {
-        match index {
-            InterruptIndex::Timer => InterruptIndex::Timer as usize,
-        }
+        index as usize
     }
 }
 
@@ -92,5 +90,41 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
     unsafe {
         PICS.lock()
             .notify_end_of_interrupt(InterruptIndex::Timer.into());
+    }
+}
+
+// https://wiki.osdev.org/%228042%22_PS/2_Controller#PS.2F2_Controller_IO_Ports
+const KEYBOARD_PORT: u16 = 0x60;
+
+extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
+    use spin::Mutex;
+    use x86_64::instructions::port::Port;
+
+    lazy_static! {
+        static ref KEYBOARD: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> = Mutex::new(
+            Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore)
+        );
+    }
+
+    let mut keyboard = KEYBOARD.lock();
+    let mut port = Port::new(KEYBOARD_PORT);
+
+    // KEYBAORD has an internal state machine that processes e.g. modifier keys
+    // like shift and caps lock. It needs to be fed with the scancodes of the
+    // pressed keys. If the scancode is a valid key, the keyboard crate will
+    // eventually return a `DecodedKey`.
+    let scancode: u8 = unsafe { port.read() };
+    if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
+        if let Some(key) = keyboard.process_keyevent(key_event) {
+            match key {
+                DecodedKey::Unicode(character) => print!("{}", character),
+                DecodedKey::RawKey(key) => print!("{:?}", key),
+            }
+        }
+    }
+    unsafe {
+        PICS.lock()
+            .notify_end_of_interrupt(InterruptIndex::Keyboard.into());
     }
 }
