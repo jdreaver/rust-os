@@ -193,7 +193,7 @@ p2_table:
 ; Save some room for the stack.
 ; TODO: Designate this in a better spot. Should GRUB2 give us stack space?
 stack_bottom:
-    resb 4096
+    resb 4096 * 16
 stack_top:
 
 section .data

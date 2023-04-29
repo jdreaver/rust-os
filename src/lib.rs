@@ -1,9 +1,12 @@
 #![no_std]
 #![no_main]
 
+#![feature(abi_x86_interrupt)]
+
 use core::panic::PanicInfo;
 use multiboot2::load;
 
+mod interrupts;
 mod serial;
 mod vga_buffer;
 
@@ -62,11 +65,20 @@ pub extern "C" fn rust_main(multiboot_info_ptr: usize) -> ! {
 
     serial_println!("Testing serial port! {}", "hello");
 
+    init();
+
+    // invoke a breakpoint exception
+    x86_64::instructions::interrupts::int3(); // new
+
     panic!("Some panic message");
 
     loop {
         x86_64::instructions::hlt();
     }
+}
+
+fn init() {
+    interrupts::init_idt();
 }
 
 #[panic_handler]
