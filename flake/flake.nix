@@ -23,7 +23,6 @@
             ];
             targets = [
               "x86_64-unknown-none"
-              "thumbv7em-none-eabi" # TODO: deleteme?
             ];
           }))
 

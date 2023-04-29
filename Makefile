@@ -4,9 +4,25 @@ ISO = kernel.iso
 .PHONY: all
 all: $(ISO)
 
+QEMU_ARGS += -cdrom $(ISO)
+QEMU_ARGS += -M q35 # Use the q35 chipset
+QEMU_ARGS += -serial stdio # Add serial output to terminal
+
 .PHONY: run
 run: $(ISO)
-	qemu-system-x86_64 -M q35 -m 2G -cdrom $(ISO) -boot d
+	qemu-system-x86_64 $(QEMU_ARGS)
+
+# N.B. Run `make run-debug` in one terminal, and `make gdb` in another.
+QEMU_DEBUG_ARGS += $(QEMU_ARGS)
+QEMU_DEBUG_ARGS += -d int,cpu_reset,guest_errors # Log some unexpected things. Run qemu-system-x86_64 -d help to see more.
+# QEMU_DEBUG_ARGS += -M q35,accel=tcg # Disable hardware acceleration which makes logging interrupts give more info.
+.PHONY: run-debug
+run-debug: $(ISO)
+	qemu-system-x86_64 $(QEMU_DEBUG_ARGS) -s -S
+
+.PHONY: gdb
+gdb: # No deps because we don't want an accidental rebuild if `make debug` already ran.
+	gdb $(KERNEL) -ex "target remote :1234"
 
 .PHONY: kernel
 kernel:
