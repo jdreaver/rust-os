@@ -28,6 +28,7 @@ $ make run
   - Things to test:
     - Fault handlers work (e.g. breakpoint)
     - Double fault handlers work (e.g. stack overflow of kernel stack calls double fault handler)
+- Unit tests for memory management, allocator, etc. Move to a new crate?
 - Add CI
   - Check out <https://github.com/phil-opp/blog_os/blob/post-12/.github/workflows/code.yml>
   - Consider using nix to load dependencies

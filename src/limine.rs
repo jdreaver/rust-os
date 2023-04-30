@@ -1,10 +1,10 @@
 use limine::{
     LimineBootInfoRequest, LimineFramebufferRequest, LimineHhdmRequest, LimineKernelAddressRequest,
-    LimineMemmapRequest,
+    LimineMemmapRequest, NonNullPtr,
 };
-use x86_64::VirtAddr;
+use x86_64::{PhysAddr, VirtAddr};
 
-use crate::{serial, serial_print, serial_println};
+use crate::{memory, serial, serial_print, serial_println};
 
 pub static FRAMEBUFFER_REQUEST: LimineFramebufferRequest = LimineFramebufferRequest::new(0);
 
@@ -36,32 +36,66 @@ pub fn print_limine_boot_info() {
 
 static MEMORY_MAP_REQUEST: LimineMemmapRequest = LimineMemmapRequest::new(0);
 
-pub fn print_limine_memory_map() {
+/// Internal struct to iterate over the limine memory map.
+///
+/// Normally we would just make a `Vec` with all of the memory map entries, but
+/// it turns out encapsulating iteration over the raw pointers from limine is
+/// helpful, and this also means we can avoid allocating a `Vec` for the memory
+/// map entries, so this can be used to construct the kernel's memory allocator.
+struct MemoryMapEntryIterator {
+    entries: *mut NonNullPtr<limine::LimineMemmapEntry>,
+    entry_count: isize,
+    current: isize,
+}
+
+impl Iterator for MemoryMapEntryIterator {
+    type Item = &'static limine::LimineMemmapEntry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current >= self.entry_count {
+            return None;
+        }
+
+        unsafe {
+            let entry = &**self.entries.offset(self.current);
+            self.current += 1;
+            Some(entry)
+        }
+    }
+}
+
+fn limine_memory_map_entries() -> impl Iterator<Item = &'static limine::LimineMemmapEntry> {
     let memory_map = MEMORY_MAP_REQUEST
         .get_response()
         .get()
         .expect("failed to get limine memory map");
 
+    MemoryMapEntryIterator {
+        entries: memory_map.entries.as_ptr(),
+        #[allow(clippy::cast_possible_wrap)]
+        entry_count: memory_map.entry_count as isize,
+        current: 0,
+    }
+}
+
+pub fn print_limine_memory_map() {
+    let memory_map_iter = limine_memory_map_entries();
+
     serial_println!("limine memory map:");
     let mut usable = 0;
     let mut reclaimable = 0;
-    let entries = memory_map.entries.as_ptr();
-    for i in 0..memory_map.entry_count {
-        unsafe {
-            #[allow(clippy::cast_possible_wrap)]
-            let entry = &**entries.offset(i as isize);
-            serial_println!(
-                "    base: {:#x}, len: {:#x}, type: {:?}",
-                entry.base,
-                entry.len,
-                entry.typ
-            );
+    for entry in memory_map_iter {
+        serial_println!(
+            "    base: {:#x}, len: {:#x}, type: {:?}",
+            entry.base,
+            entry.len,
+            entry.typ
+        );
 
-            if entry.typ == limine::LimineMemoryMapEntryType::Usable {
-                usable += entry.len;
-            } else if entry.typ == limine::LimineMemoryMapEntryType::BootloaderReclaimable {
-                reclaimable += entry.len;
-            }
+        if entry.typ == limine::LimineMemoryMapEntryType::Usable {
+            usable += entry.len;
+        } else if entry.typ == limine::LimineMemoryMapEntryType::BootloaderReclaimable {
+            reclaimable += entry.len;
         }
     }
 
@@ -71,6 +105,24 @@ pub fn print_limine_memory_map() {
         reclaimable / 1024 / 1024,
         (usable + reclaimable) / 1024 / 1024
     );
+}
+
+/// Create a `NaiveFreeMemoryBlockAllocator` from the usable and reclaimable
+/// regions in the limine memory map.
+pub unsafe fn allocator_from_limine_memory_map() -> memory::NaiveFreeMemoryBlockAllocator {
+    unsafe {
+        memory::NaiveFreeMemoryBlockAllocator::from_iter(
+            limine_memory_map_entries()
+                .filter(|entry| {
+                    entry.typ == limine::LimineMemoryMapEntryType::Usable
+                        || entry.typ == limine::LimineMemoryMapEntryType::BootloaderReclaimable
+                })
+                .map(|entry| memory::UsableMemoryRegion {
+                    start_address: PhysAddr::new(entry.base),
+                    len: entry.len,
+                }),
+        )
+    }
 }
 
 static HIGHER_HALF_DIRECT_MAP_REQUEST: LimineHhdmRequest = LimineHhdmRequest::new(0);

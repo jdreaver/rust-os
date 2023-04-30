@@ -4,7 +4,7 @@
 use rust_os::{gdt, interrupts, limine, memory, serial_println};
 
 #[no_mangle]
-unsafe extern "C" fn _start() -> ! {
+extern "C" fn _start() -> ! {
     limine::print_limine_boot_info();
     limine::print_limine_memory_map();
     limine::print_limine_kernel_address();
@@ -60,6 +60,19 @@ unsafe extern "C" fn _start() -> ! {
         let phys = mapper.translate_addr(virt);
         serial_println!("{:?} -> {:?}", virt, phys);
     }
+
+    let mut allocator = unsafe { limine::allocator_from_limine_memory_map() };
+    serial_println!("allocator: {:?}", allocator);
+
+    use x86_64::structures::paging::FrameAllocator;
+    serial_println!("next page: {:?}", allocator.allocate_frame());
+    serial_println!("next page: {:?}", allocator.allocate_frame());
+
+    for _ in 0..10000 {
+        allocator.allocate_frame();
+    }
+
+    serial_println!("far page: {:?}", allocator.allocate_frame());
 
     hlt_loop()
 }
