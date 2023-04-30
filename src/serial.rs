@@ -22,7 +22,7 @@ pub fn _print(args: ::core::fmt::Arguments) {
             .lock()
             .write_fmt(args)
             .expect("Printing to serial failed");
-    })
+    });
 }
 
 /// Prints to the host through the serial interface.

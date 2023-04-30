@@ -38,13 +38,13 @@ enum InterruptIndex {
 
 impl From<InterruptIndex> for u8 {
     fn from(index: InterruptIndex) -> Self {
-        index as u8
+        index as Self
     }
 }
 
 impl From<InterruptIndex> for usize {
     fn from(index: InterruptIndex) -> Self {
-        index as usize
+        index as Self
     }
 }
 
@@ -59,7 +59,7 @@ pub fn init_idt() {
         // Limine masks all legacy PIC and APIC IRQs. We have to enable the ones
         // we want. I got these values by calling `pic.read_masks()` using GRUB
         // instead of limine.
-        pic.write_masks(0b10111000, 0b10001110); // 184 and 142 in decimal
+        pic.write_masks(0b1011_1000, 0b1000_1110); // 184 and 142 in decimal
     };
     x86_64::instructions::interrupts::enable();
 }
