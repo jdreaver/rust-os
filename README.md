@@ -10,11 +10,7 @@ $ make run
 
 ## TODO
 
-- Paging implementation
-  - Version 2 of tutorial <https://os.phil-opp.com/paging-implementation/>
-  - Version 1 <https://os.phil-opp.com/allocating-frames/>
-  - Linux kernel does linear mapping. Could just do that.
-  - Consider using limine again
+- Heap <https://os.phil-opp.com/heap-allocation/>
 - Print text using limine framebuffer
   - <https://wiki.osdev.org/VGA_Fonts>
   - <https://wiki.osdev.org/Drawing_In_a_Linear_Framebuffer>
