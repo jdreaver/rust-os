@@ -77,7 +77,6 @@ pub struct NaiveFreeMemoryBlockAllocator {
 }
 
 impl NaiveFreeMemoryBlockAllocator {
-
     /// This function is unsafe because the caller must guarantee that the all
     /// frames that are passed to this function must be unused.
     ///

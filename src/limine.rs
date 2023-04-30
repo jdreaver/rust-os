@@ -6,7 +6,23 @@ use x86_64::{PhysAddr, VirtAddr};
 
 use crate::{memory, serial, serial_print, serial_println};
 
-pub static FRAMEBUFFER_REQUEST: LimineFramebufferRequest = LimineFramebufferRequest::new(0);
+static FRAMEBUFFER_REQUEST: LimineFramebufferRequest = LimineFramebufferRequest::new(0);
+
+pub fn limine_framebuffer() -> &'static mut limine::LimineFramebuffer {
+    let response = FRAMEBUFFER_REQUEST
+        .get_response()
+        .get()
+        .expect("failed to get limine framebuffer response");
+
+    assert!(
+        response.framebuffer_count >= 1,
+        "limine framebuffer count is less than 1"
+    );
+
+    let framebuffer = &response.framebuffers()[0];
+
+    unsafe { &mut *framebuffer.as_ptr() }
+}
 
 static BOOT_INFO_REQUEST: LimineBootInfoRequest = LimineBootInfoRequest::new(0);
 
