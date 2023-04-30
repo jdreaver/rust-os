@@ -43,7 +43,8 @@ fn init() {
 }
 
 #[panic_handler]
-fn rust_panic(_info: &core::panic::PanicInfo) -> ! {
+fn rust_panic(info: &core::panic::PanicInfo) -> ! {
+    serial_println!("PANIC: {}", info);
     hlt_loop()
 }
 
