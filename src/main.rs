@@ -1,6 +1,10 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
+use alloc::boxed::Box;
+
 use rust_os::{
     gdt, interrupts,
     limine::{self, limine_framebuffer},
@@ -107,6 +111,8 @@ extern "C" fn _start() -> ! {
             *(writable_ptr.add(pixel_offset) as *mut u32) = blue;
         }
     }
+
+    let _x = Box::new(42);
 
     hlt_loop()
 }
