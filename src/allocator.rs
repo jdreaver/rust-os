@@ -1,28 +1,20 @@
-use alloc::alloc::{GlobalAlloc, Layout};
-use core::ptr::null_mut;
-
+use linked_list_allocator::LockedHeap;
 use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::{FrameAllocator, Mapper, Page, PageTableFlags, Size4KiB};
 use x86_64::VirtAddr;
 
+/// NOTE: `LockedHeap` uses a spin lock under the hood, so we should ensure we
+/// _never_ do allocations in interrupt handlers, because we can cause a
+/// deadlock (imagine an interrupt handler fires while the kernel is in the
+/// middle of an allocation).
 #[global_allocator]
-static ALLOCATOR: Dummy = Dummy;
-
-pub struct Dummy;
-
-unsafe impl GlobalAlloc for Dummy {
-    unsafe fn alloc(&self, _layout: Layout) -> *mut u8 {
-        null_mut()
-    }
-
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
-        panic!("dealloc should never be called")
-    }
-}
+static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
 pub const HEAP_START: usize = 0x_4444_4444_0000;
 pub const HEAP_SIZE: usize = 100 * 1024; // 100 KiB
 
+/// Maps pages for a kernel heap defined by `HEAP_START` and `HEAP_SIZE` and
+/// initializes `ALLOCATOR` with this heap.
 pub fn init_heap(
     mapper: &mut impl Mapper<Size4KiB>,
     frame_allocator: &mut impl FrameAllocator<Size4KiB>,
@@ -43,6 +35,12 @@ pub fn init_heap(
         unsafe {
             mapper.map_to(page, frame, flags, frame_allocator)?.flush();
         }
+    }
+
+    unsafe {
+        // `init() actually writes to the heap, which is why we can only
+        // initialize the allocator after we map the pages.
+        ALLOCATOR.lock().init(HEAP_START, HEAP_SIZE);
     }
 
     Ok(())

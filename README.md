@@ -10,7 +10,7 @@ $ make run
 
 ## TODO
 
-- Heap <https://os.phil-opp.com/heap-allocation/>
+- Allocator designs <https://os.phil-opp.com/allocator-designs/>
 - Print text using limine framebuffer
   - <https://wiki.osdev.org/VGA_Fonts>
   - <https://wiki.osdev.org/Drawing_In_a_Linear_Framebuffer>
@@ -22,8 +22,12 @@ $ make run
     - Might be useful <https://blog.frankel.ch/different-test-scopes-rust/>
     - Don't integrate with `cargo test`. Do `cargo build --tests` and have a `make test` target
   - Things to test:
-    - Fault handlers work (e.g. breakpoint)
+    - Interrupts work (e.g. breakpoint).
+      - Ensure breakpoint handler is called and that we resume
+      - Ensure that fatal handlers like general protection fault are called then exit
+    - Panic works (can exit with success after panic)
     - Double fault handlers work (e.g. stack overflow of kernel stack calls double fault handler)
+    - Heap allocated memory, especially deallocation (create a ton of objects larger than the heap in a loop, which ensures that deallocation is happening or we would run out of memory)
 - Unit tests for memory management, allocator, etc. Move to a new crate?
 - Add CI
   - Check out <https://github.com/phil-opp/blog_os/blob/post-12/.github/workflows/code.yml>

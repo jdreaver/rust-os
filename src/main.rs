@@ -4,6 +4,7 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 
 use rust_os::{
     allocator, gdt, interrupts,
@@ -37,7 +38,6 @@ extern "C" fn _start() -> ! {
     }
 
     init();
-    run_tests();
 
     let mut mapper = unsafe { memory::init(hhdm_offset) };
 
@@ -46,6 +46,8 @@ extern "C" fn _start() -> ! {
 
     allocator::init_heap(&mut mapper, &mut frame_allocator)
         .expect("failed to initialize allocator");
+
+    run_tests();
 
     // Print out some test addresses
     let addresses = [
@@ -115,8 +117,6 @@ extern "C" fn _start() -> ! {
         }
     }
 
-    let _x = Box::new(42);
-
     hlt_loop()
 }
 
@@ -145,6 +145,20 @@ fn run_tests() {
     x86_64::instructions::interrupts::int3();
 
     serial_println!("done with interrupt");
+
+    // Allocate a number on the heap
+    let heap_value = Box::new(41);
+    serial_println!("heap_value at {:p}", heap_value);
+    assert_eq!(*heap_value, 41);
+
+    // create a dynamically sized vector
+    let mut vec = Vec::new();
+    for i in 0..10 {
+        vec.push(i);
+    }
+    serial_println!("vec at {:p}: {:?}", vec.as_slice(), vec);
+    assert_eq!(vec.into_iter().sum::<u32>(), 45);
+
 
     // Trigger a page fault, which should trigger a double fault if we don't
     // have a page fault handler.
