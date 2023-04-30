@@ -1,10 +1,15 @@
 #![no_std]
 #![no_main]
+#![feature(custom_test_frameworks)]
+#![test_runner(rust_os::test_runner)]
+#![reexport_test_harness_main = "test_main"]
 
-use rust_os::{gdt, interrupts, limine, serial_println};
+use core::panic::PanicInfo;
+
+use rust_os::{gdt, hlt_loop, interrupts, limine, serial_println};
 
 #[no_mangle]
-unsafe extern "C" fn _start() -> ! {
+pub extern "C" fn _start() -> ! {
     limine::print_limine_boot_info();
     limine::print_limine_memory_map();
 
@@ -32,6 +37,10 @@ unsafe extern "C" fn _start() -> ! {
     }
 
     init();
+
+    #[cfg(test)]
+    test_main();
+
     run_tests();
 
     hlt_loop()
@@ -42,15 +51,17 @@ fn init() {
     interrupts::init_idt();
 }
 
+#[cfg(not(test))]
 #[panic_handler]
-fn rust_panic(_info: &core::panic::PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
+    serial_println!("{}", info);
     hlt_loop()
 }
 
-fn hlt_loop() -> ! {
-    loop {
-        x86_64::instructions::hlt();
-    }
+#[cfg(test)]
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    rust_os::test_panic_handler(info)
 }
 
 fn run_tests() {
@@ -74,4 +85,13 @@ fn run_tests() {
 
     // Test custom panic handler
     // panic!("Some panic message");
+}
+
+#[test_case]
+fn trivial_assertion() {
+    use rust_os::{serial_print, serial_println};
+
+    serial_print!("trivial assertion... ");
+    assert_eq!(1, 1);
+    serial_println!("[ok]");
 }
