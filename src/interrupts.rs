@@ -52,7 +52,15 @@ pub fn init_idt() {
     IDT.load();
 
     // Enable PIC and interrupts
-    unsafe { PICS.lock().initialize() };
+    unsafe {
+        let mut pic = PICS.lock();
+        pic.initialize();
+
+        // Limine masks all legacy PIC and APIC IRQs. We have to enable the ones
+        // we want. I got these values by calling `pic.read_masks()` using GRUB
+        // instead of limine.
+        pic.write_masks(0b10111000, 0b10001110); // 184 and 142 in decimal
+    };
     x86_64::instructions::interrupts::enable();
 }
 
