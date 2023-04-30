@@ -1,2 +1,4 @@
 /target
-/build
+/iso_root
+/kernel.elf
+/kernel.iso

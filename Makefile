@@ -1,19 +1,18 @@
-ISO = build/kernel.iso
-KERNEL = build/kernel.bin
-RUST_OS = target/x86_64-rust_os/debug/librust_os.a
-GRUB_CFG = boot/grub.cfg
+KERNEL = kernel.elf
+ISO = kernel.iso
 
 .DEFAULT_GOAL := all
 .PHONY: all
 all: $(ISO)
 
 QEMU_ARGS += -cdrom $(ISO)
+QEMU_ARGS += -M q35 # Use the q35 chipset
+QEMU_ARGS += -m 2G # More memory
 QEMU_ARGS += -serial stdio # Add serial output to terminal
 
 .PHONY: run
 run: $(ISO)
 	qemu-system-x86_64 $(QEMU_ARGS)
-
 
 # N.B. Run `make run-debug` in one terminal, and `make gdb` in another.
 QEMU_DEBUG_ARGS += $(QEMU_ARGS)
@@ -27,32 +26,30 @@ run-debug: $(ISO)
 gdb: # No deps because we don't want an accidental rebuild if `make debug` already ran.
 	gdb $(KERNEL) -ex "target remote :1234"
 
-$(KERNEL): build/multiboot_header.o build/boot.o build/long_mode_init.o boot/linker.ld kernel
-	ld -n -o $@ -T boot/linker.ld build/multiboot_header.o build/boot.o build/long_mode_init.o $(RUST_OS)
-
-build/multiboot_header.o: boot/multiboot_header.asm
-	mkdir -p build
-	nasm -f elf64 -o $@ $<
-
-build/boot.o: boot/boot.asm
-	mkdir -p build
-	nasm -f elf64 -o $@ $<
-
-build/long_mode_init.o: boot/long_mode_init.asm
-	mkdir -p build
-	nasm -f elf64 -o $@ $<
-
 .PHONY: kernel
 kernel:
 	cargo build
+	cp target/x86_64-rust_os/debug/rust-os $(KERNEL)
 
-$(ISO): $(KERNEL) $(GRUB_CFG)
-	mkdir -p build/isofiles/boot/grub
-	cp $(KERNEL) build/isofiles/boot/kernel.bin
-	cp $(GRUB_CFG) build/isofiles/boot/grub
-	grub-mkrescue -o $(ISO) build/isofiles
-	rm -r build/isofiles
+.PHONY: limine
+limine:
+	cd limine && git submodule update --init && make
+
+$(ISO): limine kernel
+	rm -rf iso_root
+	mkdir -p iso_root
+
+	cp $(KERNEL) \
+		limine.cfg limine/limine.sys limine/limine-cd.bin limine/limine-cd-efi.bin iso_root/
+
+	xorriso -as mkisofs -b limine-cd.bin \
+		-no-emul-boot -boot-load-size 4 -boot-info-table \
+		--efi-boot limine-cd-efi.bin \
+		-efi-boot-part --efi-boot-image --protective-msdos-label \
+		iso_root -o $@
+	limine/limine-deploy $@
+	rm -rf iso_root
 
 .PHONY: clean
 clean:
-	rm -rf target build boot/*.o
+	rm -rf target iso_root *.iso *.elf

@@ -22,14 +22,14 @@ pub fn _print(args: ::core::fmt::Arguments) {
             .lock()
             .write_fmt(args)
             .expect("Printing to serial failed");
-    })
+    });
 }
 
 /// Prints to the host through the serial interface.
 #[macro_export]
 macro_rules! serial_print {
     ($($arg:tt)*) => {
-        $crate::serial::_print(format_args!($($arg)*));
+        $crate::serial::_print(format_args!($($arg)*))
     };
 }
 
@@ -40,4 +40,16 @@ macro_rules! serial_println {
     ($fmt:expr) => ($crate::serial_print!(concat!($fmt, "\n")));
     ($fmt:expr, $($arg:tt)*) => ($crate::serial_print!(
         concat!($fmt, "\n"), $($arg)*));
+}
+
+pub unsafe fn print_null_terminated_string(ptr: *const u8) {
+    let mut i = 0;
+    loop {
+        let c = *ptr.offset(i);
+        if c == 0 {
+            break;
+        }
+        serial_print!("{}", c as char);
+        i += 1;
+    }
 }

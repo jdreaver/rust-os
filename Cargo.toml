@@ -3,12 +3,9 @@ name = "rust-os"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-crate-type = ["staticlib"]
-
 [dependencies]
 lazy_static = { version = "1", features = ["spin_no_std"] }
-multiboot2 = "0.15"
+limine = "0.1.10"
 pc-keyboard = "0.5"
 pic8259 = "0.10"
 spin = "0.5"
