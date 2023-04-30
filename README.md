@@ -15,6 +15,10 @@ $ make run
   - Version 1 <https://os.phil-opp.com/allocating-frames/>
   - Linux kernel does linear mapping. Could just do that.
   - Consider using limine again
+- Print text using limine framebuffer
+  - <https://wiki.osdev.org/VGA_Fonts>
+  - <https://wiki.osdev.org/Drawing_In_a_Linear_Framebuffer>
+  - Consider double buffering for speed
 - Tests
   - <https://www.infinyon.com/blog/2021/04/rust-custom-test-harness/>
   - Useful resource, but I couldn't get this to work with the staticlib setup <https://os.phil-opp.com/testing/>
