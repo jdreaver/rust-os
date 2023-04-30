@@ -22,4 +22,5 @@
 pub mod gdt;
 pub mod interrupts;
 pub mod limine;
+pub mod memory;
 pub mod serial;

@@ -1,12 +1,16 @@
 #![no_std]
 #![no_main]
 
-use rust_os::{gdt, interrupts, limine, serial_println};
+use rust_os::{gdt, interrupts, limine, memory, serial_println};
 
 #[no_mangle]
 unsafe extern "C" fn _start() -> ! {
     limine::print_limine_boot_info();
     limine::print_limine_memory_map();
+    limine::print_limine_kernel_address();
+
+    let hhdm_offset = limine::limine_higher_half_offset();
+    serial_println!("limine HHDM offset: {:?}", hhdm_offset);
 
     // Ensure we got a framebuffer.
     if let Some(framebuffer_response) = limine::FRAMEBUFFER_REQUEST.get_response().get() {
@@ -33,6 +37,29 @@ unsafe extern "C" fn _start() -> ! {
 
     init();
     run_tests();
+
+    // Print out some test addresses
+    let mapper = unsafe { memory::init(hhdm_offset) };
+
+    let addresses = [
+        // the identity-mapped vga buffer page
+        0xb8000,
+        0xb8000 + hhdm_offset.as_u64(),
+        // some code page
+        0x201008,
+        // some stack page
+        0x0100_0020_1a10,
+        // virtual address mapped to physical address 0
+        hhdm_offset.as_u64(),
+    ];
+
+    use x86_64::structures::paging::Translate;
+
+    for &address in &addresses {
+        let virt = x86_64::VirtAddr::new(address);
+        let phys = mapper.translate_addr(virt);
+        serial_println!("{:?} -> {:?}", virt, phys);
+    }
 
     hlt_loop()
 }

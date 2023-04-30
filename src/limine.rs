@@ -1,4 +1,8 @@
-use limine::{LimineBootInfoRequest, LimineFramebufferRequest, LimineMemmapRequest};
+use limine::{
+    LimineBootInfoRequest, LimineFramebufferRequest, LimineHhdmRequest, LimineKernelAddressRequest,
+    LimineMemmapRequest,
+};
+use x86_64::VirtAddr;
 
 use crate::{serial, serial_print, serial_println};
 
@@ -39,6 +43,8 @@ pub fn print_limine_memory_map() {
         .expect("failed to get limine memory map");
 
     serial_println!("limine memory map:");
+    let mut usable = 0;
+    let mut reclaimable = 0;
     let entries = memory_map.entries.as_ptr();
     for i in 0..memory_map.entry_count {
         unsafe {
@@ -50,6 +56,44 @@ pub fn print_limine_memory_map() {
                 entry.len,
                 entry.typ
             );
+
+            if entry.typ == limine::LimineMemoryMapEntryType::Usable {
+                usable += entry.len;
+            } else if entry.typ == limine::LimineMemoryMapEntryType::BootloaderReclaimable {
+                reclaimable += entry.len;
+            }
         }
     }
+
+    serial_println!(
+        "limine memory map usable: {} MiB, reclaimable: {} MiB, reusable + reclaimable: {} MiB",
+        usable / 1024 / 1024,
+        reclaimable / 1024 / 1024,
+        (usable + reclaimable) / 1024 / 1024
+    );
+}
+
+static HIGHER_HALF_DIRECT_MAP_REQUEST: LimineHhdmRequest = LimineHhdmRequest::new(0);
+
+pub fn limine_higher_half_offset() -> VirtAddr {
+    let hhdm = HIGHER_HALF_DIRECT_MAP_REQUEST
+        .get_response()
+        .get()
+        .expect("failed to get limine higher half direct map request");
+    VirtAddr::try_new(hhdm.offset).expect("invalid limine hhdm offset virtual address")
+}
+
+static KERNEL_ADDRESS_REQUEST: LimineKernelAddressRequest = LimineKernelAddressRequest::new(0);
+
+pub fn print_limine_kernel_address() {
+    let kernel_address = KERNEL_ADDRESS_REQUEST
+        .get_response()
+        .get()
+        .expect("failed to get limine kernel address request");
+
+    serial_println!(
+        "limine kernel address physical base: {:#x}, virtual base: {:#x}",
+        kernel_address.physical_base,
+        kernel_address.virtual_base
+    );
 }
