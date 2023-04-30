@@ -41,3 +41,15 @@ macro_rules! serial_println {
     ($fmt:expr, $($arg:tt)*) => ($crate::serial_print!(
         concat!($fmt, "\n"), $($arg)*));
 }
+
+pub unsafe fn print_null_terminated_string(ptr: *const u8) {
+    let mut i = 0;
+    loop {
+        let c = *ptr.offset(i);
+        if c == 0 {
+            break;
+        }
+        serial_print!("{}", c as char);
+        i += 1;
+    }
+}

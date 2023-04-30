@@ -7,6 +7,7 @@ all: $(ISO)
 
 QEMU_ARGS += -cdrom $(ISO)
 QEMU_ARGS += -M q35 # Use the q35 chipset
+QEMU_ARGS += -m 2G # More memory
 QEMU_ARGS += -serial stdio # Add serial output to terminal
 
 .PHONY: run

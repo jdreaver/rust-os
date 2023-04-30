@@ -1,16 +1,15 @@
 #![no_std]
 #![no_main]
 
-use limine::LimineFramebufferRequest;
-
-use rust_os::{gdt, interrupts, serial_println};
-
-static FRAMEBUFFER_REQUEST: LimineFramebufferRequest = LimineFramebufferRequest::new(0);
+use rust_os::{gdt, interrupts, limine, serial_println};
 
 #[no_mangle]
 unsafe extern "C" fn _start() -> ! {
+    limine::print_limine_boot_info();
+    limine::print_limine_memory_map();
+
     // Ensure we got a framebuffer.
-    if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response().get() {
+    if let Some(framebuffer_response) = limine::FRAMEBUFFER_REQUEST.get_response().get() {
         if framebuffer_response.framebuffer_count < 1 {
             hlt_loop();
         }
