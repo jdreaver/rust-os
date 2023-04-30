@@ -6,7 +6,7 @@ extern crate alloc;
 use alloc::boxed::Box;
 
 use rust_os::{
-    gdt, interrupts,
+    allocator, gdt, interrupts,
     limine::{self, limine_framebuffer},
     memory, serial_println,
 };
@@ -39,9 +39,15 @@ extern "C" fn _start() -> ! {
     init();
     run_tests();
 
-    // Print out some test addresses
     let mut mapper = unsafe { memory::init(hhdm_offset) };
 
+    let mut frame_allocator = unsafe { limine::allocator_from_limine_memory_map() };
+    serial_println!("allocator: {:?}", frame_allocator);
+
+    allocator::init_heap(&mut mapper, &mut frame_allocator)
+        .expect("failed to initialize allocator");
+
+    // Print out some test addresses
     let addresses = [
         // the identity-mapped vga buffer page
         0xb8000,
@@ -61,9 +67,6 @@ extern "C" fn _start() -> ! {
         let phys = mapper.translate_addr(virt);
         serial_println!("{:?} -> {:?}", virt, phys);
     }
-
-    let mut frame_allocator = unsafe { limine::allocator_from_limine_memory_map() };
-    serial_println!("allocator: {:?}", frame_allocator);
 
     use x86_64::structures::paging::FrameAllocator;
     serial_println!("next page: {:?}", frame_allocator.allocate_frame());

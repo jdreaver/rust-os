@@ -1,5 +1,6 @@
-use x86_64::structures::paging::page::Size4KiB;
-use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, PageSize, PageTable, PhysFrame};
+use x86_64::structures::paging::{
+    FrameAllocator, OffsetPageTable, PageSize, PageTable, PhysFrame, Size4KiB,
+};
 use x86_64::{PhysAddr, VirtAddr};
 
 /// Initialize a new `OffsetPageTable`.
