@@ -85,7 +85,7 @@ impl VESAFrambuffer32Bit {
     /// necessarily accessing memory in the most efficient way. More specific
     /// functions should be used, like functions to draw specific shapes or
     /// glyphs.
-    pub fn draw_pixel(&self, x: usize, y: usize, color: ARGB32Bit) {
+    pub fn draw_pixel(&mut self, x: usize, y: usize, color: ARGB32Bit) {
         assert!((x as u64) < self.width_pixels, "x coordinate out of bounds");
         assert!(
             (y as u64) < self.height_pixels,
@@ -98,6 +98,37 @@ impl VESAFrambuffer32Bit {
         let pixel_offset = y * (self.pitch as usize) + x * bytes_per_pixel;
         unsafe {
             *(self.address.add(pixel_offset) as *mut ARGB32Bit) = color;
+        }
+    }
+
+    /// Draws the given Nx8 bitmap to the framebuffer. Use the foreground color
+    /// for `1` bits and the background for `0` bits.
+    pub fn draw_bitmap(
+        &mut self,
+        x: usize,
+        y: usize,
+        bitmap: &[u8],
+        foreground: ARGB32Bit,
+        background: ARGB32Bit,
+    ) {
+        assert!((x as u64) < self.width_pixels, "x coordinate out of bounds");
+        assert!(
+            (y as u64) < self.height_pixels,
+            "y coordinate out of bounds"
+        );
+
+        for (j, row) in bitmap.iter().enumerate() {
+            for i in 0..8 {
+                let shift = 8 - i - 1;
+                let color = if row & (1 << shift) != 0 {
+                    foreground
+                } else {
+                    background
+                };
+                // TODO: Calling draw_pixel is inefficient because we have to
+                // recompute the byte position every time.
+                self.draw_pixel(x + i, y + j, color);
+            }
         }
     }
 }
@@ -119,6 +150,7 @@ fn color_value_from_mask(mask_size: u8, mask_shift: u8) -> u32 {
 /// A 32 bit color with alpha, red, green, and blue components. Used with
 /// `VESAFrambuffer32Bit`.
 #[repr(C)]
+#[derive(Copy, Clone, Debug)]
 pub struct ARGB32Bit {
     // Note that the fields are in reverse order from how they are stored in
     // memory. This is because the x86 is little endian and we are expected to
@@ -132,6 +164,13 @@ pub struct ARGB32Bit {
 pub const ARGB32BIT_WHITE: ARGB32Bit = ARGB32Bit {
     alpha: 0xFF,
     red: 0xFF,
+    green: 0xFF,
+    blue: 0xFF,
+};
+
+pub const ARGB32BIT_BLACK: ARGB32Bit = ARGB32Bit {
+    alpha: 0xFF,
+    red: 0x00,
     green: 0xFF,
     blue: 0xFF,
 };

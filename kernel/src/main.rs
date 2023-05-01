@@ -21,7 +21,7 @@ extern "C" fn _start() -> ! {
     let limine_framebuffer = boot_info::limine_framebuffer();
     serial_println!("limine framebuffer: {:#?}", limine_framebuffer);
 
-    let framebuffer = unsafe {
+    let mut framebuffer = unsafe {
         vesa_framebuffer::VESAFrambuffer32Bit::from_limine_framebuffer(limine_framebuffer)
             .expect("failed to create VESAFramebuffer32Bit")
     };
@@ -30,6 +30,25 @@ extern "C" fn _start() -> ! {
     for i in 0..100_usize {
         framebuffer.draw_pixel(i, i, vesa_framebuffer::ARGB32BIT_GREEN);
     }
+
+    #[rustfmt::skip]
+    let bitmap = [
+        0b01100110,
+        0b01100110,
+        0b01100110,
+        0b01111110,
+        0b01111110,
+        0b01100110,
+        0b01100110,
+        0b01100110,
+    ];
+    framebuffer.draw_bitmap(
+        200,
+        200,
+        &bitmap,
+        vesa_framebuffer::ARGB32BIT_RED,
+        vesa_framebuffer::ARGB32BIT_WHITE,
+    );
 
     init();
 
