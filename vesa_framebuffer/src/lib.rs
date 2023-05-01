@@ -1,5 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 
+use bitvec::prelude as bv;
+
 /// A VESA-compatible framebuffer where pixels are drawn directly to a location
 /// in memory. Practically speaking, this is a facade over the framebuffer
 /// returned from the `limine` bootloader, since that is what our kernel uses.
@@ -107,7 +109,8 @@ impl VESAFrambuffer32Bit {
         &mut self,
         x: usize,
         y: usize,
-        bitmap: &[u8],
+        bitmap: &bv::BitSlice<usize, bitvec::order::Msb0>,
+        bits_per_row: usize,
         foreground: ARGB32Bit,
         background: ARGB32Bit,
     ) {
@@ -117,10 +120,9 @@ impl VESAFrambuffer32Bit {
             "y coordinate out of bounds"
         );
 
-        for (j, row) in bitmap.iter().enumerate() {
-            for i in 0..8 {
-                let shift = 8 - i - 1;
-                let color = if row & (1 << shift) != 0 {
+        for (j, row) in bitmap.chunks(bits_per_row).enumerate() {
+            for (i, bit) in row.iter().enumerate() {
+                let color = if *bit {
                     foreground
                 } else {
                     background

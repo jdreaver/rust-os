@@ -6,6 +6,7 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
+use bitvec::prelude as bv;
 use rust_os::{allocator, boot_info, gdt, interrupts, memory, serial_println};
 
 #[no_mangle]
@@ -32,20 +33,23 @@ extern "C" fn _start() -> ! {
     }
 
     #[rustfmt::skip]
-    let bitmap = [
-        0b01100110,
-        0b01100110,
-        0b01100110,
-        0b01111110,
-        0b01111110,
-        0b01100110,
-        0b01100110,
-        0b01100110,
+    let bitmap = bv::bitarr![
+        usize, bv::Msb0;
+        0, 1, 1, 0, 0, 1, 1, 1,
+        0, 1, 1, 0, 0, 1, 1, 1,
+        0, 1, 1, 0, 0, 1, 1, 1,
+        0, 1, 1, 1, 1, 0, 0, 0,
+        0, 1, 1, 1, 1, 0, 0, 0,
+        0, 1, 1, 0, 0, 1, 1, 0,
+        0, 1, 1, 0, 0, 1, 1, 0,
+        0, 1, 1, 0, 0, 1, 1, 0
     ];
+    serial_println!("raw bitmap: {:?}", bitmap.as_raw_slice());
     framebuffer.draw_bitmap(
         200,
         200,
-        &bitmap,
+        bitmap.as_bitslice(),
+        8,
         vesa_framebuffer::ARGB32BIT_RED,
         vesa_framebuffer::ARGB32BIT_WHITE,
     );

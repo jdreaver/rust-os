@@ -15,3 +15,8 @@ uart_16550 = "0.2"
 vesa_framebuffer = { path = "../vesa_framebuffer" }
 volatile = "0.2"
 x86_64 = "0.14"
+
+[dependencies.bitvec]
+version = "1"
+default-features = false
+features = ["atomic", "alloc"]
