@@ -4,9 +4,18 @@ Inspired by [Writing an OS in Rust](https://os.phil-opp.com/) and <https://githu
 
 ## Running in QEMU
 
+Default debug mode:
+
 ```
 $ make run
 ```
+
+Release mode:
+
+```
+$ make run RUST_BUILD_MODE=release
+```
+
 
 ## Debugging with GDB
 

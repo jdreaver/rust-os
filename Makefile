@@ -2,6 +2,12 @@ KERNEL = kernel.elf
 ISO = kernel.iso
 LIMINE = $(shell nix build ./flake#limine --print-out-paths --no-link)
 
+RUST_BUILD_MODE = debug
+RUST_BUILD_MODE_FLAG =
+ifeq ($(RUST_BUILD_MODE),release)
+  RUST_BUILD_MODE_FLAG = --release
+endif
+
 # Not all crates support `cargo test`
 TEST_CRATES = vesa_framebuffer
 ALL_CRATES = $(TEST_CRATES) kernel
@@ -35,8 +41,8 @@ gdb: # No deps because we don't want an accidental rebuild if `make debug` alrea
 
 .PHONY: kernel
 kernel:
-	cd kernel && cargo build
-	cp kernel/target/x86_64-rust_os/debug/rust-os $(KERNEL)
+	cd kernel && cargo build $(RUST_BUILD_MODE_FLAG)
+	cp kernel/target/x86_64-rust_os/$(RUST_BUILD_MODE)/rust-os $(KERNEL)
 
 $(ISO): kernel
 	rm -rf iso_root
