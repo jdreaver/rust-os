@@ -6,4 +6,4 @@ build-std = ["core", "compiler_builtins", "alloc"]
 build-std-features = ["compiler-builtins-mem"]
 
 [target.x86_64-rust_os]
-rustflags = ["-C", "link-arg=-Tkernel/linker.ld"]
+rustflags = ["-C", "link-arg=-Tlinker.ld"]

@@ -32,7 +32,7 @@ gdb: # No deps because we don't want an accidental rebuild if `make debug` alrea
 .PHONY: kernel
 kernel:
 	cd kernel && cargo build
-	cp target/x86_64-rust_os/debug/rust-os $(KERNEL)
+	cp kernel/target/x86_64-rust_os/debug/rust-os $(KERNEL)
 
 $(ISO): kernel
 	rm -rf iso_root

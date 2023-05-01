@@ -42,3 +42,5 @@ $ make run
 - Add CI
   - Check out <https://github.com/phil-opp/blog_os/blob/post-12/.github/workflows/code.yml>
   - Consider using nix to load dependencies
+- Try out Cargo workspace again, maybe?
+  - I turned it off because LSP/Emacs didn't seem to work well under it, and it isn't clear how cargo configs should work across workspaces, e.g. <https://github.com/rust-lang/cargo/issues/7004> and <https://rustwiki.org/en/cargo/reference/config.html>
