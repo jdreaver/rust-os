@@ -19,6 +19,7 @@ extern "C" fn _start() -> ! {
 
     // Ensure we got a framebuffer.
     let framebuffer = boot_info::limine_framebuffer();
+    serial_println!("limine framebuffer: {:#?}", framebuffer);
 
     for i in 0..100_usize {
         // Calculate the pixel offset using the framebuffer information we obtained above.
