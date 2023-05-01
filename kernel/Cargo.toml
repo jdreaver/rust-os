@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 lazy_static = { version = "1", features = ["spin_no_std"] }
+# N.B. Make sure this matches vesa_framebuffer version so tests are consistent.
 limine = "0.1.10"
 linked_list_allocator = "0.9"
 pc-keyboard = "0.5"

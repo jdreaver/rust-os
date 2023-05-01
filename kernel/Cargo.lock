@@ -126,6 +126,9 @@ dependencies = [
 [[package]]
 name = "vesa_framebuffer"
 version = "0.1.0"
+dependencies = [
+ "limine",
+]
 
 [[package]]
 name = "volatile"

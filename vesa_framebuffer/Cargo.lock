@@ -3,5 +3,14 @@
 version = 3
 
 [[package]]
+name = "limine"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e9d0c951056ac044f0e6b09448b9d702f8fb1001db89cffd2bc467bd1c25307"
+
+[[package]]
 name = "vesa_framebuffer"
 version = "0.1.0"
+dependencies = [
+ "limine",
+]

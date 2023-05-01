@@ -7,7 +7,6 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use rust_os::{allocator, boot_info, gdt, interrupts, memory, serial_println};
-use vesa_framebuffer::add;
 
 #[no_mangle]
 extern "C" fn _start() -> ! {
@@ -19,30 +18,16 @@ extern "C" fn _start() -> ! {
     serial_println!("limine HHDM offset: {:?}", hhdm_offset);
 
     // Ensure we got a framebuffer.
-    let framebuffer = boot_info::limine_framebuffer();
-    serial_println!("limine framebuffer: {:#?}", framebuffer);
+    let limine_framebuffer = boot_info::limine_framebuffer();
+    serial_println!("limine framebuffer: {:#?}", limine_framebuffer);
 
-    serial_println!("test add: {}", add(1, 2));
-
-    // Framebuffer colors. Explanation for the bitshifts:
-    // https://stackoverflow.com/a/1392065
-    let fb_red: u32 = ((1_u32 << framebuffer.red_mask_size) - 1) << framebuffer.red_mask_shift;
-    let fb_green: u32 = ((1_u32 << framebuffer.green_mask_size) - 1) << framebuffer.green_mask_shift;
-    let fb_blue: u32 = ((1_u32 << framebuffer.blue_mask_size) - 1) << framebuffer.blue_mask_shift;
-    let fb_white: u32 = fb_red | fb_green | fb_blue;
-    serial_println!("COLORS: red: {:#x}, green: {:#x}, blue: {:#x}, white: {:#x}", fb_red, fb_green, fb_blue, fb_white);
+    let framebuffer = unsafe {
+        vesa_framebuffer::VESAFrambuffer32Bit::from_limine_framebuffer(limine_framebuffer)
+    };
+    serial_println!("framebuffer: {:#?}", framebuffer);
 
     for i in 0..100_usize {
-        // Calculate the pixel offset using the framebuffer information we obtained above.
-        // We skip `i` scanlines (pitch is provided in bytes) and add `i * 4` to skip `i` pixels forward.
-        let pixel_offset = i * framebuffer.pitch as usize + i * 4;
-
-        // Write 0xFFFFFFFF to the provided pixel offset to fill it white.
-        // We can safely unwrap the result of `as_ptr()` because the framebuffer address is
-        // guaranteed to be provided by the bootloader.
-        unsafe {
-            *(framebuffer.address.as_ptr().unwrap().add(pixel_offset) as *mut u32) = fb_white;
-        }
+        framebuffer.draw_pixel(i, i, vesa_framebuffer::ARGB32BIT_WHITE);
     }
 
     init();
@@ -87,43 +72,6 @@ extern "C" fn _start() -> ! {
     }
 
     serial_println!("far page: {:?}", frame_allocator.allocate_frame());
-
-    // TODO: Delete all of these framebuffer testing. Mapping 0 to the
-    // framebuffer is probably not a good idea :)
-    //
-    // Map to the limine framebuffer
-    use x86_64::structures::paging::page::Size4KiB;
-    use x86_64::structures::paging::{Mapper, Page, PageTableFlags, PhysFrame};
-
-    let new_virt_addr = x86_64::VirtAddr::new(0);
-    let page: Page<Size4KiB> = Page::containing_address(new_virt_addr);
-    let framebuffer_virt_addr = framebuffer.address.as_ptr().unwrap() as u64;
-    let framebuffer_physical_addr = framebuffer_virt_addr - hhdm_offset.as_u64();
-    serial_println!(
-        "limine framebuffer physical address: {:#x}",
-        framebuffer_physical_addr
-    );
-    let frame = PhysFrame::containing_address(x86_64::PhysAddr::new(framebuffer_physical_addr));
-    let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-
-    let map_to_result = unsafe {
-        // FIXME: this is not safe, we do it only for testing
-        mapper.map_to(page, frame, flags, &mut frame_allocator)
-    };
-    map_to_result.expect("map_to failed").flush();
-
-    let phys = mapper.translate_addr(new_virt_addr);
-    serial_println!("MAPPED: {:?} -> {:?}", new_virt_addr, phys);
-
-    // Draw horizontal blue line to test starting at the new map to just
-    let writable_ptr: *mut u8 = new_virt_addr.as_mut_ptr();
-    let blue = 0x000000FF;
-    for i in 0..100_usize {
-        let pixel_offset = i * (framebuffer.bpp / 8) as usize;
-        unsafe {
-            *(writable_ptr.add(pixel_offset) as *mut u32) = blue;
-        }
-    }
 
     hlt_loop()
 }
