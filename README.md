@@ -50,13 +50,11 @@ make test
 - Allocator designs <https://os.phil-opp.com/allocator-designs/>
 - Print text using limine framebuffer
   - [vesa_framebuffer](./vesa_framebuffer)
-  - Actual C array front:
+  - Actual C array font:
     - <https://github.com/isometimes/rpi4-osdev/blob/master/part5-framebuffer/terminal.h>
     - <https://www.rpi4os.com/part5-framebuffer/#writing-characters-to-the-screen>
   - <https://wiki.osdev.org/VGA_Fonts>
-  - <https://wiki.osdev.org/Drawing_In_a_Linear_Framebuffer>
   - <https://wiki.osdev.org/PC_Screen_Font>
-  - <https://wiki.osdev.org/VESA_Video_Modes>
   - Consider double buffering for speed
   - <https://stackoverflow.com/questions/2156572/c-header-file-with-bitmapped-fonts>
   - <https://courses.cs.washington.edu/courses/cse457/98a/tech/OpenGL/font.c>
