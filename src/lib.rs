@@ -22,8 +22,8 @@
 extern crate alloc;
 
 pub mod allocator;
+pub mod boot_info;
 pub mod gdt;
 pub mod interrupts;
-pub mod limine;
 pub mod memory;
 pub mod serial;

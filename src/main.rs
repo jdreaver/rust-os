@@ -6,23 +6,19 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use rust_os::{
-    allocator, gdt, interrupts,
-    limine::{self, limine_framebuffer},
-    memory, serial_println,
-};
+use rust_os::{allocator, boot_info, gdt, interrupts, memory, serial_println};
 
 #[no_mangle]
 extern "C" fn _start() -> ! {
-    limine::print_limine_boot_info();
-    limine::print_limine_memory_map();
-    limine::print_limine_kernel_address();
+    boot_info::print_limine_boot_info();
+    boot_info::print_limine_memory_map();
+    boot_info::print_limine_kernel_address();
 
-    let hhdm_offset = limine::limine_higher_half_offset();
+    let hhdm_offset = boot_info::limine_higher_half_offset();
     serial_println!("limine HHDM offset: {:?}", hhdm_offset);
 
     // Ensure we got a framebuffer.
-    let framebuffer = limine_framebuffer();
+    let framebuffer = boot_info::limine_framebuffer();
 
     for i in 0..100_usize {
         // Calculate the pixel offset using the framebuffer information we obtained above.
@@ -41,7 +37,7 @@ extern "C" fn _start() -> ! {
 
     let mut mapper = unsafe { memory::init(hhdm_offset) };
 
-    let mut frame_allocator = unsafe { limine::allocator_from_limine_memory_map() };
+    let mut frame_allocator = unsafe { boot_info::allocator_from_limine_memory_map() };
     serial_println!("allocator: {:?}", frame_allocator);
 
     allocator::init_heap(&mut mapper, &mut frame_allocator)
@@ -158,7 +154,6 @@ fn run_tests() {
     }
     serial_println!("vec at {:p}: {:?}", vec.as_slice(), vec);
     assert_eq!(vec.into_iter().sum::<u32>(), 45);
-
 
     // Trigger a page fault, which should trigger a double fault if we don't
     // have a page fault handler.
