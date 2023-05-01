@@ -2,18 +2,45 @@
 
 Inspired by [Writing an OS in Rust](https://os.phil-opp.com/) and <https://github.com/mrgian/felix>.
 
-## Running
+## Running in QEMU
 
 ```
 $ make run
+```
+
+## Debugging with GDB
+
+In one terminal:
+
+```
+make run-debug
+```
+
+In another
+
+```
+make gdb
+```
+
+## Tests
+
+Note that we don't use a Cargo workspace (I turned it off because LSP/Emacs
+didn't seem to work well under it, and it isn't clear how cargo configs should
+work across workspaces, e.g. <https://github.com/rust-lang/cargo/issues/7004>
+and <https://rustwiki.org/en/cargo/reference/config.html>). That means `cargo
+test` doesn't work at the top level. Also, we don't use Rust's testing library
+for kernel code. Instead we do more integration-style tests. Pure code that
+_can_ be tested is put in a separate crate and those use Rust's test system.
+
+```
+make test
 ```
 
 ## TODO
 
 - Allocator designs <https://os.phil-opp.com/allocator-designs/>
 - Print text using limine framebuffer
-  - Put this in e.g. a `framebuffer` or `vesa_framebuffer` library under this workspace
-    - If I parse psf fonts, make a `psf` crate too
+  - [vesa_framebuffer](./vesa_framebuffer)
   - Actual C array front:
     - <https://github.com/isometimes/rpi4-osdev/blob/master/part5-framebuffer/terminal.h>
     - <https://www.rpi4os.com/part5-framebuffer/#writing-characters-to-the-screen>
@@ -42,5 +69,3 @@ $ make run
 - Add CI
   - Check out <https://github.com/phil-opp/blog_os/blob/post-12/.github/workflows/code.yml>
   - Consider using nix to load dependencies
-- Try out Cargo workspace again, maybe?
-  - I turned it off because LSP/Emacs didn't seem to work well under it, and it isn't clear how cargo configs should work across workspaces, e.g. <https://github.com/rust-lang/cargo/issues/7004> and <https://rustwiki.org/en/cargo/reference/config.html>

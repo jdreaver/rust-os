@@ -80,6 +80,7 @@ dependencies = [
  "pic8259",
  "spin",
  "uart_16550",
+ "vesa_framebuffer",
  "volatile 0.2.7",
  "x86_64",
 ]
@@ -121,6 +122,10 @@ dependencies = [
  "rustversion",
  "x86_64",
 ]
+
+[[package]]
+name = "vesa_framebuffer"
+version = "0.1.0"
 
 [[package]]
 name = "volatile"

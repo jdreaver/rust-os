@@ -2,6 +2,9 @@ KERNEL = kernel.elf
 ISO = kernel.iso
 LIMINE = $(shell nix build ./flake#limine --print-out-paths --no-link)
 
+# Not all crates support `cargo test`
+TEST_CRATES = vesa_framebuffer
+
 .DEFAULT_GOAL := all
 .PHONY: all
 all: $(ISO)
@@ -48,6 +51,12 @@ $(ISO): kernel
 		iso_root -o $@
 	$(LIMINE)/limine-deploy $@
 	rm -rf iso_root
+
+.PHONY: test
+test:
+	for crate in $(TEST_CRATES); do \
+		cd $$crate && cargo test; \
+	done
 
 .PHONY: clean
 clean:

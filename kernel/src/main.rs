@@ -7,6 +7,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use rust_os::{allocator, boot_info, gdt, interrupts, memory, serial_println};
+use vesa_framebuffer::add;
 
 #[no_mangle]
 extern "C" fn _start() -> ! {
@@ -20,6 +21,8 @@ extern "C" fn _start() -> ! {
     // Ensure we got a framebuffer.
     let framebuffer = boot_info::limine_framebuffer();
     serial_println!("limine framebuffer: {:#?}", framebuffer);
+
+    serial_println!("test add: {}", add(1, 2));
 
     // Framebuffer colors. Explanation for the bitshifts:
     // https://stackoverflow.com/a/1392065
