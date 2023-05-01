@@ -12,6 +12,8 @@ $ make run
 
 - Allocator designs <https://os.phil-opp.com/allocator-designs/>
 - Print text using limine framebuffer
+  - Put this in e.g. a `framebuffer` library under this workspace
+    - If I parse psf fonts, make a `psf` crate too
   - Actual C array front:
     - <https://github.com/isometimes/rpi4-osdev/blob/master/part5-framebuffer/terminal.h>
     - <https://www.rpi4os.com/part5-framebuffer/#writing-characters-to-the-screen>
