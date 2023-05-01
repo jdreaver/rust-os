@@ -12,9 +12,16 @@ $ make run
 
 - Allocator designs <https://os.phil-opp.com/allocator-designs/>
 - Print text using limine framebuffer
+  - Actual C array front:
+    - <https://github.com/isometimes/rpi4-osdev/blob/master/part5-framebuffer/terminal.h>
+    - <https://www.rpi4os.com/part5-framebuffer/#writing-characters-to-the-screen>
   - <https://wiki.osdev.org/VGA_Fonts>
   - <https://wiki.osdev.org/Drawing_In_a_Linear_Framebuffer>
+  - <https://wiki.osdev.org/PC_Screen_Font>
   - Consider double buffering for speed
+  - <https://stackoverflow.com/questions/2156572/c-header-file-with-bitmapped-fonts>
+  - <https://courses.cs.washington.edu/courses/cse457/98a/tech/OpenGL/font.c>
+  - <https://jared.geek.nz/2014/jan/custom-fonts-for-microcontrollers>
 - Tests
   - <https://www.infinyon.com/blog/2021/04/rust-custom-test-harness/>
   - Useful resource, but I couldn't get this to work with the staticlib setup <https://os.phil-opp.com/testing/>
