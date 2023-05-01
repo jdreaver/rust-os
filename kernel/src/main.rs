@@ -21,6 +21,14 @@ extern "C" fn _start() -> ! {
     let framebuffer = boot_info::limine_framebuffer();
     serial_println!("limine framebuffer: {:#?}", framebuffer);
 
+    // Framebuffer colors. Explanation for the bitshifts:
+    // https://stackoverflow.com/a/1392065
+    let fb_red: u32 = ((1_u32 << framebuffer.red_mask_size) - 1) << framebuffer.red_mask_shift;
+    let fb_green: u32 = ((1_u32 << framebuffer.green_mask_size) - 1) << framebuffer.green_mask_shift;
+    let fb_blue: u32 = ((1_u32 << framebuffer.blue_mask_size) - 1) << framebuffer.blue_mask_shift;
+    let fb_white: u32 = fb_red | fb_green | fb_blue;
+    serial_println!("COLORS: red: {:#x}, green: {:#x}, blue: {:#x}, white: {:#x}", fb_red, fb_green, fb_blue, fb_white);
+
     for i in 0..100_usize {
         // Calculate the pixel offset using the framebuffer information we obtained above.
         // We skip `i` scanlines (pitch is provided in bytes) and add `i * 4` to skip `i` pixels forward.
@@ -30,7 +38,7 @@ extern "C" fn _start() -> ! {
         // We can safely unwrap the result of `as_ptr()` because the framebuffer address is
         // guaranteed to be provided by the bootloader.
         unsafe {
-            *(framebuffer.address.as_ptr().unwrap().add(pixel_offset) as *mut u32) = 0xFFFFFFFF;
+            *(framebuffer.address.as_ptr().unwrap().add(pixel_offset) as *mut u32) = fb_white;
         }
     }
 

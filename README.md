@@ -12,7 +12,7 @@ $ make run
 
 - Allocator designs <https://os.phil-opp.com/allocator-designs/>
 - Print text using limine framebuffer
-  - Put this in e.g. a `framebuffer` library under this workspace
+  - Put this in e.g. a `framebuffer` or `vesa_framebuffer` library under this workspace
     - If I parse psf fonts, make a `psf` crate too
   - Actual C array front:
     - <https://github.com/isometimes/rpi4-osdev/blob/master/part5-framebuffer/terminal.h>
@@ -20,6 +20,7 @@ $ make run
   - <https://wiki.osdev.org/VGA_Fonts>
   - <https://wiki.osdev.org/Drawing_In_a_Linear_Framebuffer>
   - <https://wiki.osdev.org/PC_Screen_Font>
+  - <https://wiki.osdev.org/VESA_Video_Modes>
   - Consider double buffering for speed
   - <https://stackoverflow.com/questions/2156572/c-header-file-with-bitmapped-fonts>
   - <https://courses.cs.washington.edu/courses/cse457/98a/tech/OpenGL/font.c>
