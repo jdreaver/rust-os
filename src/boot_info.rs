@@ -125,7 +125,8 @@ pub fn print_limine_memory_map() {
 
 /// Create a `NaiveFreeMemoryBlockAllocator` from the usable and reclaimable
 /// regions in the limine memory map.
-pub unsafe fn allocator_from_limine_memory_map() -> memory::NaiveFreeMemoryBlockAllocator {
+pub fn allocator_from_limine_memory_map() -> memory::NaiveFreeMemoryBlockAllocator {
+    // SAFETY: The limine memory map is valid for the lifetime of the kernel.
     unsafe {
         memory::NaiveFreeMemoryBlockAllocator::from_iter(
             limine_memory_map_entries()

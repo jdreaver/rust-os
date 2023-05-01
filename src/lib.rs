@@ -10,7 +10,6 @@
     clippy::missing_const_for_fn,
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
-    clippy::missing_safety_doc,
     clippy::module_name_repetitions,
     clippy::multiple_crate_versions,
     clippy::must_use_candidate,

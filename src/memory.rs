@@ -5,10 +5,12 @@ use x86_64::{PhysAddr, VirtAddr};
 
 /// Initialize a new `OffsetPageTable`.
 ///
-/// This function is unsafe because the caller must guarantee that the
-/// complete physical memory is mapped to virtual memory at the passed
-/// `physical_memory_offset`. Also, this function must be only called once
-/// to avoid aliasing `&mut` references (which is undefined behavior).
+/// # Safety
+///
+/// This function is unsafe because the caller must guarantee that the complete
+/// physical memory is mapped to virtual memory at the passed
+/// `physical_memory_offset`. Also, this function must be only called once to
+/// avoid aliasing `&mut` references (which is undefined behavior).
 pub unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
     let level_4_table = active_level_4_page_table(physical_memory_offset);
     OffsetPageTable::new(level_4_table, physical_memory_offset)
@@ -78,6 +80,8 @@ pub struct NaiveFreeMemoryBlockAllocator {
 }
 
 impl NaiveFreeMemoryBlockAllocator {
+    /// # Safety
+    ///
     /// This function is unsafe because the caller must guarantee that the all
     /// frames that are passed to this function must be unused.
     ///

@@ -37,7 +37,7 @@ extern "C" fn _start() -> ! {
 
     let mut mapper = unsafe { memory::init(hhdm_offset) };
 
-    let mut frame_allocator = unsafe { boot_info::allocator_from_limine_memory_map() };
+    let mut frame_allocator = boot_info::allocator_from_limine_memory_map();
     serial_println!("allocator: {:?}", frame_allocator);
 
     allocator::init_heap(&mut mapper, &mut frame_allocator)
