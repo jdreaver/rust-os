@@ -105,11 +105,11 @@ impl VESAFrambuffer32Bit {
 
     /// Draws the given Nx8 bitmap to the framebuffer. Use the foreground color
     /// for `1` bits and the background for `0` bits.
-    pub fn draw_bitmap(
+    pub fn draw_bitmap<S: bv::BitStore>(
         &mut self,
         x: usize,
         y: usize,
-        bitmap: &bv::BitSlice<usize, bitvec::order::Msb0>,
+        bitmap: &bv::BitSlice<S, bitvec::order::Msb0>,
         bits_per_row: usize,
         foreground: ARGB32Bit,
         background: ARGB32Bit,
