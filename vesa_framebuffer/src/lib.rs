@@ -31,55 +31,50 @@ pub struct VESAFrambuffer32Bit {
 
 impl VESAFrambuffer32Bit {
     /// Create a `VESAFrambuffer` from a `limine` framebuffer, returned to the
-    /// kernel from the `limine` bootloader.
+    /// kernel from the `limine` bootloader. Returns `Err` if the framebuffer
+    /// is not 32 bits per pixel, and various other invariants aren't met.
     ///
     /// # Safety
     ///
     /// Caller needs to ensure that the framebuffer is valid, and probably
-    /// blindly trust `limine`. (We also check for 32 bits per pixel, but we
-    /// panic if that fails. It isn't `unsafe`.)
-    pub unsafe fn from_limine_framebuffer(fb: &limine::LimineFramebuffer) -> Self {
-        assert_eq!(fb.bpp, 32, "limine framebuffer must be 32 bits per pixel");
+    /// blindly trust `limine`.
+    pub unsafe fn from_limine_framebuffer(fb: &limine::LimineFramebuffer) -> Result<Self, &str> {
+        if fb.bpp != 32 {
+            return Err("limine framebuffer must be 32 bits per pixel");
+        }
 
         // These assertions ensure we can write `ARGB` values directly to the
         // framebuffer.
-        assert_eq!(
-            fb.red_mask_size, 8,
-            "limine framebuffer must use 8 bits for red"
-        );
-        assert_eq!(
-            fb.green_mask_size, 8,
-            "limine framebuffer must use 8 bits for green"
-        );
-        assert_eq!(
-            fb.blue_mask_size, 8,
-            "limine framebuffer must use 8 bits for blue"
-        );
-
-        assert_eq!(
-            fb.red_mask_shift, 16,
-            "limine framebuffer must shift red mask by 16 bits"
-        );
-        assert_eq!(
-            fb.green_mask_shift, 8,
-            "limine framebuffer must shift green mask by 8 bits"
-        );
-        assert_eq!(
-            fb.blue_mask_shift, 0,
-            "limine framebuffer must shift blue mask by 0 bits"
-        );
+        if fb.red_mask_size != 8 {
+            return Err("limine framebuffer must use 8 bits for red");
+        }
+        if fb.green_mask_size != 8 {
+            return Err("limine framebuffer must use 8 bits for green");
+        }
+        if fb.blue_mask_size != 8 {
+            return Err("limine framebuffer must use 8 bits for blue");
+        }
+        if fb.red_mask_shift != 16 {
+            return Err("limine framebuffer must shift red mask by 16 bits");
+        }
+        if fb.green_mask_shift != 8 {
+            return Err("limine framebuffer must shift green mask by 8 bits");
+        }
+        if fb.blue_mask_shift != 0 {
+            return Err("limine framebuffer must shift blue mask by 0 bits");
+        }
 
         let address = fb
             .address
             .as_ptr()
             .expect("failed to convert limine address to pointer");
 
-        Self {
+        Ok(Self {
             address: address as *mut u8,
             width_pixels: fb.width,
             height_pixels: fb.height,
             pitch: fb.pitch,
-        }
+        })
     }
 
     /// Draw the give `ARGB32Bit` color to the given pixel coordinates, where x

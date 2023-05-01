@@ -23,6 +23,7 @@ extern "C" fn _start() -> ! {
 
     let framebuffer = unsafe {
         vesa_framebuffer::VESAFrambuffer32Bit::from_limine_framebuffer(limine_framebuffer)
+            .expect("failed to create VESAFramebuffer32Bit")
     };
     serial_println!("framebuffer: {:#?}", framebuffer);
 
