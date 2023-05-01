@@ -108,7 +108,7 @@ impl VESAFrambuffer32Bit {
 }
 
 /// The mask size is the number of `1` bits in the color's mask, and the mask
-/// shift is how far left to shift the mask over to get the color value. For
+/// shift is how far right to shift the mask over to get the color value. For
 /// example, if the red mask size is 8 and the shift is 16, the red value is
 /// 0x00FF0000.
 ///
@@ -118,17 +118,20 @@ impl VESAFrambuffer32Bit {
 fn color_value_from_mask(mask_size: u8, mask_shift: u8) -> u32 {
     // See https://stackoverflow.com/a/1392065 for an explanation of the bit shifts.
     let mask = (1 << mask_size) - 1;
-    mask << mask_shift
+    mask << (24 - mask_shift)
 }
 
 /// A 32 bit color with alpha, red, green, and blue components. Used with
 /// `VESAFrambuffer32Bit`.
 #[repr(C)]
 pub struct ARGB32Bit {
-    alpha: u8,
-    red: u8,
-    green: u8,
+    // Note that the fields are in reverse order from how they are stored in
+    // memory. This is because the x86 is little endian and we are expected to
+    // write u32 values to memory.
     blue: u8,
+    green: u8,
+    red: u8,
+    alpha: u8,
 }
 
 pub const ARGB32BIT_WHITE: ARGB32Bit = ARGB32Bit {
@@ -139,7 +142,7 @@ pub const ARGB32BIT_WHITE: ARGB32Bit = ARGB32Bit {
 };
 
 pub const ARGB32BIT_RED: ARGB32Bit = ARGB32Bit {
-    alpha: 0xFF,
+    alpha: 0x00,
     red: 0xFF,
     green: 0x00,
     blue: 0x00,
@@ -165,8 +168,8 @@ mod test {
 
     #[test]
     fn test_color_value_from_mask() {
-        assert_eq!(color_value_from_mask(8, 16), 0x00FF0000);
-        assert_eq!(color_value_from_mask(8, 8), 0x0000FF00);
-        assert_eq!(color_value_from_mask(8, 0), 0x000000FF);
+        assert_eq!(color_value_from_mask(8, 16), 0x0000FF00);
+        assert_eq!(color_value_from_mask(8, 8), 0x00FF0000);
+        assert_eq!(color_value_from_mask(8, 0), 0xFF000000);
     }
 }

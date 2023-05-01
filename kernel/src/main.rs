@@ -27,7 +27,7 @@ extern "C" fn _start() -> ! {
     serial_println!("framebuffer: {:#?}", framebuffer);
 
     for i in 0..100_usize {
-        framebuffer.draw_pixel(i, i, vesa_framebuffer::ARGB32BIT_WHITE);
+        framebuffer.draw_pixel(i, i, vesa_framebuffer::ARGB32BIT_GREEN);
     }
 
     init();
