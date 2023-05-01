@@ -6,8 +6,9 @@
 
   outputs = { self, nixpkgs-unstable, rust-overlay }:
     let
+      system = "x86_64-linux";
       pkgs = import nixpkgs-unstable {
-        system = "x86_64-linux";
+        inherit system;
         overlays = [ rust-overlay.overlays.default ];
         config = { allowUnfree = true; };
       };
@@ -33,5 +34,30 @@
           xorriso
         ];
       };
-    };
+
+      packages.${system}.limine =
+        let
+          # See https://github.com/limine-bootloader/limine/releases for
+          # releases. Make sure to use the "-binary" version!
+          version = "v4.20230428.0-binary";
+        in pkgs.stdenv.mkDerivation {
+          pname = "limine";
+          inherit version;
+
+          src = pkgs.fetchFromGitHub {
+            owner = "limine-bootloader";
+            repo = "limine";
+            rev = version;
+            sha256 = "sha256-QnmKKRzcjDIDNO6YbbBpyFS09imdhYw046miFkQ1/Rw=";
+          };
+
+          buildPhase = ''
+            make
+          '';
+
+          installPhase = ''
+            cp -r . $out/
+          '';
+        };
+      };
 }

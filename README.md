@@ -32,4 +32,3 @@ $ make run
 - Add CI
   - Check out <https://github.com/phil-opp/blog_os/blob/post-12/.github/workflows/code.yml>
   - Consider using nix to load dependencies
-- Get limine installed as a flake package instead of a git submodule

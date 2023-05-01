@@ -1,5 +1,6 @@
 KERNEL = kernel.elf
 ISO = kernel.iso
+LIMINE = $(shell nix build ./flake#limine --print-out-paths --no-link)
 
 .DEFAULT_GOAL := all
 .PHONY: all
@@ -31,23 +32,19 @@ kernel:
 	cargo build
 	cp target/x86_64-rust_os/debug/rust-os $(KERNEL)
 
-.PHONY: limine
-limine:
-	cd limine && git submodule update --init && make
-
-$(ISO): limine kernel
+$(ISO): kernel
 	rm -rf iso_root
 	mkdir -p iso_root
 
 	cp $(KERNEL) \
-		limine.cfg limine/limine.sys limine/limine-cd.bin limine/limine-cd-efi.bin iso_root/
+		limine.cfg $(LIMINE)/limine.sys $(LIMINE)/limine-cd.bin $(LIMINE)/limine-cd-efi.bin iso_root/
 
 	xorriso -as mkisofs -b limine-cd.bin \
 		-no-emul-boot -boot-load-size 4 -boot-info-table \
 		--efi-boot limine-cd-efi.bin \
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
 		iso_root -o $@
-	limine/limine-deploy $@
+	$(LIMINE)/limine-deploy $@
 	rm -rf iso_root
 
 .PHONY: clean
