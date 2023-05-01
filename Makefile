@@ -4,6 +4,7 @@ LIMINE = $(shell nix build ./flake#limine --print-out-paths --no-link)
 
 # Not all crates support `cargo test`
 TEST_CRATES = vesa_framebuffer
+ALL_CRATES = $(TEST_CRATES) kernel
 
 .DEFAULT_GOAL := all
 .PHONY: all
@@ -55,7 +56,11 @@ $(ISO): kernel
 .PHONY: test
 test:
 	for crate in $(TEST_CRATES); do \
-		cd $$crate && cargo test; \
+		(cd $$crate && cargo test) \
+	done
+
+	for crate in $(ALL_CRATES); do \
+		(cd $$crate && cargo fmt --check && cargo clippy) \
 	done
 
 .PHONY: clean
