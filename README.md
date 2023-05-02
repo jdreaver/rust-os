@@ -47,6 +47,7 @@ make test
 
 ## TODO
 
+- Get rid of `ringbuffer` (it is buggy), make my own ring buffer, and remove `#[ignore]` from the failing text buffer test
 - Allocator designs <https://os.phil-opp.com/allocator-designs/>
 - Print text using limine framebuffer
   - [vesa_framebuffer](./vesa_framebuffer)
