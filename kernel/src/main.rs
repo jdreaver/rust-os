@@ -6,8 +6,8 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use bitvec::prelude as bv;
 use rust_os::{allocator, boot_info, gdt, interrupts, memory, serial_println};
+use vesa_framebuffer::{ColorChar, TextBuffer, VESAFramebuffer32Bit};
 
 #[no_mangle]
 extern "C" fn _start() -> ! {
@@ -23,45 +23,20 @@ extern "C" fn _start() -> ! {
     serial_println!("limine framebuffer: {:#?}", limine_framebuffer);
 
     let mut framebuffer = unsafe {
-        vesa_framebuffer::VESAFramebuffer32Bit::from_limine_framebuffer(limine_framebuffer)
+        VESAFramebuffer32Bit::from_limine_framebuffer(limine_framebuffer)
             .expect("failed to create VESAFramebuffer32Bit")
     };
     serial_println!("framebuffer: {:#?}", framebuffer);
 
-    for i in 0..100_usize {
-        framebuffer.draw_pixel(i, i, vesa_framebuffer::ARGB32BIT_GREEN);
-    }
+    let mut text_buffer = TextBuffer::new(&mut framebuffer);
+    text_buffer.write_char(ColorChar::white_char(b'H'));
+    text_buffer.write_char(ColorChar::white_char(b'e'));
+    text_buffer.write_char(ColorChar::white_char(b'l'));
+    text_buffer.write_char(ColorChar::white_char(b'l'));
+    text_buffer.write_char(ColorChar::white_char(b'o'));
+    text_buffer.write_char(ColorChar::white_char(b'!'));
 
-    framebuffer.clear();
-
-    #[rustfmt::skip]
-    let bitmap = bv::bitarr![
-        usize, bv::Msb0;
-        0, 1, 1, 0, 0, 1, 1, 1,
-        0, 1, 1, 0, 0, 1, 1, 1,
-        0, 1, 1, 0, 0, 1, 1, 1,
-        0, 1, 1, 1, 1, 0, 0, 0,
-        0, 1, 1, 1, 1, 0, 0, 0,
-        0, 1, 1, 0, 0, 1, 1, 0,
-        0, 1, 1, 0, 0, 1, 1, 0,
-        0, 1, 1, 0, 0, 1, 1, 0
-    ];
-    serial_println!("raw bitmap: {:?}", bitmap.as_raw_slice());
-    framebuffer.draw_bitmap(
-        200,
-        200,
-        bitmap.as_bitslice(),
-        8,
-        vesa_framebuffer::ARGB32BIT_RED,
-        vesa_framebuffer::ARGB32BIT_WHITE,
-    );
-
-    let mut text_buffer = vesa_framebuffer::TextBuffer::new(&mut framebuffer);
-    text_buffer.write_char(60, 30, b'H');
-    text_buffer.write_char(69, 30, b'e');
-    text_buffer.write_char(78, 30, b'l');
-    text_buffer.write_char(87, 30, b'l');
-    text_buffer.write_char(96, 30, b'o');
+    text_buffer.flush();
 
     init();
 
