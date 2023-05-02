@@ -134,11 +134,18 @@ impl VESAFramebuffer32Bit {
     }
 
     pub fn clear(&mut self) {
-        for i in 0..(self.width_pixels * self.height_pixels) {
-            unsafe {
-                *self.address.add(i) = 0x00;
-            }
-        }
+        // for i in 0..(self.pitch * self.height_pixels) {
+        //     unsafe {
+        //         *self.address.add(i) = 0x00;
+        //     }
+        // }
+
+        // This is faster in debug mode, and it is neat, so I'm keeping it
+        // around.
+        unsafe {
+            core::slice::from_raw_parts_mut(self.address, self.pitch * self.height_pixels)
+                .fill(0x00);
+        };
     }
 }
 

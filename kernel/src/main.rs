@@ -32,6 +32,8 @@ extern "C" fn _start() -> ! {
         framebuffer.draw_pixel(i, i, vesa_framebuffer::ARGB32BIT_GREEN);
     }
 
+    framebuffer.clear();
+
     #[rustfmt::skip]
     let bitmap = bv::bitarr![
         usize, bv::Msb0;
