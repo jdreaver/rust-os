@@ -52,7 +52,7 @@ impl<const N: usize, const W: usize> TextBuffer<N, W> {
         // Wrap text for newline and consume char
         if c.char_byte == b'\n' {
             self.new_line();
-            return
+            return;
         }
 
         // Wrap text to next line but don't consume char
@@ -116,11 +116,11 @@ impl<const N: usize, const W: usize> TextBuffer<N, W> {
 
 impl<const N: usize, const W: usize> fmt::Write for TextBuffer<N, W> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-       for byte in s.bytes() {
-           self.write_char(ColorChar {
-               char_byte: byte,
-               color: ARGB32BIT_WHITE,
-           })
+        for byte in s.bytes() {
+            self.write_char(ColorChar {
+                char_byte: byte,
+                color: ARGB32BIT_WHITE,
+            })
         }
         Ok(())
     }
@@ -139,4 +139,48 @@ fn draw_char(framebuffer: &mut VESAFramebuffer32Bit, x: usize, y: usize, c: Colo
     let bitmap = char_bytes.as_bits::<bitvec::order::Msb0>();
 
     framebuffer.draw_bitmap(x, y, bitmap, FONT_WIDTH_PIXELS, c.color, ARGB32BIT_BLACK);
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn assert_line_text_equal(line: &[ColorChar], expected: &[u8]) {
+        assert_eq!(line.len(), expected.len());
+
+        let left_chars = line
+            .iter()
+            .map(|c| c.char_byte as char)
+            .collect::<Vec<char>>();
+        let right_chars = expected.iter().map(|c| *c as char).collect::<Vec<char>>();
+
+        assert_eq!(left_chars, right_chars);
+    }
+
+    #[test]
+    fn test_text_buffer_writer() {
+        use core::fmt::Write;
+        let mut text_buffer: TextBuffer<4, 4> = TextBuffer::new();
+        writeln!(text_buffer, "abc").unwrap();
+        writeln!(text_buffer, "1234").unwrap();
+
+        assert_eq!(text_buffer.buffer.len(), 3);
+        assert_line_text_equal(text_buffer.buffer.get(-1).unwrap(), &[0; 4]);
+        assert_line_text_equal(text_buffer.buffer.get(-2).unwrap(), b"1234");
+        assert_line_text_equal(text_buffer.buffer.get(-3).unwrap(), b"abc\0");
+    }
+
+    #[test]
+    #[ignore]
+    fn test_text_buffer_implicit_line_wrap() {
+        use core::fmt::Write;
+        let mut text_buffer: TextBuffer<5, 4> = TextBuffer::new();
+        writeln!(text_buffer, "abc").unwrap();
+        writeln!(text_buffer, "1234567").unwrap();
+
+        assert_eq!(text_buffer.buffer.len(), 4);
+        assert_line_text_equal(text_buffer.buffer.get(-1).unwrap(), b"567\0");
+        assert_line_text_equal(text_buffer.buffer.get(-2).unwrap(), b"1234");
+        assert_line_text_equal(text_buffer.buffer.get(-3).unwrap(), b"abc\0");
+    }
 }

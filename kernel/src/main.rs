@@ -7,7 +7,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use rust_os::{allocator, boot_info, gdt, interrupts, memory, serial_println};
-use vesa_framebuffer::{ColorChar, TextBuffer, VESAFramebuffer32Bit};
+use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 
 static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
 
