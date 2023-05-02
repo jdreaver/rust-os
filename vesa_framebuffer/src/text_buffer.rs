@@ -96,12 +96,6 @@ impl<const N: usize, const W: usize> TextBuffer<N, W> {
             };
             lines_from_bottom += 1;
 
-            // N.B. We copy the line here because we can't iterate over the line
-            // while we are mutating ourselves due to the borrow checker. If we
-            // want to get rid of this copy, we can create a new function that
-            // takes the framebuffer and the text buffer as separate arguments.
-            let line = *line;
-
             // Find y coordinate for line. The +1 is for spacing between lines
             pixel_y = match pixel_y.checked_sub(FONT_HEIGHT_PIXELS + 1) {
                 Some(y) => y,
