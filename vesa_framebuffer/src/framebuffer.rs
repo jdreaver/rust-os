@@ -26,7 +26,7 @@ pub struct VESAFramebuffer32Bit {
     /// `width_pixels` times `bits_per_pixel` (converting to bytes per pixel
     /// first, of course). Some exotic resolutions have a different number of
     /// bytes per line than that.
-    pitch: u64,
+    pitch: usize,
 }
 
 impl VESAFramebuffer32Bit {
@@ -73,7 +73,7 @@ impl VESAFramebuffer32Bit {
             address: address as *mut u8,
             width_pixels: fb.width as usize,
             height_pixels: fb.height as usize,
-            pitch: fb.pitch,
+            pitch: fb.pitch as usize,
         })
     }
 
@@ -103,7 +103,7 @@ impl VESAFramebuffer32Bit {
         // This is safe to the caller as long as the framebuffer is valid. The
         // asserts above might panic, but that isn't `unsafe`.
         let bytes_per_pixel = 4; // Assumption of this type is 32 bits (4 bytes) per pixel
-        let pixel_offset = y * (self.pitch as usize) + x * bytes_per_pixel;
+        let pixel_offset = y * self.pitch + x * bytes_per_pixel;
         unsafe {
             *(self.address.add(pixel_offset) as *mut ARGB32Bit) = color;
         }
@@ -129,6 +129,14 @@ impl VESAFramebuffer32Bit {
                 // TODO: Calling draw_pixel is inefficient because we have to
                 // recompute the byte position every time.
                 self.draw_pixel(x + i, y + j, color);
+            }
+        }
+    }
+
+    pub fn clear(&mut self) {
+        for i in 0..(self.width_pixels * self.height_pixels) {
+            unsafe {
+                *self.address.add(i) = 0x00;
             }
         }
     }
