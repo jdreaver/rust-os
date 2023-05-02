@@ -54,6 +54,13 @@ extern "C" fn _start() -> ! {
         vesa_framebuffer::ARGB32BIT_WHITE,
     );
 
+    let mut text_buffer = vesa_framebuffer::TextBuffer::new(&mut framebuffer);
+    text_buffer.write_char(60, 30, b'H');
+    text_buffer.write_char(69, 30, b'e');
+    text_buffer.write_char(78, 30, b'l');
+    text_buffer.write_char(87, 30, b'l');
+    text_buffer.write_char(96, 30, b'o');
+
     init();
 
     let mut mapper = unsafe { memory::init(hhdm_offset) };

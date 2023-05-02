@@ -19,8 +19,8 @@ pub struct VESAFramebuffer32Bit {
     /// convert to a wider pointer when we do writes.
     address: *mut u8,
 
-    width_pixels: u64,
-    height_pixels: u64,
+    width_pixels: usize,
+    height_pixels: usize,
 
     /// Number of bytes per horizontal line. Note that this is _not_ the same as
     /// `width_pixels` times `bits_per_pixel` (converting to bytes per pixel
@@ -71,10 +71,18 @@ impl VESAFramebuffer32Bit {
 
         Ok(Self {
             address: address as *mut u8,
-            width_pixels: fb.width,
-            height_pixels: fb.height,
+            width_pixels: fb.width as usize,
+            height_pixels: fb.height as usize,
             pitch: fb.pitch,
         })
+    }
+
+    pub fn width_pixels(&self) -> usize {
+        self.width_pixels
+    }
+
+    pub fn height_pixels(&self) -> usize {
+        self.height_pixels
     }
 
     /// Draw the give `ARGB32Bit` color to the given pixel coordinates, where x
@@ -85,12 +93,12 @@ impl VESAFramebuffer32Bit {
     /// necessarily accessing memory in the most efficient way. More specific
     /// functions should be used, like functions to draw specific shapes or
     /// glyphs.
+    ///
+    /// Also, we don't need `&mut self` here technically since we are doing
+    /// `unsafe` under the hood, but it's nice to have to prevent data races.
     pub fn draw_pixel(&mut self, x: usize, y: usize, color: ARGB32Bit) {
-        assert!((x as u64) < self.width_pixels, "x coordinate out of bounds");
-        assert!(
-            (y as u64) < self.height_pixels,
-            "y coordinate out of bounds"
-        );
+        assert!(x < self.width_pixels, "x coordinate out of bounds");
+        assert!(y < self.height_pixels, "y coordinate out of bounds");
 
         // This is safe to the caller as long as the framebuffer is valid. The
         // asserts above might panic, but that isn't `unsafe`.
@@ -112,19 +120,12 @@ impl VESAFramebuffer32Bit {
         foreground: ARGB32Bit,
         background: ARGB32Bit,
     ) {
-        assert!((x as u64) < self.width_pixels, "x coordinate out of bounds");
-        assert!(
-            (y as u64) < self.height_pixels,
-            "y coordinate out of bounds"
-        );
+        assert!(x < self.width_pixels, "x coordinate out of bounds");
+        assert!(y < self.height_pixels, "y coordinate out of bounds");
 
         for (j, row) in bitmap.chunks(bits_per_row).enumerate() {
             for (i, bit) in row.iter().enumerate() {
-                let color = if *bit {
-                    foreground
-                } else {
-                    background
-                };
+                let color = if *bit { foreground } else { background };
                 // TODO: Calling draw_pixel is inefficient because we have to
                 // recompute the byte position every time.
                 self.draw_pixel(x + i, y + j, color);
@@ -171,8 +172,8 @@ pub const ARGB32BIT_WHITE: ARGB32Bit = ARGB32Bit {
 pub const ARGB32BIT_BLACK: ARGB32Bit = ARGB32Bit {
     alpha: 0xFF,
     red: 0x00,
-    green: 0xFF,
-    blue: 0xFF,
+    green: 0x00,
+    blue: 0x00,
 };
 
 pub const ARGB32BIT_RED: ARGB32Bit = ARGB32Bit {
