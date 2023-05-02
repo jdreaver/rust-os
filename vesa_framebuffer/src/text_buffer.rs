@@ -1,3 +1,5 @@
+use core::fmt;
+
 use bitvec::prelude::AsBits;
 use ringbuffer::{ConstGenericRingBuffer, RingBuffer, RingBufferExt, RingBufferWrite};
 
@@ -5,7 +7,7 @@ use crate::font::{FONT_HEIGHT_PIXELS, FONT_START_CHAR, FONT_WIDTH_PIXELS, OPENGL
 use crate::framebuffer::{ARGB32Bit, VESAFramebuffer32Bit, ARGB32BIT_BLACK, ARGB32BIT_WHITE};
 
 /// ASCII character along with a color.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ColorChar {
     char_byte: u8,
     color: ARGB32Bit,
@@ -47,7 +49,14 @@ impl<const N: usize, const W: usize> TextBuffer<N, W> {
     /// the text to the framebuffer. You must call `flush` to draw the text to
     /// the framebuffer.
     pub fn write_char(&mut self, c: ColorChar) {
-        if self.cursor == W || c.char_byte == b'\n' {
+        // Wrap text for newline and consume char
+        if c.char_byte == b'\n' {
+            self.new_line();
+            return
+        }
+
+        // Wrap text to next line but don't consume char
+        if self.cursor == W {
             self.new_line();
         }
 
@@ -80,7 +89,8 @@ impl<const N: usize, const W: usize> TextBuffer<N, W> {
                 break;
             }
 
-            let line = match self.buffer.get(lines_from_bottom) {
+            let buffer_index = -(lines_from_bottom + 1);
+            let line = match self.buffer.get(buffer_index) {
                 Some(line) => line,
                 None => break,
             };
@@ -110,10 +120,22 @@ impl<const N: usize, const W: usize> TextBuffer<N, W> {
     }
 }
 
+impl<const N: usize, const W: usize> fmt::Write for TextBuffer<N, W> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+       for byte in s.bytes() {
+           self.write_char(ColorChar {
+               char_byte: byte,
+               color: ARGB32BIT_WHITE,
+           })
+        }
+        Ok(())
+    }
+}
+
 fn draw_char(framebuffer: &mut VESAFramebuffer32Bit, x: usize, y: usize, c: ColorChar) {
     let index: usize = match c.char_byte.checked_sub(FONT_START_CHAR) {
         Some(index) => index as usize,
-        None => return,
+        None => 0, // Index of space character
     };
 
     let char_bytes = match OPENGL_FONT.get(index) {

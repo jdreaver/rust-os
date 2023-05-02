@@ -166,7 +166,7 @@ fn color_value_from_mask(mask_size: u8, mask_shift: u8) -> u32 {
 /// A 32 bit color with alpha, red, green, and blue components. Used with
 /// `VESAFramebuffer32Bit`.
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ARGB32Bit {
     // Note that the fields are in reverse order from how they are stored in
     // memory. This is because the x86 is little endian and we are expected to
