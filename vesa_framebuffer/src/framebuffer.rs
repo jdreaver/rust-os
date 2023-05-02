@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), no_std)]
-
 use bitvec::prelude as bv;
 
 /// A VESA-compatible framebuffer where pixels are drawn directly to a location
