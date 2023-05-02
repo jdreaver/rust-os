@@ -12,7 +12,7 @@ use bitvec::prelude as bv;
 /// - <https://wiki.osdev.org/User:Omarrx024/VESA_Tutorial>
 /// - <https://wiki.osdev.org/Drawing_In_a_Linear_Framebuffer>
 #[derive(Debug)]
-pub struct VESAFrambuffer32Bit {
+pub struct VESAFramebuffer32Bit {
     /// Pointer to the start of the framebuffer.
     ///
     /// N.B. We store this as `u8` so we do per-byte pointer arithmetic, and we
@@ -29,7 +29,7 @@ pub struct VESAFrambuffer32Bit {
     pitch: u64,
 }
 
-impl VESAFrambuffer32Bit {
+impl VESAFramebuffer32Bit {
     /// Create a `VESAFrambuffer` from a `limine` framebuffer, returned to the
     /// kernel from the `limine` bootloader. Returns `Err` if the framebuffer
     /// is not 32 bits per pixel, and various other invariants aren't met.
@@ -148,7 +148,7 @@ fn color_value_from_mask(mask_size: u8, mask_shift: u8) -> u32 {
 }
 
 /// A 32 bit color with alpha, red, green, and blue components. Used with
-/// `VESAFrambuffer32Bit`.
+/// `VESAFramebuffer32Bit`.
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct ARGB32Bit {
