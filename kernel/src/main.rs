@@ -31,12 +31,10 @@ extern "C" fn _start() -> ! {
     serial_println!("framebuffer: {:#?}", framebuffer);
 
     unsafe {
-        TEXT_BUFFER.write_char(ColorChar::white_char(b'H'));
-        TEXT_BUFFER.write_char(ColorChar::white_char(b'e'));
-        TEXT_BUFFER.write_char(ColorChar::white_char(b'l'));
-        TEXT_BUFFER.write_char(ColorChar::white_char(b'l'));
-        TEXT_BUFFER.write_char(ColorChar::white_char(b'o'));
-        TEXT_BUFFER.write_char(ColorChar::white_char(b'!'));
+        use core::fmt::Write;
+
+        writeln!(TEXT_BUFFER, "Hello!").expect("failed to write to text buffer");
+        writeln!(TEXT_BUFFER, "World!").expect("failed to write to text buffer");
 
         TEXT_BUFFER.flush(&mut framebuffer);
     };
