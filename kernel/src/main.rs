@@ -9,6 +9,8 @@ use alloc::vec::Vec;
 use rust_os::{allocator, boot_info, gdt, interrupts, memory, serial_println};
 use vesa_framebuffer::{ColorChar, TextBuffer, VESAFramebuffer32Bit};
 
+static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
+
 #[no_mangle]
 extern "C" fn _start() -> ! {
     boot_info::print_limine_boot_info();
@@ -28,15 +30,16 @@ extern "C" fn _start() -> ! {
     };
     serial_println!("framebuffer: {:#?}", framebuffer);
 
-    let mut text_buffer = TextBuffer::new(&mut framebuffer);
-    text_buffer.write_char(ColorChar::white_char(b'H'));
-    text_buffer.write_char(ColorChar::white_char(b'e'));
-    text_buffer.write_char(ColorChar::white_char(b'l'));
-    text_buffer.write_char(ColorChar::white_char(b'l'));
-    text_buffer.write_char(ColorChar::white_char(b'o'));
-    text_buffer.write_char(ColorChar::white_char(b'!'));
+    unsafe {
+        TEXT_BUFFER.write_char(ColorChar::white_char(b'H'));
+        TEXT_BUFFER.write_char(ColorChar::white_char(b'e'));
+        TEXT_BUFFER.write_char(ColorChar::white_char(b'l'));
+        TEXT_BUFFER.write_char(ColorChar::white_char(b'l'));
+        TEXT_BUFFER.write_char(ColorChar::white_char(b'o'));
+        TEXT_BUFFER.write_char(ColorChar::white_char(b'!'));
 
-    text_buffer.flush();
+        TEXT_BUFFER.flush(&mut framebuffer);
+    };
 
     init();
 
