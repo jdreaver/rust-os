@@ -9,7 +9,7 @@ ifeq ($(RUST_BUILD_MODE),release)
 endif
 
 # Not all crates support `cargo test`
-TEST_CRATES = vesa_framebuffer
+TEST_CRATES = vesa_framebuffer ring_buffer
 ALL_CRATES = $(TEST_CRATES) kernel
 
 .DEFAULT_GOAL := all
