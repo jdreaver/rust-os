@@ -3,7 +3,9 @@ use core::fmt;
 use bitvec::prelude::AsBits;
 use ringbuffer::{ConstGenericRingBuffer, RingBuffer, RingBufferExt, RingBufferWrite};
 
-use crate::font::{FONT_HEIGHT_PIXELS, FONT_START_CHAR, FONT_WIDTH_PIXELS, OPENGL_FONT};
+use crate::font::{
+    FONT_HEIGHT_PIXELS, FONT_SPACE_CHARACTER, FONT_START_CHAR, FONT_WIDTH_PIXELS, OPENGL_FONT,
+};
 use crate::framebuffer::{ARGB32Bit, VESAFramebuffer32Bit, ARGB32BIT_BLACK, ARGB32BIT_WHITE};
 
 /// ASCII character along with a color.
@@ -15,11 +17,11 @@ pub struct ColorChar {
 
 impl ColorChar {
     pub fn new(char_byte: u8, color: ARGB32Bit) -> Self {
-        ColorChar { char_byte, color }
+        Self { char_byte, color }
     }
 
     pub fn white_char(char_byte: u8) -> Self {
-        ColorChar::new(char_byte, ARGB32BIT_WHITE)
+        Self::new(char_byte, ARGB32BIT_WHITE)
     }
 }
 
@@ -61,12 +63,11 @@ impl<const N: usize, const W: usize> TextBuffer<N, W> {
         }
 
         // Get the current line, ensuring one exists.
-        let current_line = match self.buffer.back_mut() {
-            Some(line) => line,
-            None => {
-                self.new_line();
-                self.buffer.back_mut().unwrap()
-            }
+        let current_line = if let Some(line) = self.buffer.back_mut() {
+            line
+        } else {
+            self.new_line();
+            self.buffer.back_mut().unwrap()
         };
 
         current_line[self.cursor] = c;
@@ -85,15 +86,13 @@ impl<const N: usize, const W: usize> TextBuffer<N, W> {
         let mut lines_from_bottom: isize = 0;
 
         loop {
+            #[allow(clippy::cast_possible_wrap)]
             if lines_from_bottom == self.buffer.len() as isize {
                 break;
             }
 
             let buffer_index = -(lines_from_bottom + 1);
-            let line = match self.buffer.get(buffer_index) {
-                Some(line) => line,
-                None => break,
-            };
+            let Some(line) = self.buffer.get(buffer_index) else { break };
             lines_from_bottom += 1;
 
             // Find y coordinate for line. The +1 is for spacing between lines
@@ -120,22 +119,19 @@ impl<const N: usize, const W: usize> fmt::Write for TextBuffer<N, W> {
             self.write_char(ColorChar {
                 char_byte: byte,
                 color: ARGB32BIT_WHITE,
-            })
+            });
         }
         Ok(())
     }
 }
 
 fn draw_char(framebuffer: &mut VESAFramebuffer32Bit, x: usize, y: usize, c: ColorChar) {
-    let index: usize = match c.char_byte.checked_sub(FONT_START_CHAR) {
-        Some(index) => index as usize,
-        None => 0, // Index of space character
-    };
+    let index: usize = c
+        .char_byte
+        .checked_sub(FONT_START_CHAR)
+        .map_or(FONT_SPACE_CHARACTER, |index| index as usize);
 
-    let char_bytes = match OPENGL_FONT.get(index) {
-        Some(bytes) => bytes,
-        None => return,
-    };
+    let Some(char_bytes) = OPENGL_FONT.get(index) else { return };
     let bitmap = char_bytes.as_bits::<bitvec::order::Msb0>();
 
     framebuffer.draw_bitmap(x, y, bitmap, FONT_WIDTH_PIXELS, c.color, ARGB32BIT_BLACK);

@@ -1,14 +1,16 @@
 // Font starts at space character, or ASCII 32
-pub(crate) const FONT_START_CHAR: u8 = 32;
+pub const FONT_START_CHAR: u8 = 32;
 
-pub(crate) const FONT_WIDTH_PIXELS: usize = 8;
-pub(crate) const FONT_HEIGHT_PIXELS: usize = 13;
+pub const FONT_WIDTH_PIXELS: usize = 8;
+pub const FONT_HEIGHT_PIXELS: usize = 13;
+
+pub const FONT_SPACE_CHARACTER: usize = 32;
 
 /// Font from
 /// <https://courses.cs.washington.edu/courses/cse457/98a/tech/OpenGL/font.c>,
 /// except bytes for each character are reversed (the first byte is the topmost
 /// row of pixels, and the last byte is the bottommost row of pixels).
-pub(crate) const OPENGL_FONT: [[u8; FONT_HEIGHT_PIXELS]; 95] = [
+pub const OPENGL_FONT: [[u8; FONT_HEIGHT_PIXELS]; 95] = [
     // Starts with space, which is 32 in ASCII
     [
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

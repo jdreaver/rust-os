@@ -4,6 +4,23 @@
 //! pointer to the next free location.
 
 #![cfg_attr(not(test), no_std)]
+#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cargo_common_metadata,
+    clippy::implicit_hasher,
+    clippy::implicit_return,
+    clippy::missing_const_for_fn,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::module_name_repetitions,
+    clippy::multiple_crate_versions,
+    clippy::must_use_candidate,
+    clippy::new_without_default,
+    clippy::suboptimal_flops,
+    clippy::wildcard_imports
+)]
 
 /// A simple, static, append-only ring buffer.
 #[derive(Debug)]
@@ -45,7 +62,6 @@ impl<T: Copy, const N: usize> RingBuffer<T, N> {
         } else {
             self.elements[N - 1 - (index - self.next_free)]
         }
-
 
         // if index < self.next_free {
         //     return self.elements[self.next_free - index - 1];

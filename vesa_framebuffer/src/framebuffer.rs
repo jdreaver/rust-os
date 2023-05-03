@@ -70,7 +70,7 @@ impl VESAFramebuffer32Bit {
             .expect("failed to convert limine address to pointer");
 
         Ok(Self {
-            address: address as *mut u8,
+            address: address.cast::<u8>(),
             width_pixels: fb.width as usize,
             height_pixels: fb.height as usize,
             pitch: fb.pitch as usize,
@@ -105,7 +105,7 @@ impl VESAFramebuffer32Bit {
         let bytes_per_pixel = 4; // Assumption of this type is 32 bits (4 bytes) per pixel
         let pixel_offset = y * self.pitch + x * bytes_per_pixel;
         unsafe {
-            *(self.address.add(pixel_offset) as *mut ARGB32Bit) = color;
+            *self.address.add(pixel_offset).cast::<ARGB32Bit>() = color;
         }
     }
 
