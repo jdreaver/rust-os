@@ -32,6 +32,7 @@ pub struct RingBuffer<T, const N: usize> {
     next_free: usize,
 }
 
+// TODO: Get rid of Copy requirement.
 impl<T: Copy, const N: usize> RingBuffer<T, N> {
     pub const fn new() -> Self {
         Self {
@@ -61,23 +62,61 @@ impl<T: Copy, const N: usize> RingBuffer<T, N> {
     /// from the latest element. For example, `0` is the element most recently
     /// pushed, `1` is the second most recent element, and `N-1` is the oldest
     /// element. Returns `None` if no element exists at the given index.
-    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
+    pub fn get(&self, index: usize) -> Option<&T> {
         // Out of bounds
         if index >= self.elements.len() {
             return None;
         }
 
         if index < self.next_free {
-            self.elements
-                .get_mut(self.next_free - index - 1)
-                .unwrap()
-                .as_mut()
+            self.elements[self.next_free - index - 1].as_ref()
         } else {
-            self.elements
-                .get_mut(N - 1 - (index - self.next_free))
-                .unwrap()
-                .as_mut()
+            self.elements[N - 1 - (index - self.next_free)].as_ref()
         }
+    }
+
+    /// Same as `get`, but returns a mutable reference.
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
+        // TODO: Use a macro to avoid code duplication with `get`.
+
+        // Out of bounds
+        if index >= self.elements.len() {
+            return None;
+        }
+
+        if index < self.next_free {
+            self.elements[self.next_free - index - 1].as_mut()
+        } else {
+            self.elements[N - 1 - (index - self.next_free)].as_mut()
+        }
+    }
+
+    pub fn iter(&self) -> RingBufferIter<T, N> {
+        RingBufferIter {
+            buffer: self,
+            index: 0,
+        }
+    }
+}
+
+/// An iterator over the elements of a ring buffer. The iterator yields the
+/// elements in order from newest to oldest.
+pub struct RingBufferIter<'a, T, const N: usize> {
+    buffer: &'a RingBuffer<T, N>,
+    index: usize,
+}
+
+impl<'a, T: Copy, const N: usize> Iterator for RingBufferIter<'a, T, N> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.buffer.len() {
+            return None;
+        }
+
+        let item = self.buffer.get(self.index);
+        self.index += 1;
+        item
     }
 }
 
@@ -97,11 +136,18 @@ mod tests {
         assert_eq!(buffer.get_mut(0), Some(&mut 1));
         assert_eq!(buffer.get_mut(1), None);
 
+        assert_eq!(buffer.get(0), Some(&1));
+        assert_eq!(buffer.get(1), None);
+
         buffer.push(2);
         assert_eq!(buffer.len(), 2);
         assert_eq!(buffer.get_mut(0), Some(&mut 2));
         assert_eq!(buffer.get_mut(1), Some(&mut 1));
         assert_eq!(buffer.get_mut(2), None);
+
+        assert_eq!(buffer.get(0), Some(&2));
+        assert_eq!(buffer.get(1), Some(&1));
+        assert_eq!(buffer.get(2), None);
 
         buffer.push(3);
         assert_eq!(buffer.len(), 3);
@@ -110,6 +156,11 @@ mod tests {
         assert_eq!(buffer.get_mut(2), Some(&mut 1));
         assert_eq!(buffer.get_mut(3), None);
 
+        assert_eq!(buffer.get(0), Some(&3));
+        assert_eq!(buffer.get(1), Some(&2));
+        assert_eq!(buffer.get(2), Some(&1));
+        assert_eq!(buffer.get(3), None);
+
         // Wrap around
         buffer.push(4);
         assert_eq!(buffer.len(), 3);
@@ -117,5 +168,10 @@ mod tests {
         assert_eq!(buffer.get_mut(1), Some(&mut 3));
         assert_eq!(buffer.get_mut(2), Some(&mut 2));
         assert_eq!(buffer.get_mut(3), None);
+
+        assert_eq!(buffer.get(0), Some(&4));
+        assert_eq!(buffer.get(1), Some(&3));
+        assert_eq!(buffer.get(2), Some(&2));
+        assert_eq!(buffer.get(3), None);
     }
 }

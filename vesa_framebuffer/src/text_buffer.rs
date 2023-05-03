@@ -84,16 +84,10 @@ impl<const N: usize, const W: usize> TextBuffer<N, W> {
         // out of space in the framebuffer or we run out of lines in the text
         // buffer.
         let mut pixel_y: usize = framebuffer.height_pixels();
-        let mut lines_from_bottom: usize = 0;
 
-        loop {
-            if lines_from_bottom == self.buffer.len() {
-                break;
-            }
-
-            let Some(line) = self.buffer.get_mut(lines_from_bottom) else { break };
-            lines_from_bottom += 1;
-
+        // N.B. Our ring buffer implementation iterates from the most recently
+        // inserted item to the oldest item.
+        for line in self.buffer.iter() {
             // Find y coordinate for line. The +1 is for spacing between lines
             pixel_y = match pixel_y.checked_sub(FONT_HEIGHT_PIXELS + 1) {
                 Some(y) => y,
