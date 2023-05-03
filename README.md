@@ -47,6 +47,10 @@ make test
 
 ## TODO
 
+- Filesystem support
+  - Example <https://github.com/rafalh/rust-fatfs>
+  - Limine with FAT <https://github.com/limine-bootloader/limine/blob/04cc4390b4920df024caaf486208da86d45b145f/test.mk>
+  - <https://wiki.osdev.org/FAT>
 - Allocator designs <https://os.phil-opp.com/allocator-designs/>
 - Tests
   - <https://www.infinyon.com/blog/2021/04/rust-custom-test-harness/>
