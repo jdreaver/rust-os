@@ -44,7 +44,7 @@ extern "C" fn _start() -> ! {
     let mut mapper = unsafe { memory::init(hhdm_offset) };
 
     let mut frame_allocator = boot_info::allocator_from_limine_memory_map();
-    serial_println!("allocator: {:?}", frame_allocator);
+    serial_println!("allocator: {:#?}", frame_allocator);
 
     allocator::init_heap(&mut mapper, &mut frame_allocator)
         .expect("failed to initialize allocator");
@@ -72,15 +72,23 @@ extern "C" fn _start() -> ! {
         serial_println!("{:?} -> {:?}", virt, phys);
     }
 
-    use x86_64::structures::paging::FrameAllocator;
-    serial_println!("next page: {:?}", frame_allocator.allocate_frame());
-    serial_println!("next page: {:?}", frame_allocator.allocate_frame());
+    use x86_64::structures::paging::{FrameAllocator, Size2MiB, Size4KiB};
+
+    let alloc_4kib =
+        <memory::NaiveFreeMemoryBlockAllocator as FrameAllocator<Size4KiB>>::allocate_frame;
+    let alloc_2mib =
+        <memory::NaiveFreeMemoryBlockAllocator as FrameAllocator<Size2MiB>>::allocate_frame;
+
+    serial_println!("next 4KiB page: {:?}", alloc_4kib(&mut frame_allocator));
+    serial_println!("next 2MiB page: {:?}", alloc_2mib(&mut frame_allocator));
+    serial_println!("next 4KiB page: {:?}", alloc_4kib(&mut frame_allocator));
+    serial_println!("next 2MiB page: {:?}", alloc_2mib(&mut frame_allocator));
 
     for _ in 0..10000 {
-        frame_allocator.allocate_frame();
+        alloc_4kib(&mut frame_allocator);
     }
 
-    serial_println!("far page: {:?}", frame_allocator.allocate_frame());
+    serial_println!("far page: {:?}", alloc_4kib(&mut frame_allocator));
 
     hlt_loop()
 }

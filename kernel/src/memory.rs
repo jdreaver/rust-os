@@ -39,16 +39,6 @@ pub struct UsableMemoryRegion {
     pub len: u64,
 }
 
-impl UsableMemoryRegion {
-    fn available_pages_in_region(&self, page_size: u64) -> usize {
-        (self.len / page_size) as usize
-    }
-
-    fn page_start_addr(&self, page: usize, page_size: u64) -> PhysAddr {
-        self.start_address + (page as u64 * page_size)
-    }
-}
-
 const MAX_USABLE_MEMORY_REGIONS: usize = 16;
 
 /// A simple allocator that allocates memory by simply keeping track of the next
@@ -59,15 +49,7 @@ const MAX_USABLE_MEMORY_REGIONS: usize = 16;
 ///
 /// Use `from_iter` to instantiate this type from memory regions.
 #[derive(Debug)]
-pub struct NaiveFreeMemoryBlockAllocator<S: PageSize> {
-    /// Store the page size as `PhantomData` to make this type generic over the
-    /// page size, but tie a specific allocator to a concrete page size for its
-    /// lifetime.
-    ///
-    /// Note that this isn't required! We could always support multiple page
-    /// sizes in the future using the same allocator.
-    _page_size: core::marker::PhantomData<S>,
-
+pub struct NaiveFreeMemoryBlockAllocator {
     /// The list of memory regions that we can use for allocations. This would
     /// be a `Vec<UsageMemoryRegion>`, but we can't use `Vec` without an
     /// allocator, so we use a fixed-size array instead.
@@ -81,11 +63,11 @@ pub struct NaiveFreeMemoryBlockAllocator<S: PageSize> {
     /// allocation.
     current_memory_region: usize,
 
-    /// How many pages we are within the current region.
-    current_page_within_region: usize,
+    /// Where we are within the current memory region.
+    region_offset_bytes: u64,
 }
 
-impl<S: PageSize> NaiveFreeMemoryBlockAllocator<S> {
+impl NaiveFreeMemoryBlockAllocator {
     /// # Safety
     ///
     /// This function is unsafe because the caller must guarantee that the all
@@ -110,21 +92,20 @@ impl<S: PageSize> NaiveFreeMemoryBlockAllocator<S> {
         }
 
         Self {
-            _page_size: core::marker::PhantomData,
             usable_memory_regions,
             num_memory_regions,
             current_memory_region: 0,
-            current_page_within_region: 0,
+            region_offset_bytes: 0,
         }
     }
 }
 
-unsafe impl<S: PageSize> FrameAllocator<S> for NaiveFreeMemoryBlockAllocator<S> {
+unsafe impl<S: PageSize> FrameAllocator<S> for NaiveFreeMemoryBlockAllocator {
     // TODO: This logic is hairy. This should be unit tested.
     fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
         let page_size: u64 = S::SIZE;
 
-        // Find the next free page
+        // Find the next memory region with enough space for our page.
         loop {
             if self.current_memory_region >= self.num_memory_regions {
                 // We have run out of memory regions, so we can't allocate any more
@@ -132,23 +113,28 @@ unsafe impl<S: PageSize> FrameAllocator<S> for NaiveFreeMemoryBlockAllocator<S> 
                 return None;
             }
 
-            let current_region = self.usable_memory_regions[self.current_memory_region];
-            let available_pages = current_region.available_pages_in_region(page_size);
-            if available_pages <= self.current_page_within_region {
+            // Construct the next page
+            let memory_region = self.usable_memory_regions[self.current_memory_region];
+            let frame_address = memory_region.start_address + self.region_offset_bytes;
+            // Pages must be aligned to their size.
+            //
+            // NOTE: This align_up call can waste a ton of space. For example,
+            // if you just previously allocated a 4 KiB page that was on a 2 MiB
+            // boundary, but now you are allocating a new 2 MiB page, align_up
+            // will consume 2 MiB - 4 KiB of wasted space. This is a naive
+            // allocator so that is okay for now.
+            let frame_address = frame_address.align_up(page_size);
+
+            // Make sure we have enough space in the current region. If not, go to the next one.
+            if frame_address - memory_region.start_address >= memory_region.len {
                 self.current_memory_region += 1;
-                self.current_page_within_region = 0;
+                self.region_offset_bytes = 0;
             } else {
-                break;
+                let frame: PhysFrame<S> = PhysFrame::from_start_address(frame_address)
+                    .expect("frame address is invalid, even though we just aligned it!");
+                self.region_offset_bytes += page_size;
+                return Some(frame);
             }
         }
-
-        // Construct the next page
-        let memory_region = self.usable_memory_regions[self.current_memory_region];
-        let current_page =
-            memory_region.page_start_addr(self.current_page_within_region, page_size);
-        let frame: PhysFrame<S> = PhysFrame::containing_address(current_page);
-        self.current_page_within_region += 1;
-
-        Some(frame)
     }
 }

@@ -2,7 +2,6 @@ use limine::{
     LimineBootInfoRequest, LimineFramebufferRequest, LimineHhdmRequest, LimineKernelAddressRequest,
     LimineMemmapRequest, NonNullPtr,
 };
-use x86_64::structures::paging::Size4KiB;
 use x86_64::{PhysAddr, VirtAddr};
 
 use crate::{memory, serial, serial_print, serial_println};
@@ -126,7 +125,7 @@ pub fn print_limine_memory_map() {
 
 /// Create a `NaiveFreeMemoryBlockAllocator` from the usable and reclaimable
 /// regions in the limine memory map.
-pub fn allocator_from_limine_memory_map() -> memory::NaiveFreeMemoryBlockAllocator<Size4KiB> {
+pub fn allocator_from_limine_memory_map() -> memory::NaiveFreeMemoryBlockAllocator {
     // SAFETY: The limine memory map is valid for the lifetime of the kernel.
     unsafe {
         memory::NaiveFreeMemoryBlockAllocator::from_iter(
