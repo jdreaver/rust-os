@@ -1,5 +1,5 @@
 KERNEL = kernel.elf
-ISO = kernel.iso
+HDD = kernel.hdd
 LIMINE = $(shell nix build ./flake#limine --print-out-paths --no-link)
 
 RUST_BUILD_MODE = debug
@@ -14,9 +14,9 @@ ALL_CRATES = $(TEST_CRATES) kernel
 
 .DEFAULT_GOAL := all
 .PHONY: all
-all: $(ISO)
+all: $(HDD)
 
-QEMU_ARGS += -cdrom $(ISO)
+QEMU_ARGS += -hda $(HDD)
 QEMU_ARGS += -display gtk,zoom-to-fit=on # Makes it so increasing screen size zooms in, useful for tiny fonts
 QEMU_ARGS += -vga virtio # More modern, better performance than default -vga std
 QEMU_ARGS += -M q35 # Use the q35 chipset
@@ -24,7 +24,7 @@ QEMU_ARGS += -m 2G # More memory
 QEMU_ARGS += -serial stdio # Add serial output to terminal
 
 .PHONY: run
-run: $(ISO)
+run: $(HDD)
 	qemu-system-x86_64 $(QEMU_ARGS)
 
 # N.B. Run `make run-debug` in one terminal, and `make gdb` in another.
@@ -32,7 +32,7 @@ QEMU_DEBUG_ARGS += $(QEMU_ARGS)
 QEMU_DEBUG_ARGS += -d int,cpu_reset,guest_errors # Log some unexpected things. Run qemu-system-x86_64 -d help to see more.
 # QEMU_DEBUG_ARGS += -M q35,accel=tcg # Disable hardware acceleration which makes logging interrupts give more info.
 .PHONY: run-debug
-run-debug: $(ISO)
+run-debug: $(HDD)
 	qemu-system-x86_64 $(QEMU_DEBUG_ARGS) -s -S
 
 .PHONY: gdb
@@ -44,20 +44,43 @@ kernel:
 	cd kernel && cargo build $(RUST_BUILD_MODE_FLAG)
 	cp kernel/target/x86_64-rust_os/$(RUST_BUILD_MODE)/rust-os $(KERNEL)
 
-$(ISO): kernel
-	rm -rf iso_root
-	mkdir -p iso_root
+# Old ISO build. Run in QEMU with: -cdrom $(ISO)
+# ISO = kernel.iso
+# $(ISO): kernel
+# 	rm -rf iso_root
+# 	mkdir -p iso_root
+#
+# 	cp $(KERNEL) \
+# 		limine.cfg $(LIMINE)/limine.sys $(LIMINE)/limine-cd.bin $(LIMINE)/limine-cd-efi.bin iso_root/
+#
+# 	xorriso -as mkisofs -b limine-cd.bin \
+# 		-no-emul-boot -boot-load-size 4 -boot-info-table \
+# 		--efi-boot limine-cd-efi.bin \
+# 		-efi-boot-part --efi-boot-image --protective-msdos-label \
+# 		iso_root -o $@
+#
+# 	$(LIMINE)/limine-deploy $@
+# 	rm -rf iso_root
 
-	cp $(KERNEL) \
-		limine.cfg $(LIMINE)/limine.sys $(LIMINE)/limine-cd.bin $(LIMINE)/limine-cd-efi.bin iso_root/
-
-	xorriso -as mkisofs -b limine-cd.bin \
-		-no-emul-boot -boot-load-size 4 -boot-info-table \
-		--efi-boot limine-cd-efi.bin \
-		-efi-boot-part --efi-boot-image --protective-msdos-label \
-		iso_root -o $@
-	$(LIMINE)/limine-deploy $@
-	rm -rf iso_root
+# Adapted from https://github.com/limine-bootloader/limine-barebones/blob/trunk/GNUmakefile
+$(HDD): kernel
+	rm -f $(HDD)
+	dd if=/dev/zero bs=1M count=0 seek=64 of=$(HDD)
+	parted -s $(HDD) mklabel gpt
+	parted -s $(HDD) mkpart ESP fat32 2048s 100%
+	parted -s $(HDD) set 1 esp on
+	$(LIMINE)/limine-deploy $(HDD)
+	sudo losetup -Pf --show $(HDD) >loopback_dev
+	sudo mkfs.fat -F 32 `cat loopback_dev`p1
+	mkdir -p img_mount
+	sudo mount `cat loopback_dev`p1 img_mount
+	sudo mkdir -p img_mount/EFI/BOOT
+	sudo cp -v $(KERNEL) limine.cfg $(LIMINE)/limine.sys img_mount/
+	sudo cp -v $(LIMINE)/BOOTX64.EFI img_mount/EFI/BOOT/
+	sync img_mount
+	sudo umount img_mount
+	sudo losetup -d `cat loopback_dev`
+	rm -rf loopback_dev img_mount
 
 .PHONY: test
 test:
@@ -71,4 +94,4 @@ test:
 
 .PHONY: clean
 clean:
-	rm -rf target iso_root *.iso *.elf
+	rm -rf target img_mount iso_root *.iso *.elf

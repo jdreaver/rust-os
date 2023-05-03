@@ -32,6 +32,7 @@
 
           # Build
           xorriso
+          parted
         ];
       };
 
