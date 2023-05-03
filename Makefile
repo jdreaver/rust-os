@@ -66,7 +66,7 @@ test:
 	done
 
 	for crate in $(ALL_CRATES); do \
-		(cd $$crate && cargo fmt --check && cargo clippy) \
+		(cd $$crate && cargo clippy && cargo fmt --check) \
 	done
 
 .PHONY: clean
