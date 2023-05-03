@@ -1,10 +1,11 @@
 use core::fmt;
 
 use bitvec::prelude::AsBits;
-use ringbuffer::{ConstGenericRingBuffer, RingBuffer, RingBufferExt, RingBufferWrite};
+use ring_buffer::RingBuffer;
 
 use crate::font::{
-    FONT_HEIGHT_PIXELS, FONT_SPACE_CHARACTER, FONT_START_CHAR, FONT_WIDTH_PIXELS, OPENGL_FONT,
+    FONT_HEIGHT_PIXELS, FONT_SPACE_CHARACTER_INDEX, FONT_START_CHAR_ASCII_CODE, FONT_WIDTH_PIXELS,
+    OPENGL_FONT,
 };
 use crate::framebuffer::{ARGB32Bit, VESAFramebuffer32Bit, ARGB32BIT_BLACK, ARGB32BIT_WHITE};
 
@@ -28,7 +29,7 @@ impl ColorChar {
 /// A cursor-based text buffer that can print text to a framebuffer.
 pub struct TextBuffer<const N: usize = 50, const W: usize = 100> {
     /// Ring buffer that holds the text lines.
-    buffer: ConstGenericRingBuffer<[ColorChar; W], N>,
+    buffer: RingBuffer<[ColorChar; W], N>,
 
     /// Cursor into the current line of text.
     cursor: usize,
@@ -37,7 +38,7 @@ pub struct TextBuffer<const N: usize = 50, const W: usize = 100> {
 impl<const N: usize, const W: usize> TextBuffer<N, W> {
     pub const fn new() -> Self {
         Self {
-            buffer: ConstGenericRingBuffer::new(),
+            buffer: RingBuffer::new(),
             cursor: 0,
         }
     }
@@ -63,11 +64,11 @@ impl<const N: usize, const W: usize> TextBuffer<N, W> {
         }
 
         // Get the current line, ensuring one exists.
-        let current_line = if let Some(line) = self.buffer.back_mut() {
+        let current_line = if let Some(line) = self.buffer.get_mut(0) {
             line
         } else {
             self.new_line();
-            self.buffer.back_mut().unwrap()
+            self.buffer.get_mut(0).unwrap()
         };
 
         current_line[self.cursor] = c;
@@ -83,16 +84,14 @@ impl<const N: usize, const W: usize> TextBuffer<N, W> {
         // out of space in the framebuffer or we run out of lines in the text
         // buffer.
         let mut pixel_y: usize = framebuffer.height_pixels();
-        let mut lines_from_bottom: isize = 0;
+        let mut lines_from_bottom: usize = 0;
 
         loop {
-            #[allow(clippy::cast_possible_wrap)]
-            if lines_from_bottom == self.buffer.len() as isize {
+            if lines_from_bottom == self.buffer.len() {
                 break;
             }
 
-            let buffer_index = -(lines_from_bottom + 1);
-            let Some(line) = self.buffer.get(buffer_index) else { break };
+            let Some(line) = self.buffer.get_mut(lines_from_bottom) else { break };
             lines_from_bottom += 1;
 
             // Find y coordinate for line. The +1 is for spacing between lines
@@ -128,8 +127,8 @@ impl<const N: usize, const W: usize> fmt::Write for TextBuffer<N, W> {
 fn draw_char(framebuffer: &mut VESAFramebuffer32Bit, x: usize, y: usize, c: ColorChar) {
     let index: usize = c
         .char_byte
-        .checked_sub(FONT_START_CHAR)
-        .map_or(FONT_SPACE_CHARACTER, |index| index as usize);
+        .checked_sub(FONT_START_CHAR_ASCII_CODE)
+        .map_or(FONT_SPACE_CHARACTER_INDEX, |index| index as usize);
 
     let Some(char_bytes) = OPENGL_FONT.get(index) else { return };
     let bitmap = char_bytes.as_bits::<bitvec::order::Msb0>();
@@ -161,13 +160,12 @@ mod test {
         writeln!(text_buffer, "1234").unwrap();
 
         assert_eq!(text_buffer.buffer.len(), 3);
-        assert_line_text_equal(text_buffer.buffer.get(-1).unwrap(), &[0; 4]);
-        assert_line_text_equal(text_buffer.buffer.get(-2).unwrap(), b"1234");
-        assert_line_text_equal(text_buffer.buffer.get(-3).unwrap(), b"abc\0");
+        assert_line_text_equal(text_buffer.buffer.get_mut(0).unwrap(), &[0; 4]);
+        assert_line_text_equal(text_buffer.buffer.get_mut(1).unwrap(), b"1234");
+        assert_line_text_equal(text_buffer.buffer.get_mut(2).unwrap(), b"abc\0");
     }
 
     #[test]
-    #[ignore]
     fn test_text_buffer_implicit_line_wrap() {
         use core::fmt::Write;
         let mut text_buffer: TextBuffer<5, 4> = TextBuffer::new();
@@ -175,8 +173,9 @@ mod test {
         writeln!(text_buffer, "1234567").unwrap();
 
         assert_eq!(text_buffer.buffer.len(), 4);
-        assert_line_text_equal(text_buffer.buffer.get(-1).unwrap(), b"567\0");
-        assert_line_text_equal(text_buffer.buffer.get(-2).unwrap(), b"1234");
-        assert_line_text_equal(text_buffer.buffer.get(-3).unwrap(), b"abc\0");
+        assert_line_text_equal(text_buffer.buffer.get_mut(0).unwrap(), &[0; 4]);
+        assert_line_text_equal(text_buffer.buffer.get_mut(1).unwrap(), b"567\0");
+        assert_line_text_equal(text_buffer.buffer.get_mut(2).unwrap(), b"1234");
+        assert_line_text_equal(text_buffer.buffer.get_mut(3).unwrap(), b"abc\0");
     }
 }

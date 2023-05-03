@@ -1,10 +1,10 @@
 // Font starts at space character, or ASCII 32
-pub const FONT_START_CHAR: u8 = 32;
+pub const FONT_START_CHAR_ASCII_CODE: u8 = 32;
 
 pub const FONT_WIDTH_PIXELS: usize = 8;
 pub const FONT_HEIGHT_PIXELS: usize = 13;
 
-pub const FONT_SPACE_CHARACTER: usize = 32;
+pub const FONT_SPACE_CHARACTER_INDEX: usize = 0;
 
 /// Font from
 /// <https://courses.cs.washington.edu/courses/cse457/98a/tech/OpenGL/font.c>,

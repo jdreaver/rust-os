@@ -33,10 +33,20 @@ pub struct RingBuffer<T, const N: usize> {
 }
 
 impl<T: Copy, const N: usize> RingBuffer<T, N> {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             elements: [None; N],
             next_free: 0,
+        }
+    }
+
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        // If we have wrapped around, then the length is the number of elements.
+        if self.elements[self.next_free].is_some() {
+            N
+        } else {
+            self.next_free
         }
     }
 
@@ -51,26 +61,23 @@ impl<T: Copy, const N: usize> RingBuffer<T, N> {
     /// from the latest element. For example, `0` is the element most recently
     /// pushed, `1` is the second most recent element, and `N-1` is the oldest
     /// element. Returns `None` if no element exists at the given index.
-    pub fn get(&self, index: usize) -> Option<T> {
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
         // Out of bounds
         if index >= self.elements.len() {
             return None;
         }
 
         if index < self.next_free {
-            self.elements[self.next_free - index - 1]
+            self.elements
+                .get_mut(self.next_free - index - 1)
+                .unwrap()
+                .as_mut()
         } else {
-            self.elements[N - 1 - (index - self.next_free)]
+            self.elements
+                .get_mut(N - 1 - (index - self.next_free))
+                .unwrap()
+                .as_mut()
         }
-
-        // if index < self.next_free {
-        //     return self.elements[self.next_free - index - 1];
-        // } else if index < self.next_free + N {
-        //     return self.elements[N - (index - self.next_free - 1)];
-        // }
-
-        // // Index is out of bounds
-        // None
     }
 }
 
@@ -83,27 +90,32 @@ mod tests {
     #[test]
     fn push_and_get() {
         let mut buffer = RingBuffer::<u8, 3>::new();
+        assert_eq!(buffer.len(), 0);
+
         buffer.push(1);
-        println!("{:?}", buffer);
-        assert_eq!(buffer.get(0), Some(1));
-        assert_eq!(buffer.get(1), None);
+        assert_eq!(buffer.len(), 1);
+        assert_eq!(buffer.get_mut(0), Some(&mut 1));
+        assert_eq!(buffer.get_mut(1), None);
 
         buffer.push(2);
-        assert_eq!(buffer.get(0), Some(2));
-        assert_eq!(buffer.get(1), Some(1));
-        assert_eq!(buffer.get(2), None);
+        assert_eq!(buffer.len(), 2);
+        assert_eq!(buffer.get_mut(0), Some(&mut 2));
+        assert_eq!(buffer.get_mut(1), Some(&mut 1));
+        assert_eq!(buffer.get_mut(2), None);
 
         buffer.push(3);
-        assert_eq!(buffer.get(0), Some(3));
-        assert_eq!(buffer.get(1), Some(2));
-        assert_eq!(buffer.get(2), Some(1));
-        assert_eq!(buffer.get(3), None);
+        assert_eq!(buffer.len(), 3);
+        assert_eq!(buffer.get_mut(0), Some(&mut 3));
+        assert_eq!(buffer.get_mut(1), Some(&mut 2));
+        assert_eq!(buffer.get_mut(2), Some(&mut 1));
+        assert_eq!(buffer.get_mut(3), None);
 
         // Wrap around
         buffer.push(4);
-        assert_eq!(buffer.get(0), Some(4));
-        assert_eq!(buffer.get(1), Some(3));
-        assert_eq!(buffer.get(2), Some(2));
-        assert_eq!(buffer.get(3), None);
+        assert_eq!(buffer.len(), 3);
+        assert_eq!(buffer.get_mut(0), Some(&mut 4));
+        assert_eq!(buffer.get_mut(1), Some(&mut 3));
+        assert_eq!(buffer.get_mut(2), Some(&mut 2));
+        assert_eq!(buffer.get_mut(3), None);
     }
 }
