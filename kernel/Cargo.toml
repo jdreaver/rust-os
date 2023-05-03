@@ -12,7 +12,7 @@ pc-keyboard = "0.5"
 pic8259 = "0.10"
 spin = "0.5"
 uart_16550 = "0.2"
-vesa_framebuffer = { path = "../vesa_framebuffer" }
+vesa_framebuffer = { path = "../crates/vesa_framebuffer" }
 volatile = "0.2"
 x86_64 = "0.14"
 
