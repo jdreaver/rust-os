@@ -1,6 +1,4 @@
-use x86_64::structures::paging::{
-    FrameAllocator, OffsetPageTable, PageSize, PageTable, PhysFrame, Size4KiB,
-};
+use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, PageSize, PageTable, PhysFrame};
 use x86_64::{PhysAddr, VirtAddr};
 
 /// Initialize a new `OffsetPageTable`.
@@ -61,7 +59,15 @@ const MAX_USABLE_MEMORY_REGIONS: usize = 16;
 ///
 /// Use `from_iter` to instantiate this type from memory regions.
 #[derive(Debug)]
-pub struct NaiveFreeMemoryBlockAllocator {
+pub struct NaiveFreeMemoryBlockAllocator<S: PageSize> {
+    /// Store the page size as `PhantomData` to make this type generic over the
+    /// page size, but tie a specific allocator to a concrete page size for its
+    /// lifetime.
+    ///
+    /// Note that this isn't required! We could always support multiple page
+    /// sizes in the future using the same allocator.
+    _page_size: core::marker::PhantomData<S>,
+
     /// The list of memory regions that we can use for allocations. This would
     /// be a `Vec<UsageMemoryRegion>`, but we can't use `Vec` without an
     /// allocator, so we use a fixed-size array instead.
@@ -79,11 +85,11 @@ pub struct NaiveFreeMemoryBlockAllocator {
     current_page_within_region: usize,
 }
 
-impl NaiveFreeMemoryBlockAllocator {
+impl<S: PageSize> NaiveFreeMemoryBlockAllocator<S> {
     /// # Safety
     ///
     /// This function is unsafe because the caller must guarantee that the all
-    /// frames that are passed to this function must be unused.
+    /// regions passed to this function must be unused.
     ///
     /// N.B. We can't implement this using `FromIterator` because we can't
     /// implement the `from_iter` method using `unsafe`.
@@ -104,6 +110,7 @@ impl NaiveFreeMemoryBlockAllocator {
         }
 
         Self {
+            _page_size: core::marker::PhantomData,
             usable_memory_regions,
             num_memory_regions,
             current_memory_region: 0,
@@ -112,12 +119,10 @@ impl NaiveFreeMemoryBlockAllocator {
     }
 }
 
-unsafe impl FrameAllocator<Size4KiB> for NaiveFreeMemoryBlockAllocator {
+unsafe impl<S: PageSize> FrameAllocator<S> for NaiveFreeMemoryBlockAllocator<S> {
     // TODO: This logic is hairy. This should be unit tested.
-    fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        // TODO: Any way to ensure we use the Size4KiB type parameter to this
-        // trait?
-        let page_size: u64 = Size4KiB::SIZE;
+    fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
+        let page_size: u64 = S::SIZE;
 
         // Find the next free page
         loop {
@@ -141,7 +146,7 @@ unsafe impl FrameAllocator<Size4KiB> for NaiveFreeMemoryBlockAllocator {
         let memory_region = self.usable_memory_regions[self.current_memory_region];
         let current_page =
             memory_region.page_start_addr(self.current_page_within_region, page_size);
-        let frame: PhysFrame<Size4KiB> = PhysFrame::containing_address(current_page);
+        let frame: PhysFrame<S> = PhysFrame::containing_address(current_page);
         self.current_page_within_region += 1;
 
         Some(frame)
