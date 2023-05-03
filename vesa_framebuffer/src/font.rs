@@ -6,6 +6,9 @@ pub const FONT_HEIGHT_PIXELS: usize = 13;
 
 pub const FONT_SPACE_CHARACTER_INDEX: usize = 0;
 
+// TODO: Another cool font to investigate:
+// https://github.com/isometimes/rpi4-osdev/blob/master/part5-framebuffer/terminal.h
+
 /// Font from
 /// <https://courses.cs.washington.edu/courses/cse457/98a/tech/OpenGL/font.c>,
 /// except bytes for each character are reversed (the first byte is the topmost
