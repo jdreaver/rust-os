@@ -26,5 +26,7 @@
 )]
 
 mod boot;
+mod io;
 
 pub use boot::*;
+pub use io::*;

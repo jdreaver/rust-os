@@ -19,16 +19,3 @@ pub struct BIOSParameterBlock {
     hidden_sectors: u32,
     total_sectors_large: u32,
 }
-
-impl BIOSParameterBlock {
-    pub fn deserialize<R: genio::Read>(
-        mut reader: R,
-    ) -> Result<Self, genio::error::ReadExactError<R::ReadError>>
-    where
-        R::ReadError: core::fmt::Debug,
-    {
-        let mut buf = [0u8; 36];
-        reader.read_exact(&mut buf)?;
-        Ok(Self::read_from(&mut buf[..]).unwrap())
-    }
-}

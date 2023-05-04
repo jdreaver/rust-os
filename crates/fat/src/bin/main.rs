@@ -15,7 +15,8 @@ fn main() {
     println!("Reading FAT disk file: {}", disk_file);
     let file = File::open(disk_file).expect("failed to open disk file");
     let mut reader = genio::std_impls::GenioIo::new(file);
-    let bios_param_block = fat::BIOSParameterBlock::deserialize(&mut reader)
-        .expect("failed to read BIOS parameter block");
+    let bios_param_block: fat::BIOSParameterBlock =
+        fat::zero_copy_read(&mut reader).expect("failed to read BIOS parameter block");
+
     println!("BIOS parameter block: {:#X?}", bios_param_block);
 }
