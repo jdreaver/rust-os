@@ -50,6 +50,10 @@ make test
 - Filesystem support
   - Example <https://github.com/rafalh/rust-fatfs>
   - <https://wiki.osdev.org/FAT>
+  - ATA
+    - <https://wiki.osdev.org/ATA_PIO_Mode>
+    - <https://wiki.osdev.org/ATA_read/write_sectors>
+    - <https://github.com/mit-pdos/xv6-public/blob/master/ide.c>
 - Allocator designs <https://os.phil-opp.com/allocator-designs/>
 - Tests
   - <https://www.infinyon.com/blog/2021/04/rust-custom-test-harness/>
