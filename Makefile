@@ -19,6 +19,13 @@ ALL_CRATES = $(TEST_CRATES) kernel
 .PHONY: all
 all: $(HDD)
 
+UEFI = on
+ifeq ($(UEFI),on)
+  $(info UEFI is enabled)
+  QEMU_ARGS += -bios $(OVMF)
+else
+  $(info UEFI is disabled)
+endif
 QEMU_ARGS += -hda $(HDD)
 QEMU_ARGS += -display gtk,zoom-to-fit=on # Makes it so increasing screen size zooms in, useful for tiny fonts
 QEMU_ARGS += -vga virtio # More modern, better performance than default -vga std
@@ -29,12 +36,6 @@ QEMU_ARGS += -serial stdio # Add serial output to terminal
 .PHONY: run
 run: $(HDD)
 	qemu-system-x86_64 $(QEMU_ARGS)
-
-QEMU_UEFI_ARGS += $(QEMU_ARGS)
-QEMU_UEFI_ARGS += -bios $(OVMF)
-.PHONY: run-uefi
-run-uefi: $(HDD)
-	qemu-system-x86_64 $(QEMU_UEFI_ARGS)
 
 # N.B. Run `make run-debug` in one terminal, and `make gdb` in another.
 QEMU_DEBUG_ARGS += $(QEMU_ARGS)

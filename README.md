@@ -16,6 +16,11 @@ Release mode:
 $ make run RUST_BUILD_MODE=release
 ```
 
+UEFI disabled (use BIOS):
+
+```
+$ make run UEFI=off
+```
 
 ## Debugging with GDB
 
