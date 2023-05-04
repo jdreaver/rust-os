@@ -20,6 +20,12 @@ extern "C" fn _start() -> ! {
     let hhdm_offset = boot_info::limine_higher_half_offset();
     serial_println!("limine HHDM offset: {:?}", hhdm_offset);
 
+    let efi_system_table_address = boot_info::limine_efi_system_table_address();
+    serial_println!("limine EFI table pointer: {:?}", efi_system_table_address);
+
+    let rsdp_address = boot_info::limine_rsdp_address();
+    serial_println!("limine RSDP address: {:?}", rsdp_address);
+
     // Ensure we got a framebuffer.
     let limine_framebuffer = boot_info::limine_framebuffer();
     serial_println!("limine framebuffer: {:#?}", limine_framebuffer);

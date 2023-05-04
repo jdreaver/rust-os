@@ -54,7 +54,18 @@ make test
     - <https://wiki.osdev.org/ATA_PIO_Mode>
     - <https://wiki.osdev.org/ATA_read/write_sectors>
     - <https://github.com/mit-pdos/xv6-public/blob/master/ide.c>
+  - Virtio, since we are running in QEMU anyway
+    - <https://wiki.osdev.org/Virtio>
+    - <https://www.qemu.org/2021/01/19/virtio-blk-scsi-configuration/>
+    - <https://brennan.io/2020/03/22/sos-block-device/>
+    - <https://wiki.osdev.org/PCI>
+    - <https://github.com/mit-pdos/xv6-riscv/blob/f5b93ef12f7159f74f80f94729ee4faabe42c360/kernel/virtio_disk.c>
 - Allocator designs <https://os.phil-opp.com/allocator-designs/>
+- UEFI. Kind of a pain to set up with nixpkgs I think:
+  - I think I need to enable it in my NixOS config (not this flag), then set up a qemu config in `$XDG_CONFIG_HOME/libvirt/qemu.conf` to point to some `/run/libvirt` files
+  - <https://nixos.wiki/wiki/Libvirt>
+  - <https://github.com/NixOS/nixpkgs/issues/115996>
+  - <https://github.com/NixOS/nixpkgs/blob/master/pkgs/applications/virtualization/OVMF/default.nix>
 - Tests
   - <https://www.infinyon.com/blog/2021/04/rust-custom-test-harness/>
   - Useful resource, but I couldn't get this to work with the staticlib setup <https://os.phil-opp.com/testing/>

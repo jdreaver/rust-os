@@ -1,6 +1,7 @@
 use limine::{
-    LimineBootInfoRequest, LimineFramebufferRequest, LimineHhdmRequest, LimineKernelAddressRequest,
-    LimineMemmapRequest, NonNullPtr,
+    LimineBootInfoRequest, LimineEfiSystemTableRequest, LimineFramebufferRequest,
+    LimineHhdmRequest, LimineKernelAddressRequest, LimineMemmapRequest, LimineRsdpRequest,
+    NonNullPtr,
 };
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -173,4 +174,20 @@ pub fn print_limine_kernel_address() {
         kernel_address.physical_base,
         kernel_address.virtual_base
     );
+}
+
+static EFI_SYSTEM_TABLE_REQUEST: LimineEfiSystemTableRequest = LimineEfiSystemTableRequest::new(0);
+
+pub fn limine_efi_system_table_address() -> Option<VirtAddr> {
+    let Some(efi_system_table) = EFI_SYSTEM_TABLE_REQUEST.get_response().get() else { return None; };
+    let Some(address_ptr) = efi_system_table.address.as_ptr() else { return None; };
+    Some(VirtAddr::from_ptr(address_ptr))
+}
+
+static RSDP_REQUEST: LimineRsdpRequest = LimineRsdpRequest::new(0);
+
+pub fn limine_rsdp_address() -> Option<VirtAddr> {
+    let Some(rsdp) = RSDP_REQUEST.get_response().get() else { return None; };
+    let Some(address_ptr) = rsdp.address.as_ptr() else { return None; };
+    Some(VirtAddr::from_ptr(address_ptr))
 }
