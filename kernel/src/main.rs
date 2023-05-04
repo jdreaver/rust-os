@@ -6,7 +6,7 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use rust_os::{allocator, boot_info, gdt, interrupts, memory, serial_println};
+use rust_os::{allocator, boot_info, devices, gdt, interrupts, memory, serial_println};
 use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 
@@ -43,6 +43,10 @@ extern "C" fn _start() -> ! {
 
     let rsdp_address = boot_info::limine_rsdp_address();
     serial_println!("limine RSDP address: {:?}", rsdp_address);
+    let rsdp_physical_addr = rsdp_address
+        .map(|addr| x86_64::PhysAddr::new(addr.as_u64() - hhdm_offset.as_u64()))
+        .expect("failed to get RSDP physical address");
+    serial_println!("RSDP physical address: {:?}", rsdp_physical_addr);
 
     // Ensure we got a framebuffer.
     let limine_framebuffer = boot_info::limine_framebuffer();
@@ -74,6 +78,8 @@ extern "C" fn _start() -> ! {
         .expect("failed to initialize allocator");
 
     run_tests();
+
+    devices::print_acpi_info(rsdp_physical_addr);
 
     // Print out some test addresses
     let addresses = [
