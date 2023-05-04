@@ -64,20 +64,3 @@ macro_rules! serial_println {
     ($fmt:expr, $($arg:tt)*) => ($crate::serial_print!(
         concat!($fmt, "\n"), $($arg)*));
 }
-
-/// # Safety
-///
-/// If the string is not null-terminated, this will happily iterate through
-/// memory and print garbage until it finds a null byte or we hit a protection
-/// fault because we tried to ready a page we don't have access to.
-pub unsafe fn print_null_terminated_string(ptr: *const u8) {
-    let mut i = 0;
-    loop {
-        let c = *ptr.offset(i);
-        if c == 0 {
-            break;
-        }
-        serial_print!("{}", c as char);
-        i += 1;
-    }
-}

@@ -5,11 +5,104 @@ use limine::{
 };
 use x86_64::{PhysAddr, VirtAddr};
 
-use crate::{memory, serial, serial_print, serial_println};
+use crate::{memory, serial_println};
 
+static mut BOOT_INFO: Option<BootInfo> = None;
+
+#[derive(Debug)]
+pub struct BootInfo {
+    pub info_name: &'static str,
+    pub info_version: &'static str,
+    pub higher_half_direct_map_offset: VirtAddr,
+    pub kernel_address_physical_base: PhysAddr,
+    pub kernel_address_virtual_base: VirtAddr,
+    pub efi_system_table_address: Option<VirtAddr>,
+    pub rsdp_address: Option<VirtAddr>,
+    pub framebuffer: &'static mut limine::LimineFramebuffer,
+}
+
+static BOOT_INFO_REQUEST: LimineBootInfoRequest = LimineBootInfoRequest::new(0);
+static EFI_SYSTEM_TABLE_REQUEST: LimineEfiSystemTableRequest = LimineEfiSystemTableRequest::new(0);
 static FRAMEBUFFER_REQUEST: LimineFramebufferRequest = LimineFramebufferRequest::new(0);
+static HIGHER_HALF_DIRECT_MAP_REQUEST: LimineHhdmRequest = LimineHhdmRequest::new(0);
+static KERNEL_ADDRESS_REQUEST: LimineKernelAddressRequest = LimineKernelAddressRequest::new(0);
+static MEMORY_MAP_REQUEST: LimineMemmapRequest = LimineMemmapRequest::new(0);
+static RSDP_REQUEST: LimineRsdpRequest = LimineRsdpRequest::new(0);
 
-pub fn limine_framebuffer() -> &'static mut limine::LimineFramebuffer {
+pub fn init_boot_info() {
+    let (info_name, info_version) = limine_boot_info();
+
+    let higher_half_direct_map_offset = limine_higher_half_offset();
+
+    let kernel_address = KERNEL_ADDRESS_REQUEST
+        .get_response()
+        .get()
+        .expect("failed to get limine kernel address request");
+
+    let framebuffer = limine_framebuffer();
+
+    let boot_info = BootInfo {
+        info_name,
+        info_version,
+        higher_half_direct_map_offset,
+        kernel_address_physical_base: PhysAddr::new(kernel_address.physical_base),
+        kernel_address_virtual_base: VirtAddr::new(kernel_address.virtual_base),
+        efi_system_table_address: limine_efi_system_table_address(),
+        rsdp_address: limine_rsdp_address(),
+        framebuffer,
+    };
+
+    unsafe {
+        BOOT_INFO = Some(boot_info);
+    }
+}
+
+fn limine_boot_info() -> (&'static str, &'static str) {
+    let limine_boot_info = BOOT_INFO_REQUEST
+        .get_response()
+        .get()
+        .expect("failed to get limine boot info");
+
+    let info_name_ptr = limine_boot_info
+        .name
+        .as_ptr()
+        .expect("no limine boot info name");
+    let info_name = unsafe { str_from_pointer(info_name_ptr.cast::<u8>(), 100) };
+
+    let info_version_ptr = limine_boot_info
+        .version
+        .as_ptr()
+        .expect("no limine boot info version");
+    let info_version = unsafe { str_from_pointer(info_version_ptr.cast::<u8>(), 100) };
+
+    (info_name, info_version)
+}
+
+fn limine_higher_half_offset() -> VirtAddr {
+    let hhdm = HIGHER_HALF_DIRECT_MAP_REQUEST
+        .get_response()
+        .get()
+        .expect("failed to get limine higher half direct map request");
+    VirtAddr::try_new(hhdm.offset).expect("invalid limine hhdm offset virtual address")
+}
+
+fn limine_efi_system_table_address() -> Option<VirtAddr> {
+    let Some(efi_system_table) = EFI_SYSTEM_TABLE_REQUEST.get_response().get() else { return None; };
+    let Some(address_ptr) = efi_system_table.address.as_ptr() else { return None; };
+    Some(VirtAddr::from_ptr(address_ptr))
+}
+
+fn limine_rsdp_address() -> Option<VirtAddr> {
+    let Some(rsdp) = RSDP_REQUEST.get_response().get() else { return None; };
+    let Some(address_ptr) = rsdp.address.as_ptr() else { return None; };
+    Some(VirtAddr::from_ptr(address_ptr))
+}
+
+pub fn boot_info() -> &'static BootInfo {
+    unsafe { BOOT_INFO.as_ref().expect("boot info not initialized") }
+}
+
+fn limine_framebuffer() -> &'static mut limine::LimineFramebuffer {
     let response = FRAMEBUFFER_REQUEST
         .get_response()
         .get()
@@ -25,33 +118,24 @@ pub fn limine_framebuffer() -> &'static mut limine::LimineFramebuffer {
     unsafe { &mut *framebuffer.as_ptr() }
 }
 
-static BOOT_INFO_REQUEST: LimineBootInfoRequest = LimineBootInfoRequest::new(0);
-
-pub fn print_limine_boot_info() {
-    let boot_info = BOOT_INFO_REQUEST
-        .get_response()
-        .get()
-        .expect("failed to get limine boot info");
-
-    let boot_info_name_ptr = boot_info.name.as_ptr().expect("no limine boot info name");
-    serial_print!("limine boot info name: ");
-    unsafe {
-        serial::print_null_terminated_string(boot_info_name_ptr as *const u8);
+/// # Safety
+///
+/// If the string is not null-terminated, this will happily iterate through
+/// memory and print garbage until it finds a null byte or we hit a protection
+/// fault because we tried to ready a page we don't have access to.
+unsafe fn str_from_pointer(ptr: *const u8, max_size: usize) -> &'static str {
+    let mut len: usize = 0;
+    while len < max_size {
+        let c = *ptr.add(len);
+        if c == 0 {
+            break;
+        }
+        len += 1;
     }
-    serial_println!("");
 
-    let boot_info_version_ptr = boot_info
-        .version
-        .as_ptr()
-        .expect("no limine boot info version");
-    serial_print!("limine boot info version: ");
-    unsafe {
-        serial::print_null_terminated_string(boot_info_version_ptr as *const u8);
-    }
-    serial_println!("");
+    let slice = core::slice::from_raw_parts(ptr, len);
+    core::str::from_utf8(slice).unwrap_or("<invalid utf8>")
 }
-
-static MEMORY_MAP_REQUEST: LimineMemmapRequest = LimineMemmapRequest::new(0);
 
 /// Internal struct to iterate over the limine memory map.
 ///
@@ -149,45 +233,4 @@ pub fn allocator_from_limine_memory_map() -> memory::NaiveFreeMemoryBlockAllocat
                 }),
         )
     }
-}
-
-static HIGHER_HALF_DIRECT_MAP_REQUEST: LimineHhdmRequest = LimineHhdmRequest::new(0);
-
-pub fn limine_higher_half_offset() -> VirtAddr {
-    let hhdm = HIGHER_HALF_DIRECT_MAP_REQUEST
-        .get_response()
-        .get()
-        .expect("failed to get limine higher half direct map request");
-    VirtAddr::try_new(hhdm.offset).expect("invalid limine hhdm offset virtual address")
-}
-
-static KERNEL_ADDRESS_REQUEST: LimineKernelAddressRequest = LimineKernelAddressRequest::new(0);
-
-pub fn print_limine_kernel_address() {
-    let kernel_address = KERNEL_ADDRESS_REQUEST
-        .get_response()
-        .get()
-        .expect("failed to get limine kernel address request");
-
-    serial_println!(
-        "limine kernel address physical base: {:#x}, virtual base: {:#x}",
-        kernel_address.physical_base,
-        kernel_address.virtual_base
-    );
-}
-
-static EFI_SYSTEM_TABLE_REQUEST: LimineEfiSystemTableRequest = LimineEfiSystemTableRequest::new(0);
-
-pub fn limine_efi_system_table_address() -> Option<VirtAddr> {
-    let Some(efi_system_table) = EFI_SYSTEM_TABLE_REQUEST.get_response().get() else { return None; };
-    let Some(address_ptr) = efi_system_table.address.as_ptr() else { return None; };
-    Some(VirtAddr::from_ptr(address_ptr))
-}
-
-static RSDP_REQUEST: LimineRsdpRequest = LimineRsdpRequest::new(0);
-
-pub fn limine_rsdp_address() -> Option<VirtAddr> {
-    let Some(rsdp) = RSDP_REQUEST.get_response().get() else { return None; };
-    let Some(address_ptr) = rsdp.address.as_ptr() else { return None; };
-    Some(VirtAddr::from_ptr(address_ptr))
 }

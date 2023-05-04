@@ -9,21 +9,49 @@ use alloc::vec::Vec;
 use rust_os::{allocator, boot_info, devices, gdt, interrupts, memory, serial_println};
 use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
+use x86_64::structures::paging::{FrameAllocator, OffsetPageTable};
 
 static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
 
 #[no_mangle]
 extern "C" fn _start() -> ! {
-    boot_info::print_limine_boot_info();
+    boot_info::init_boot_info();
+    let boot_info_data = boot_info::boot_info();
+
+    gdt::init();
+    interrupts::init_idt();
+
+    let mut mapper = unsafe { memory::init(boot_info_data.higher_half_direct_map_offset) };
+    let mut frame_allocator = boot_info::allocator_from_limine_memory_map();
+    allocator::init_heap(&mut mapper, &mut frame_allocator)
+        .expect("failed to initialize allocator");
+
+    run_tests(boot_info_data, &mut mapper, &mut frame_allocator);
+
+    hlt_loop()
+}
+
+#[panic_handler]
+fn rust_panic(info: &core::panic::PanicInfo) -> ! {
+    serial_println!("PANIC: {}", info);
+    hlt_loop()
+}
+
+fn hlt_loop() -> ! {
+    loop {
+        x86_64::instructions::hlt();
+    }
+}
+
+fn run_tests(
+    boot_info_data: &boot_info::BootInfo,
+    mapper: &mut OffsetPageTable,
+    frame_allocator: &mut memory::NaiveFreeMemoryBlockAllocator,
+) {
+    serial_println!("limine boot info:\n{:#x?}", boot_info_data);
     boot_info::print_limine_memory_map();
-    boot_info::print_limine_kernel_address();
 
-    let hhdm_offset = boot_info::limine_higher_half_offset();
-    serial_println!("limine HHDM offset: {:?}", hhdm_offset);
-
-    let efi_system_table_address = boot_info::limine_efi_system_table_address();
-    serial_println!("limine EFI table pointer: {:?}", efi_system_table_address);
-    if let Some(system_table_addr) = efi_system_table_address {
+    if let Some(system_table_addr) = boot_info_data.efi_system_table_address {
         unsafe {
             let system_table = SystemTable::<Runtime>::from_ptr(system_table_addr.as_mut_ptr())
                 .expect("failed to create EFI system table");
@@ -41,19 +69,19 @@ extern "C" fn _start() -> ! {
         };
     }
 
-    let rsdp_address = boot_info::limine_rsdp_address();
-    serial_println!("limine RSDP address: {:?}", rsdp_address);
-    let rsdp_physical_addr = rsdp_address
-        .map(|addr| x86_64::PhysAddr::new(addr.as_u64() - hhdm_offset.as_u64()))
+    let rsdp_physical_addr = boot_info_data
+        .rsdp_address
+        .map(|addr| {
+            x86_64::PhysAddr::new(
+                addr.as_u64() - boot_info_data.higher_half_direct_map_offset.as_u64(),
+            )
+        })
         .expect("failed to get RSDP physical address");
     serial_println!("RSDP physical address: {:?}", rsdp_physical_addr);
 
     // Ensure we got a framebuffer.
-    let limine_framebuffer = boot_info::limine_framebuffer();
-    serial_println!("limine framebuffer: {:#?}", limine_framebuffer);
-
     let mut framebuffer = unsafe {
-        VESAFramebuffer32Bit::from_limine_framebuffer(limine_framebuffer)
+        VESAFramebuffer32Bit::from_limine_framebuffer(boot_info_data.framebuffer)
             .expect("failed to create VESAFramebuffer32Bit")
     };
     serial_println!("framebuffer: {:#?}", framebuffer);
@@ -67,31 +95,19 @@ extern "C" fn _start() -> ! {
         TEXT_BUFFER.flush(&mut framebuffer);
     };
 
-    init();
-
-    let mut mapper = unsafe { memory::init(hhdm_offset) };
-
-    let mut frame_allocator = boot_info::allocator_from_limine_memory_map();
-    serial_println!("allocator: {:#?}", frame_allocator);
-
-    allocator::init_heap(&mut mapper, &mut frame_allocator)
-        .expect("failed to initialize allocator");
-
-    run_tests();
-
     devices::print_acpi_info(rsdp_physical_addr);
 
     // Print out some test addresses
     let addresses = [
         // the identity-mapped vga buffer page
         0xb8000,
-        0xb8000 + hhdm_offset.as_u64(),
+        0xb8000 + boot_info_data.higher_half_direct_map_offset.as_u64(),
         // some code page
         0x201008,
         // some stack page
         0x0100_0020_1a10,
         // virtual address mapped to physical address 0
-        hhdm_offset.as_u64(),
+        boot_info_data.higher_half_direct_map_offset.as_u64(),
     ];
 
     use x86_64::structures::paging::Translate;
@@ -102,46 +118,23 @@ extern "C" fn _start() -> ! {
         serial_println!("{:?} -> {:?}", virt, phys);
     }
 
-    use x86_64::structures::paging::{FrameAllocator, Size2MiB, Size4KiB};
+    use x86_64::structures::paging::{Size2MiB, Size4KiB};
 
     let alloc_4kib =
         <memory::NaiveFreeMemoryBlockAllocator as FrameAllocator<Size4KiB>>::allocate_frame;
     let alloc_2mib =
         <memory::NaiveFreeMemoryBlockAllocator as FrameAllocator<Size2MiB>>::allocate_frame;
 
-    serial_println!("next 4KiB page: {:?}", alloc_4kib(&mut frame_allocator));
-    serial_println!("next 2MiB page: {:?}", alloc_2mib(&mut frame_allocator));
-    serial_println!("next 4KiB page: {:?}", alloc_4kib(&mut frame_allocator));
-    serial_println!("next 2MiB page: {:?}", alloc_2mib(&mut frame_allocator));
+    serial_println!("next 4KiB page: {:?}", alloc_4kib(frame_allocator));
+    serial_println!("next 2MiB page: {:?}", alloc_2mib(frame_allocator));
+    serial_println!("next 4KiB page: {:?}", alloc_4kib(frame_allocator));
+    serial_println!("next 2MiB page: {:?}", alloc_2mib(frame_allocator));
 
     for _ in 0..10000 {
-        alloc_4kib(&mut frame_allocator);
+        alloc_4kib(frame_allocator);
     }
 
-    serial_println!("far page: {:?}", alloc_4kib(&mut frame_allocator));
-
-    hlt_loop()
-}
-
-fn init() {
-    gdt::init();
-    interrupts::init_idt();
-}
-
-#[panic_handler]
-fn rust_panic(info: &core::panic::PanicInfo) -> ! {
-    serial_println!("PANIC: {}", info);
-    hlt_loop()
-}
-
-fn hlt_loop() -> ! {
-    loop {
-        x86_64::instructions::hlt();
-    }
-}
-
-fn run_tests() {
-    serial_println!("Testing serial port! {}", "hello");
+    serial_println!("far page: {:?}", alloc_4kib(frame_allocator));
 
     // Invoke a breakpoint exception and ensure we continue on
     serial_println!("interrupt");
