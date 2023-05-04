@@ -7,6 +7,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use rust_os::{allocator, boot_info, gdt, interrupts, memory, serial_println};
+use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 
 static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
@@ -22,6 +23,23 @@ extern "C" fn _start() -> ! {
 
     let efi_system_table_address = boot_info::limine_efi_system_table_address();
     serial_println!("limine EFI table pointer: {:?}", efi_system_table_address);
+    if let Some(system_table_addr) = efi_system_table_address {
+        unsafe {
+            let system_table = SystemTable::<Runtime>::from_ptr(system_table_addr.as_mut_ptr())
+                .expect("failed to create EFI system table");
+            serial_println!(
+                "EFI runtime services:\n{:#?}",
+                system_table.runtime_services()
+            );
+
+            for entry in system_table.config_table() {
+                if entry.guid == uefi::table::cfg::ACPI2_GUID {
+                    // This should match the limine RSDP address
+                    serial_println!("EFI config table ACPI2 entry: {:#X?}", entry);
+                }
+            }
+        };
+    }
 
     let rsdp_address = boot_info::limine_rsdp_address();
     serial_println!("limine RSDP address: {:?}", rsdp_address);
