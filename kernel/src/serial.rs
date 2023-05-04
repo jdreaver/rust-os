@@ -41,8 +41,8 @@ pub fn _print(args: ::core::fmt::Arguments) {
     // Disable interrupts while taking mutex lock so we don't deadlock if an
     // interrupt occurs and the interrupt handler tries to take the same lock.
     interrupts::without_interrupts(|| {
-        let mut serial = SERIAL1.lock();
-        serial
+        SERIAL1
+            .lock()
             .write_fmt(args)
             .expect("Printing to serial failed");
     });
