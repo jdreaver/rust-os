@@ -1,6 +1,7 @@
 KERNEL = kernel.elf
 HDD = kernel.hdd
 LIMINE = $(shell nix build ./flake#limine --print-out-paths --no-link)
+OVMF = $(shell nix build ./flake#OVMF --print-out-paths --no-link)/OVMF.fd
 
 RUST_BUILD_MODE = debug
 RUST_BUILD_MODE_FLAG =
@@ -28,6 +29,12 @@ QEMU_ARGS += -serial stdio # Add serial output to terminal
 .PHONY: run
 run: $(HDD)
 	qemu-system-x86_64 $(QEMU_ARGS)
+
+QEMU_UEFI_ARGS += $(QEMU_ARGS)
+QEMU_UEFI_ARGS += -bios $(OVMF)
+.PHONY: run-uefi
+run-uefi: $(HDD)
+	qemu-system-x86_64 $(QEMU_UEFI_ARGS)
 
 # N.B. Run `make run-debug` in one terminal, and `make gdb` in another.
 QEMU_DEBUG_ARGS += $(QEMU_ARGS)

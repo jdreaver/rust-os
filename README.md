@@ -61,11 +61,7 @@ make test
     - <https://wiki.osdev.org/PCI>
     - <https://github.com/mit-pdos/xv6-riscv/blob/f5b93ef12f7159f74f80f94729ee4faabe42c360/kernel/virtio_disk.c>
 - Allocator designs <https://os.phil-opp.com/allocator-designs/>
-- UEFI. Kind of a pain to set up with nixpkgs I think:
-  - I think I need to enable it in my NixOS config (not this flag), then set up a qemu config in `$XDG_CONFIG_HOME/libvirt/qemu.conf` to point to some `/run/libvirt` files
-  - <https://nixos.wiki/wiki/Libvirt>
-  - <https://github.com/NixOS/nixpkgs/issues/115996>
-  - <https://github.com/NixOS/nixpkgs/blob/master/pkgs/applications/virtualization/OVMF/default.nix>
+- UEFI. I have it kind of set up, but I should poke at it more, and also investigate the Limine UEFI system table stuff
 - Tests
   - <https://www.infinyon.com/blog/2021/04/rust-custom-test-harness/>
   - Useful resource, but I couldn't get this to work with the staticlib setup <https://os.phil-opp.com/testing/>
