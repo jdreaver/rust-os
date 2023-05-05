@@ -96,8 +96,17 @@ make test
 
 ### PCI
 
+- Spec <https://picture.iczhiku.com/resource/eetop/SYkDTqhOLhpUTnMx.pdf>
 - <https://wiki.osdev.org/PCI>
 - <https://wiki.osdev.org/PCI_Express>
 - <https://tldp.org/LDP/tlk/dd/pci.html>
+- Rust code/crate: <https://docs.rs/pci-driver/latest/pci_driver/>
 - Great example Rust code <https://gitlab.com/robigalia/pci/-/blob/master/src/lib.rs>
   - I think this is the crate but it is old <https://docs.rs/pci/latest/pci/>
+
+### Virtio
+
+- Spec: <https://docs.oasis-open.org/virtio/virtio/v1.2/cs01/virtio-v1.2-cs01.pdf>
+- <https://wiki.osdev.org/Virtio>
+- <https://blogs.oracle.com/linux/post/introduction-to-virtio>
+- <https://wiki.libvirt.org/Virtio.html>

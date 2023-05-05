@@ -13,7 +13,7 @@ pub fn brute_force_search_pci(base_addr: u64) {
         for slot in 0..MAX_PCI_BUS_DEVICES {
             for function in 0..MAX_PCI_BUS_DEVICE_FUNCTIONS {
                 let addr = base_addr | (bus << 20) | (slot << 15) | (function << 12);
-                let header = PCIDeviceConfigHeader::from_ptr(addr as *mut u8)
+                let header = PCIDeviceConfig::from_ptr(addr as *mut u8)
                     .expect("failed to read PCI device header");
                 if let Some(header) = header {
                     serial_println!(
@@ -27,6 +27,43 @@ pub fn brute_force_search_pci(base_addr: u64) {
                 }
             }
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+struct PCIDeviceConfig {
+    header: PCIDeviceConfigHeader,
+    body: PCIDeviceConfigBody,
+}
+
+impl PCIDeviceConfig {
+    fn from_ptr(ptr: *mut u8) -> Result<Option<Self>, &'static str> {
+        let bytes = unsafe { *ptr.cast::<[u8; 256]>() };
+        Self::from_bytes(&bytes)
+    }
+
+    fn from_bytes(bytes: &[u8; 256]) -> Result<Option<Self>, &'static str> {
+        let header = PCIDeviceConfigHeader::from_bytes(
+            &bytes[..PCI_DEVICE_CONFIG_HEADER_SIZE].try_into().unwrap(),
+        )?;
+        let Some(header) = header else { return Ok(None); };
+
+        let body = match header.header_type {
+            PCIDeviceConfigHeaderType::GeneralDevice => {
+                let offset = PCI_DEVICE_CONFIG_HEADER_SIZE;
+                let end = offset + PCI_DEVICE_CONFIG_BODY_TYPE0_SIZE;
+                let body_bytes = bytes[offset..end].try_into().unwrap();
+                let body = RawPCIDeviceConfigBodyType0::from_bytes(body_bytes);
+                PCIDeviceConfigBody::GeneralDevice(body)
+            }
+            PCIDeviceConfigHeaderType::PCIToPCIBridge => PCIDeviceConfigBody::PCIToPCIBridge,
+            PCIDeviceConfigHeaderType::PCIToCardBusBridge => {
+                PCIDeviceConfigBody::PCIToCardBusBridge
+            }
+        };
+
+        Ok(Some(Self { header, body }))
     }
 }
 
@@ -49,13 +86,17 @@ struct PCIDeviceConfigHeader {
     bist: u8,
 }
 
-impl PCIDeviceConfigHeader {
-    fn from_ptr(ptr: *mut u8) -> Result<Option<Self>, &'static str> {
-        let bytes = unsafe { *ptr.cast::<[u8; 16]>() };
-        Self::from_bytes(&bytes)
-    }
+#[derive(Debug, Clone, Copy)]
+enum PCIDeviceConfigBody {
+    GeneralDevice(RawPCIDeviceConfigBodyType0),
+    PCIToPCIBridge,     // TODO
+    PCIToCardBusBridge, // TODO
+}
 
-    fn from_bytes(bytes: &[u8; 16]) -> Result<Option<Self>, &'static str> {
+impl PCIDeviceConfigHeader {
+    fn from_bytes(
+        bytes: &[u8; PCI_DEVICE_CONFIG_HEADER_SIZE],
+    ) -> Result<Option<Self>, &'static str> {
         let raw = RawPCIDeviceConfigHeader::from_bytes(bytes);
 
         let Some(known_vendor_id) = PCIDeviceVendorID::from_bytes(raw.vendor_id) else { return Ok(None); };
@@ -360,8 +401,39 @@ struct RawPCIDeviceConfigHeader {
     bist: u8,
 }
 
+const PCI_DEVICE_CONFIG_HEADER_SIZE: usize = 16;
+
 impl RawPCIDeviceConfigHeader {
-    fn from_bytes(bytes: &[u8; 16]) -> Self {
+    fn from_bytes(bytes: &[u8; PCI_DEVICE_CONFIG_HEADER_SIZE]) -> Self {
+        unsafe { core::ptr::read(bytes.as_ptr().cast::<Self>()) }
+    }
+}
+
+#[repr(packed)]
+#[derive(Debug, Clone, Copy)]
+struct RawPCIDeviceConfigBodyType0 {
+    bar0: u32,
+    bar1: u32,
+    bar2: u32,
+    bar3: u32,
+    bar4: u32,
+    bar5: u32,
+    cardbus_cis_pointer: u32,
+    subsystem_vendor_id: u16,
+    subsystem_id: u16,
+    expansion_rom_base_address: u32,
+    capabilities_pointer: u8,
+    reserved: [u8; 7],
+    interrupt_line: u8,
+    interrupt_pin: u8,
+    min_grant: u8,
+    max_latency: u8,
+}
+
+const PCI_DEVICE_CONFIG_BODY_TYPE0_SIZE: usize = 48;
+
+impl RawPCIDeviceConfigBodyType0 {
+    fn from_bytes(bytes: &[u8; PCI_DEVICE_CONFIG_BODY_TYPE0_SIZE]) -> Self {
         unsafe { core::ptr::read(bytes.as_ptr().cast::<Self>()) }
     }
 }
