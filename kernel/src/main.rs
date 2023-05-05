@@ -6,7 +6,7 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use rust_os::{allocator, boot_info, devices, gdt, interrupts, memory, serial_println};
+use rust_os::{acpi, allocator, boot_info, gdt, interrupts, memory, serial_println};
 use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable};
@@ -95,7 +95,7 @@ fn run_tests(
         TEXT_BUFFER.flush(&mut framebuffer);
     };
 
-    devices::print_acpi_info(rsdp_physical_addr);
+    acpi::print_acpi_info(rsdp_physical_addr);
 
     // Print out some test addresses
     let addresses = [
