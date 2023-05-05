@@ -19,6 +19,7 @@ ALL_CRATES = $(TEST_CRATES) kernel
 .PHONY: all
 all: $(HDD)
 
+# Good reference for QEMU options: https://wiki.gentoo.org/wiki/QEMU/Options
 UEFI = on
 ifeq ($(UEFI),on)
   $(info UEFI is enabled)
@@ -30,7 +31,7 @@ QEMU_ARGS += -hda $(HDD)
 QEMU_ARGS += -smp 2 # Use 2 cores
 QEMU_ARGS += -display gtk,zoom-to-fit=on # Makes it so increasing screen size zooms in, useful for tiny fonts
 QEMU_ARGS += -vga virtio # More modern, better performance than default -vga std
-QEMU_ARGS += -M q35 # Use the q35 chipset
+QEMU_ARGS += -M q35,accel=kvm # Use the q35 chipset. accel=kvm enables hardware acceleration, makes things way faster.
 QEMU_ARGS += -m 2G # More memory
 QEMU_ARGS += -serial stdio # Add serial output to terminal
 
