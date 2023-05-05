@@ -5,7 +5,7 @@ use limine::{
 };
 use x86_64::{PhysAddr, VirtAddr};
 
-use crate::{memory, serial_println};
+use crate::{memory, serial_println, strings};
 
 static mut BOOT_INFO: Option<BootInfo> = None;
 
@@ -67,13 +67,13 @@ fn limine_boot_info() -> (&'static str, &'static str) {
         .name
         .as_ptr()
         .expect("no limine boot info name");
-    let info_name = unsafe { str_from_pointer(info_name_ptr.cast::<u8>(), 100) };
+    let info_name = unsafe { strings::c_str_from_pointer(info_name_ptr.cast::<u8>(), 100) };
 
     let info_version_ptr = limine_boot_info
         .version
         .as_ptr()
         .expect("no limine boot info version");
-    let info_version = unsafe { str_from_pointer(info_version_ptr.cast::<u8>(), 100) };
+    let info_version = unsafe { strings::c_str_from_pointer(info_version_ptr.cast::<u8>(), 100) };
 
     (info_name, info_version)
 }
@@ -116,25 +116,6 @@ fn limine_framebuffer() -> &'static mut limine::LimineFramebuffer {
     let framebuffer = &response.framebuffers()[0];
 
     unsafe { &mut *framebuffer.as_ptr() }
-}
-
-/// # Safety
-///
-/// If the string is not null-terminated, this will happily iterate through
-/// memory and print garbage until it finds a null byte or we hit a protection
-/// fault because we tried to ready a page we don't have access to.
-unsafe fn str_from_pointer(ptr: *const u8, max_size: usize) -> &'static str {
-    let mut len: usize = 0;
-    while len < max_size {
-        let c = *ptr.add(len);
-        if c == 0 {
-            break;
-        }
-        len += 1;
-    }
-
-    let slice = core::slice::from_raw_parts(ptr, len);
-    core::str::from_utf8(slice).unwrap_or("<invalid utf8>")
 }
 
 /// Internal struct to iterate over the limine memory map.
