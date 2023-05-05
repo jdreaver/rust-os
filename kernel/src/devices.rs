@@ -232,7 +232,9 @@ enum PCIDeviceClass {
         subclass: PCIDeviceUnknownSubclass,
         prog_if: PCIDeviceUnknownProgIF,
     },
-    MassStorageController(PCIDeviceMassStorageControllerSubclass),
+    MassStorageController {
+        subclass: PCIDeviceMassStorageControllerSubclass,
+    },
     NetworkController {
         subclass: PCIDeviceUnknownSubclass,
         prog_if: PCIDeviceUnknownProgIF,
@@ -322,9 +324,9 @@ impl PCIDeviceClass {
     fn from_bytes(class: u8, subclass: u8, prog_if: u8) -> Result<Self, &'static str> {
         match class {
             0x00 => Ok(Self::Unclassified { subclass, prog_if }),
-            0x01 => Ok(Self::MassStorageController(
-                PCIDeviceMassStorageControllerSubclass::from_bytes(subclass, prog_if)?,
-            )),
+            0x01 => Ok(Self::MassStorageController {
+                subclass: PCIDeviceMassStorageControllerSubclass::from_bytes(subclass, prog_if)?,
+            }),
             0x02 => Ok(Self::NetworkController { subclass, prog_if }),
             0x03 => Ok(Self::DisplayController { subclass, prog_if }),
             0x04 => Ok(Self::MultimediaController { subclass, prog_if }),
@@ -353,32 +355,73 @@ impl PCIDeviceClass {
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
 enum PCIDeviceMassStorageControllerSubclass {
-    SCSI(PCIDeviceUnknownProgIF),
-    IDE(PCIDeviceUnknownProgIF),
-    FloppyDisk(PCIDeviceUnknownProgIF),
-    IPIBus(PCIDeviceUnknownProgIF),
-    RAID(PCIDeviceUnknownProgIF),
-    ATA(PCIDeviceUnknownProgIF),
-    SATA(PCIDeviceUnknownProgIF),
-    SAS(PCIDeviceUnknownProgIF),
-    NVM(PCIDeviceUnknownProgIF),
-    Other(PCIDeviceUnknownProgIF),
+    SCSI {
+        prog_if: PCIDeviceUnknownProgIF,
+    },
+    IDE {
+        prog_if: PCIDeviceUnknownProgIF,
+    },
+    FloppyDisk {
+        prog_if: PCIDeviceUnknownProgIF,
+    },
+    IPIBus {
+        prog_if: PCIDeviceUnknownProgIF,
+    },
+    RAID {
+        prog_if: PCIDeviceUnknownProgIF,
+    },
+    ATA {
+        prog_if: PCIDeviceUnknownProgIF,
+    },
+    SATA {
+        prog_if: PCIDeviceMassStorageControllerSATAProgIF,
+    },
+    SAS {
+        prog_if: PCIDeviceUnknownProgIF,
+    },
+    NVM {
+        prog_if: PCIDeviceUnknownProgIF,
+    },
+    Other {
+        prog_if: PCIDeviceUnknownProgIF,
+    },
 }
 
 impl PCIDeviceMassStorageControllerSubclass {
     fn from_bytes(subclass: u8, prog_if: u8) -> Result<Self, &'static str> {
         match subclass {
-            0x00 => Ok(Self::SCSI(prog_if)),
-            0x01 => Ok(Self::IDE(prog_if)),
-            0x02 => Ok(Self::FloppyDisk(prog_if)),
-            0x03 => Ok(Self::IPIBus(prog_if)),
-            0x04 => Ok(Self::RAID(prog_if)),
-            0x05 => Ok(Self::ATA(prog_if)),
-            0x06 => Ok(Self::SATA(prog_if)),
-            0x07 => Ok(Self::SAS(prog_if)),
-            0x08 => Ok(Self::NVM(prog_if)),
-            0x80 => Ok(Self::Other(prog_if)),
+            0x00 => Ok(Self::SCSI { prog_if }),
+            0x01 => Ok(Self::IDE { prog_if }),
+            0x02 => Ok(Self::FloppyDisk { prog_if }),
+            0x03 => Ok(Self::IPIBus { prog_if }),
+            0x04 => Ok(Self::RAID { prog_if }),
+            0x05 => Ok(Self::ATA { prog_if }),
+            0x06 => Ok(Self::SATA {
+                prog_if: PCIDeviceMassStorageControllerSATAProgIF::from_bytes(prog_if)?,
+            }),
+            0x07 => Ok(Self::SAS { prog_if }),
+            0x08 => Ok(Self::NVM { prog_if }),
+            0x80 => Ok(Self::Other { prog_if }),
             _ => Err("invalid PCI device mass storage controller subclass"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+enum PCIDeviceMassStorageControllerSATAProgIF {
+    VendorSpecific,
+    AHCI1_0,
+    SerialStorageBus,
+}
+
+impl PCIDeviceMassStorageControllerSATAProgIF {
+    fn from_bytes(prog_if: u8) -> Result<Self, &'static str> {
+        match prog_if {
+            0x00 => Ok(Self::VendorSpecific),
+            0x01 => Ok(Self::AHCI1_0),
+            0x02 => Ok(Self::SerialStorageBus),
+            _ => Err("invalid PCI device mass storage controller SATA prog_if"),
         }
     }
 }
