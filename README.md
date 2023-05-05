@@ -52,14 +52,8 @@ make test
 
 ## TODO
 
-- PCI
-  - Consider a new crate for PCI
-  - <https://wiki.osdev.org/PCI>
-  - <https://wiki.osdev.org/PCI_Express>
-  - <https://tldp.org/LDP/tlk/dd/pci.html>
-  - Great example Rust code <https://gitlab.com/robigalia/pci/-/blob/master/src/lib.rs>
-    - I think this is the crate but it is old <https://docs.rs/pci/latest/pci/>
 - Filesystem support
+  - Now that I have PCI working, attach a drive via QEMU and see what is looks like under PCI
   - Example <https://github.com/rafalh/rust-fatfs>
   - <https://wiki.osdev.org/FAT>
   - ATA
@@ -91,3 +85,14 @@ make test
 - Add CI
   - Check out <https://github.com/phil-opp/blog_os/blob/post-12/.github/workflows/code.yml>
   - Consider using nix to load dependencies
+
+
+## Resources
+
+### PCI
+
+- <https://wiki.osdev.org/PCI>
+- <https://wiki.osdev.org/PCI_Express>
+- <https://tldp.org/LDP/tlk/dd/pci.html>
+- Great example Rust code <https://gitlab.com/robigalia/pci/-/blob/master/src/lib.rs>
+  - I think this is the crate but it is old <https://docs.rs/pci/latest/pci/>
