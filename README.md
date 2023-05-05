@@ -52,8 +52,10 @@ make test
 
 ## TODO
 
+- Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
 - Filesystem support
   - Now that I have PCI working, attach a drive via QEMU and see what is looks like under PCI
+    - I'm pretty sure there is just one SATA controller for multiple drives
   - Example <https://github.com/rafalh/rust-fatfs>
   - <https://wiki.osdev.org/FAT>
   - ATA
@@ -66,6 +68,9 @@ make test
     - <https://brennan.io/2020/03/22/sos-block-device/>
     - <https://wiki.osdev.org/PCI>
     - <https://github.com/mit-pdos/xv6-riscv/blob/f5b93ef12f7159f74f80f94729ee4faabe42c360/kernel/virtio_disk.c>
+- Serial print deadlock during interrupt: if we hit an interrupt while we are in
+  the middle of printing to the serial port, and the interrupt needs to print to
+  the serial port, we can deadlock.
 - Allocator designs <https://os.phil-opp.com/allocator-designs/>
 - UEFI. I have it kind of set up, but I should poke at it more, and also investigate the Limine UEFI system table stuff
 - Tests

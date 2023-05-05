@@ -109,10 +109,6 @@ pub fn print_acpi_info(rsdp_addr: PhysAddr) {
     }
 
     // Iterate over PCI devices
-    // TODO: Figure out how to read memory mapped PCIe config
-    let base_device = unsafe { *(pci_config_region_base_address as *mut PCIDeviceConfigHeader) };
-    serial_println!("Base PCI device: {:#x?}", base_device);
-
     brute_force_search_pci(pci_config_region_base_address);
 }
 
@@ -164,8 +160,10 @@ fn brute_force_search_pci(base_addr: u64) {
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
 struct PCIDeviceConfigHeader {
-    vendor_id: u16,
-    device_id: u16,
+    raw_vendor_id: u16,
+    known_vendor_id: PCIDeviceVendorID,
+    raw_device_id: u16,
+    known_device_id: &'static str,
     command: u16,
     status: u16,
     revision_id: u8,
@@ -186,10 +184,8 @@ impl PCIDeviceConfigHeader {
     fn from_bytes(bytes: &[u8; 16]) -> Result<Option<Self>, &'static str> {
         let raw = RawPCIDeviceConfigHeader::from_bytes(bytes);
 
-        // If the vendor ID is 0xffff, then the device doesn't exist
-        if raw.vendor_id == 0xffff {
-            return Ok(None);
-        }
+        let Some(known_vendor_id) = PCIDeviceVendorID::from_bytes(raw.vendor_id) else { return Ok(None); };
+        let known_device_id = lookup_known_device_id(raw.vendor_id, raw.device_id);
 
         let header_type = match raw.header_type & 0xF {
             0x0 => PCIDeviceConfigHeaderType::GeneralDevice,
@@ -203,8 +199,10 @@ impl PCIDeviceConfigHeader {
         let class = PCIDeviceClass::from_bytes(raw.class, raw.subclass, raw.prog_if)?;
 
         Ok(Some(Self {
-            vendor_id: raw.vendor_id,
-            device_id: raw.device_id,
+            raw_vendor_id: raw.vendor_id,
+            known_vendor_id,
+            raw_device_id: raw.device_id,
+            known_device_id,
             command: raw.command,
             status: raw.status,
             revision_id: raw.revision_id,
@@ -215,6 +213,48 @@ impl PCIDeviceConfigHeader {
             multiple_functions,
             bist: raw.bist,
         }))
+    }
+}
+
+/// Reports some known PCI vendor IDs. This is absolutely not exhaustive, but
+/// known vendor IDs are useful for debugging.
+///
+/// Great resource for vendor IDs: <https://www.pcilookup.com>
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+enum PCIDeviceVendorID {
+    Intel,
+    VirtIO,
+    AMD,
+    Unknown,
+}
+
+impl PCIDeviceVendorID {
+    fn from_bytes(bytes: u16) -> Option<Self> {
+        match bytes {
+            // If the vendor ID is 0xffff, then the device doesn't exist
+            0xFFFF => None,
+            0x8086 | 0x8087 => Some(Self::Intel),
+            0x1af4 => Some(Self::VirtIO),
+            0x1002 => Some(Self::AMD),
+            _ => Some(Self::Unknown),
+        }
+    }
+}
+
+/// Reports on known PCI device IDs. This is absolutely not exhaustive, but
+/// known device IDs are useful for debugging.
+///
+/// Great resource for device IDs: <https://www.pcilookup.com>
+fn lookup_known_device_id(vendor_id: u16, device_id: u16) -> &'static str {
+    match (vendor_id, device_id) {
+        (0x8086, 0x10d3) => "82574L Gigabit Network Connection",
+        (0x8086, 0x2918) => "82801IB (ICH9) LPC Interface Controller",
+        (0x8086, 0x2922) => "82801IR/IO/IH (ICH9R/DO/DH) 6 port SATA Controller [AHCI mode]",
+        (0x8086, 0x2930) => "82801I (ICH9 Family) SMBus Controller",
+        (0x8086, 0x29c0) => "82G33/G31/P35/P31 Express DRAM Controller",
+        (0x1af4, 0x1050) => "Virtio GPU",
+        _ => "UNKNOWN",
     }
 }
 
