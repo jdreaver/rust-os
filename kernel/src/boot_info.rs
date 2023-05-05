@@ -1,7 +1,7 @@
 use limine::{
     LimineBootInfoRequest, LimineEfiSystemTableRequest, LimineFramebufferRequest,
-    LimineHhdmRequest, LimineKernelAddressRequest, LimineMemmapRequest, LimineRsdpRequest,
-    NonNullPtr,
+    LimineHhdmRequest, LimineKernelAddressRequest, LimineMemmapRequest, LimineMemoryMapEntryType,
+    LimineRsdpRequest, NonNullPtr,
 };
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -164,8 +164,7 @@ pub fn print_limine_memory_map() {
     let memory_map_iter = limine_memory_map_entries();
 
     serial_println!("limine memory map:");
-    let mut usable = 0;
-    let mut reclaimable = 0;
+    let mut memory_totals = [0u64; 16];
     for entry in memory_map_iter {
         serial_println!(
             "    base: {:#x}, len: {:#x}, type: {:?}",
@@ -174,18 +173,41 @@ pub fn print_limine_memory_map() {
             entry.typ
         );
 
-        if entry.typ == limine::LimineMemoryMapEntryType::Usable {
-            usable += entry.len;
-        } else if entry.typ == limine::LimineMemoryMapEntryType::BootloaderReclaimable {
-            reclaimable += entry.len;
-        }
+        memory_totals[entry.typ as usize] += entry.len;
     }
 
+    serial_println!("limine memory map totals:");
     serial_println!(
-        "limine memory map usable: {} MiB, reclaimable: {} MiB, reusable + reclaimable: {} MiB",
-        usable / 1024 / 1024,
-        reclaimable / 1024 / 1024,
-        (usable + reclaimable) / 1024 / 1024
+        "    usable: {} MiB",
+        memory_totals[LimineMemoryMapEntryType::Usable as usize] / 1024 / 1024
+    );
+    serial_println!(
+        "    reserved: {} MiB",
+        memory_totals[LimineMemoryMapEntryType::Reserved as usize] / 1024 / 1024
+    );
+    serial_println!(
+        "    ACPI reclaimable: {} MiB",
+        memory_totals[LimineMemoryMapEntryType::AcpiReclaimable as usize] / 1024 / 1024
+    );
+    serial_println!(
+        "    ACPI NVS: {} MiB",
+        memory_totals[LimineMemoryMapEntryType::AcpiNvs as usize] / 1024 / 1024
+    );
+    serial_println!(
+        "    bad memory: {} MiB",
+        memory_totals[LimineMemoryMapEntryType::BadMemory as usize] / 1024 / 1024
+    );
+    serial_println!(
+        "    boot loader reclaimable: {} MiB",
+        memory_totals[LimineMemoryMapEntryType::BootloaderReclaimable as usize] / 1024 / 1024
+    );
+    serial_println!(
+        "    kernel and modules: {} MiB",
+        memory_totals[LimineMemoryMapEntryType::KernelAndModules as usize] / 1024 / 1024
+    );
+    serial_println!(
+        "    framebuffer: {} MiB",
+        memory_totals[LimineMemoryMapEntryType::Framebuffer as usize] / 1024 / 1024
     );
 }
 
