@@ -52,6 +52,13 @@ make test
 
 ## TODO
 
+- PCI
+  - Consider a new crate for PCI
+  - <https://wiki.osdev.org/PCI>
+  - <https://wiki.osdev.org/PCI_Express>
+  - <https://tldp.org/LDP/tlk/dd/pci.html>
+  - Great example Rust code <https://gitlab.com/robigalia/pci/-/blob/master/src/lib.rs>
+    - I think this is the crate but it is old <https://docs.rs/pci/latest/pci/>
 - Filesystem support
   - Example <https://github.com/rafalh/rust-fatfs>
   - <https://wiki.osdev.org/FAT>

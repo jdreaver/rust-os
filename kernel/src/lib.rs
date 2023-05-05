@@ -15,6 +15,7 @@
     clippy::must_use_candidate,
     clippy::new_without_default,
     clippy::suboptimal_flops,
+    clippy::upper_case_acronyms,
     clippy::wildcard_imports
 )]
 
