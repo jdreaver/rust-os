@@ -1,6 +1,7 @@
 use core::ptr::NonNull;
 
-use acpi::{AcpiHandler, AcpiTables, PciConfigRegions, PhysicalMapping};
+use acpi::mcfg::{Mcfg, McfgEntry};
+use acpi::{AcpiHandler, AcpiTable, AcpiTables, PhysicalMapping};
 use x86_64::PhysAddr;
 
 use crate::serial_println;
@@ -66,10 +67,69 @@ pub fn print_acpi_info(rsdp_addr: PhysAddr) {
         platform_info.interrupt_model
     );
 
-    let pci_config_regions =
-        PciConfigRegions::new(&acpi_tables).expect("failed to get PCI config regions");
-    serial_println!("ACPI PCI config regions: {:#x?}", pci_config_regions);
+    serial_println!("ACPI SDTs:");
+    for (signature, sdt) in &acpi_tables.sdts {
+        serial_println!(
+            "  ACPI SDT: signature: {}, address: {:x}, length: {:x}, validated: {}",
+            signature,
+            sdt.physical_address,
+            sdt.length,
+            sdt.validated
+        );
+    }
 
     serial_println!("ACPI DSDT: {:#x?}", acpi_tables.dsdt);
     serial_println!("ACPI SSDTs: {:#x?}", acpi_tables.ssdts);
+
+    let pci_config_regions =
+        acpi::mcfg::PciConfigRegions::new(&acpi_tables).expect("failed to get PCI config regions");
+
+    // For some reason, pci_config_regions.regions is a private field, so we
+    // have to just probe it.
+    let pci_config_region_base_address = pci_config_regions
+        .physical_address(0, 0, 0, 0)
+        .expect("couldn't get PCI config address");
+    serial_println!(
+        "PCI config region base address: {:#x?}",
+        pci_config_region_base_address
+    );
+
+    // This is another way of getting pci_config_region_base_address, kinda. I
+    // don't know why this isn't exposed from the acpi crate.
+    let mcfg = unsafe {
+        acpi_tables
+            .get_sdt::<Mcfg>(acpi::sdt::Signature::MCFG)
+            .expect("failed to get MCFG table")
+            .expect("MCFG table is not present")
+    };
+    let mcfg_entries = mcfg_entries(&mcfg);
+    serial_println!("MCFG entries:");
+    for (i, entry) in mcfg_entries.iter().enumerate() {
+        serial_println!("  MCFG entry {}: {:#x?}", i, entry);
+    }
+
+    // Iterate over PCI devices
+    // TODO: Figure out how to read memory mapped PCIe config
+    let base_device =
+        unsafe { core::slice::from_raw_parts(pci_config_region_base_address as *mut u8, 32) };
+    serial_println!("Base PCI device: {:#x?}", base_device);
+}
+
+/// For some reason this code is private in the acpi crate. See
+/// <https://docs.rs/acpi/4.1.1/src/acpi/mcfg.rs.html#61-74>.
+fn mcfg_entries<H: AcpiHandler>(mcfg: &PhysicalMapping<H, Mcfg>) -> &[McfgEntry] {
+    //fn mcfg_entries<H: AcpiHandler>(mcfg: &Mcfg) -> &[McfgEntry] {
+    let length = mcfg.header().length as usize - core::mem::size_of::<Mcfg>();
+
+    // Intentionally round down in case length isn't an exact multiple of McfgEntry size
+    // (see rust-osdev/acpi#58)
+    let num_entries = length / core::mem::size_of::<McfgEntry>();
+
+    let start_ptr = mcfg.virtual_start().as_ptr() as *const u8;
+    unsafe {
+        let pointer = start_ptr
+            .add(core::mem::size_of::<Mcfg>())
+            .cast::<acpi::mcfg::McfgEntry>();
+        core::slice::from_raw_parts(pointer, num_entries)
+    }
 }
