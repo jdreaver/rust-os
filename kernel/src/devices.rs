@@ -69,4 +69,7 @@ pub fn print_acpi_info(rsdp_addr: PhysAddr) {
     let pci_config_regions =
         PciConfigRegions::new(&acpi_tables).expect("failed to get PCI config regions");
     serial_println!("ACPI PCI config regions: {:#x?}", pci_config_regions);
+
+    serial_println!("ACPI DSDT: {:#x?}", acpi_tables.dsdt);
+    serial_println!("ACPI SSDTs: {:#x?}", acpi_tables.ssdts);
 }
