@@ -34,9 +34,9 @@ where
 /// - Section 7.5 "7.5 PCI and PCIe Capabilities Required by the Base Spec for all Ports" of the PCI Express Base Specification
 /// - <https://wiki.osdev.org/PCI>, which is the legacy interface, but is still a good explanation.
 pub struct PCIeDeviceConfig {
-    /// Base address of the PCI Express extended configuration mechanism memory
-    /// region in which this device resides.
-    _enhanced_config_region_address: PhysAddr,
+    /// Physical address where the PCI Express extended configuration mechanism
+    /// memory region starts for this device.
+    physical_address: PhysAddr,
 
     /// Which PCIe bus this device is on.
     bus_number: u8,
@@ -68,17 +68,17 @@ impl PCIeDeviceConfig {
         let bus = u64::from(bus_number);
         let device = u64::from(device_number);
         let function = u64::from(function_number);
-        let base_addr =
+        let physical_address =
             enhanced_config_region_address + ((bus << 20) | (device << 15) | (function << 12));
 
-        let header = PCIDeviceConfigHeaderPtr::new(base_addr);
+        let header = PCIDeviceConfigHeaderPtr::new(physical_address);
 
         if !header.device_exists() {
             return None;
         }
 
         Some(Self {
-            _enhanced_config_region_address: enhanced_config_region_address,
+            physical_address,
             bus_number,
             device_number,
             function_number,
@@ -86,18 +86,12 @@ impl PCIeDeviceConfig {
         })
     }
 
-    /// Computes the physical address of the device's configuration space.
-    #[inline]
-    fn physical_address(&self) -> *mut u8 {
-        self.header.0.cast::<u8>()
-    }
-
     fn read_body(&self) -> Result<PCIDeviceConfigBody, &str> {
         let layout = self.header.header_type().header_layout()?;
         let body = match layout {
             PCIDeviceConfigHeaderLayout::GeneralDevice => {
                 PCIDeviceConfigBody::GeneralDevice(unsafe {
-                    PCIDeviceConfigBodyType0Ptr::from_config_base(self.physical_address())
+                    PCIDeviceConfigBodyType0Ptr::from_config_base(self.physical_address)
                 })
             }
             PCIDeviceConfigHeaderLayout::PCIToPCIBridge => PCIDeviceConfigBody::PCIToPCIBridge,
@@ -111,7 +105,7 @@ impl PCIeDeviceConfig {
         writeln!(w, "PCIe device config:")?;
 
         w.indent();
-        writeln!(w, "Address: {:#?}", self.physical_address())?;
+        writeln!(w, "Address: {:#x}", self.physical_address.as_u64())?;
         writeln!(w, "Bus number: {}", self.bus_number)?;
         writeln!(w, "Device number: {}", self.device_number)?;
         writeln!(w, "Function number: {}", self.function_number)?;
@@ -492,18 +486,24 @@ struct PCIDeviceConfigBodyType0 {
 
 #[derive(Clone, Copy)]
 struct PCIDeviceConfigBodyType0Ptr {
-    config_base_ptr: *mut u8,
+    /// Address of the PCI device configuration base (not for the body, but for
+    /// the base of the whole config).
+    config_base_address: PhysAddr,
+
+    /// Pointer specifically to the device's configuration body (so not
+    /// including the header).
     ptr: *mut PCIDeviceConfigBodyType0,
 }
 
 impl PCIDeviceConfigBodyType0Ptr {
-    unsafe fn from_config_base(config_base_ptr: *mut u8) -> Self {
-        let ptr = config_base_ptr
+    unsafe fn from_config_base(config_base_address: PhysAddr) -> Self {
+        let base_ptr = config_base_address.as_u64() as *mut u8;
+        let ptr = base_ptr
             .add(core::mem::size_of::<PCIDeviceConfigHeader>())
             .cast::<PCIDeviceConfigBodyType0>();
 
         Self {
-            config_base_ptr,
+            config_base_address,
             ptr,
         }
     }
@@ -550,7 +550,7 @@ impl PCIDeviceConfigBodyType0Ptr {
         writeln!(w, "max_latency: 0x{:02x}", body.max_latency,)?;
 
         let cap_ptr = unsafe {
-            PCIDeviceCapabilityHeaderPtr::new(self.config_base_ptr, body.capabilities_pointer)
+            PCIDeviceCapabilityHeaderPtr::new(self.config_base_address, body.capabilities_pointer)
         };
         if let Some(cap_ptr) = cap_ptr {
             writeln!(w, "Capability Headers:")?;
@@ -575,7 +575,7 @@ impl PCIDeviceConfigBodyType0Ptr {
 
 #[derive(Debug, Clone, Copy)]
 struct PCIDeviceCapabilityHeaderPtr {
-    config_region_base: *mut u8,
+    config_base_address: PhysAddr,
     ptr: *mut PCIDeviceCapabilityHeader,
 }
 
@@ -587,16 +587,19 @@ impl PCIDeviceCapabilityHeaderPtr {
     /// # Safety
     ///
     /// Both `config_region_base` and `offset` must be valid.
-    unsafe fn new(config_region_base: *mut u8, offset: u8) -> Option<Self> {
+    unsafe fn new(config_base_address: PhysAddr, offset: u8) -> Option<Self> {
         if offset == 0 {
             return None;
         }
 
+        let base_ptr = config_base_address.as_u64() as *mut u8;
+        let ptr = base_ptr
+            .add(offset as usize)
+            .cast::<PCIDeviceCapabilityHeader>();
+
         Some(Self {
-            config_region_base,
-            ptr: config_region_base
-                .add(offset as usize)
-                .cast::<PCIDeviceCapabilityHeader>(),
+            config_base_address,
+            ptr,
         })
     }
 
@@ -605,7 +608,7 @@ impl PCIDeviceCapabilityHeaderPtr {
     }
 
     fn next_capability(&self) -> Option<Self> {
-        unsafe { Self::new(self.config_region_base, self.as_ref().next) }
+        unsafe { Self::new(self.config_base_address, self.as_ref().next) }
     }
 }
 
