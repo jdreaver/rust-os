@@ -183,10 +183,6 @@ impl PCIDeviceConfigHeaderPtr {
         Self(ptr)
     }
 
-    fn as_ref(self) -> &'static PCIDeviceConfigHeader {
-        unsafe { &*self.0 }
-    }
-
     /// A device exists if the Vendor ID register is not 0xFFFF.
     fn device_exists(self) -> bool {
         self.as_ref().vendor_id != 0xFFFF
@@ -239,6 +235,12 @@ impl PCIDeviceConfigHeaderPtr {
         w.unindent();
 
         Ok(())
+    }
+}
+
+impl AsRef<PCIDeviceConfigHeader> for PCIDeviceConfigHeaderPtr {
+    fn as_ref(&self) -> &PCIDeviceConfigHeader {
+        unsafe { &*self.0 }
     }
 }
 
@@ -508,10 +510,6 @@ impl PCIDeviceConfigBodyType0Ptr {
         }
     }
 
-    fn as_ref(&self) -> &'static PCIDeviceConfigBodyType0 {
-        unsafe { &*self.ptr }
-    }
-
     fn print<W: Write>(self, w: &mut IndentWriter<'_, W>) -> fmt::Result {
         let body = self.as_ref();
 
@@ -573,8 +571,14 @@ impl PCIDeviceConfigBodyType0Ptr {
     }
 }
 
+impl AsRef<PCIDeviceConfigBodyType0> for PCIDeviceConfigBodyType0Ptr {
+    fn as_ref(&self) -> &PCIDeviceConfigBodyType0 {
+        unsafe { &*self.ptr }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
-struct PCIDeviceCapabilityHeaderPtr {
+pub struct PCIDeviceCapabilityHeaderPtr {
     config_base_address: PhysAddr,
     ptr: *mut PCIDeviceCapabilityHeader,
 }
@@ -603,18 +607,20 @@ impl PCIDeviceCapabilityHeaderPtr {
         })
     }
 
-    fn as_ref(&self) -> &'static PCIDeviceCapabilityHeader {
-        unsafe { &*self.ptr }
-    }
-
     fn next_capability(&self) -> Option<Self> {
         unsafe { Self::new(self.config_base_address, self.as_ref().next) }
     }
 }
 
+impl AsRef<PCIDeviceCapabilityHeader> for PCIDeviceCapabilityHeaderPtr {
+    fn as_ref(&self) -> &PCIDeviceCapabilityHeader {
+        unsafe { &*self.ptr }
+    }
+}
+
 #[repr(packed)]
 #[derive(Debug, Clone, Copy)]
-struct PCIDeviceCapabilityHeader {
+pub struct PCIDeviceCapabilityHeader {
     id: u8,
     next: u8,
 }
