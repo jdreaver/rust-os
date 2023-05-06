@@ -27,7 +27,8 @@ ifeq ($(UEFI),on)
 else
   $(info UEFI is disabled)
 endif
-QEMU_ARGS += -hda $(HDD)
+# Use virtio for the disk:
+QEMU_ARGS += -drive file=$(HDD),if=none,id=drive-virtio-disk0,format=raw -device virtio-blk-pci,scsi=off,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=0
 QEMU_ARGS += -smp 2 # Use 2 cores
 QEMU_ARGS += -display gtk,zoom-to-fit=on # Makes it so increasing screen size zooms in, useful for tiny fonts
 QEMU_ARGS += -vga virtio # More modern, better performance than default -vga std

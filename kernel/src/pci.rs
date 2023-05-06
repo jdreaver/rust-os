@@ -292,16 +292,77 @@ impl PCIDeviceConfigHeaderLayout {
 ///
 /// Great resource for device IDs: <https://www.pcilookup.com>
 fn lookup_known_device_id(vendor_id: u16, device_id: u16) -> &'static str {
+    #[allow(clippy::match_same_arms)]
     match (vendor_id, device_id) {
         (0x8086, 0x10d3) => "82574L Gigabit Network Connection",
         (0x8086, 0x2918) => "82801IB (ICH9) LPC Interface Controller",
         (0x8086, 0x2922) => "82801IR/IO/IH (ICH9R/DO/DH) 6 port SATA Controller [AHCI mode]",
         (0x8086, 0x2930) => "82801I (ICH9 Family) SMBus Controller",
         (0x8086, 0x29c0) => "82G33/G31/P35/P31 Express DRAM Controller",
-        (0x1af4, 0x1050) => "Virtio GPU",
+
+        // See Section 4.1.2 "PCI Device Discovery" as well as Section 5 "Device
+        // Types" of the VirtIO spec.
+        //
+        // "Devices MUST have the PCI Vendor ID 0x1AF4. Devices MUST either have
+        // the PCI Device ID calculated by adding 0x1040 to the Virtio Device
+        // ID, as indicated in section 5 or have the Transitional PCI Device ID
+        // depending on the device type..."
+
+        // Transitional IDs
+        (0x1af4, 0x1000) => "network card",
+        (0x1af4, 0x1001) => "block device",
+        (0x1af4, 0x1002) => "memory ballooning (traditional)",
+        (0x1af4, 0x1003) => "console",
+        (0x1af4, 0x1004) => "SCSI host",
+        (0x1af4, 0x1005) => "entropy source",
+        (0x1af4, 0x1009) => "9P transport",
+
+        // Non transitional IDs. These are device numbers added to 0x1040.
+        (0x1af4, 0x1040) => "reserved (invalid)",
+        (0x1af4, 0x1041) => "network card",
+        (0x1af4, 0x1042) => "block device",
+        (0x1af4, 0x1043) => "console",
+        (0x1af4, 0x1044) => "entropy source",
+        (0x1af4, 0x1045) => "memory ballooning (traditional)",
+        (0x1af4, 0x1046) => "ioMemory",
+        (0x1af4, 0x1047) => "rpmsg",
+        (0x1af4, 0x1048) => "SCSI host",
+        (0x1af4, 0x1049) => "9P transport",
+        (0x1af4, 0x104A) => "mac80211 wlan",
+        (0x1af4, 0x104B) => "rproc serial",
+        (0x1af4, 0x104C) => "virtio CAIF",
+        (0x1af4, 0x104D) => "memory balloon",
+        (0x1af4, 0x1050) => "GPU device",
+        (0x1af4, 0x1051) => "Timer/Clock device",
+        (0x1af4, 0x1052) => "Input device",
+        (0x1af4, 0x1053) => "Socket device",
+        (0x1af4, 0x1054) => "Crypto device",
+        (0x1af4, 0x1055) => "Signal Distribution Module",
+        (0x1af4, 0x1056) => "pstore device",
+        (0x1af4, 0x1057) => "IOMMU device",
+        (0x1af4, 0x1058) => "Memory device",
+        (0x1af4, 0x1059) => "Audio device",
+        (0x1af4, 0x105A) => "file system device",
+        (0x1af4, 0x105B) => "PMEM device",
+        (0x1af4, 0x105C) => "RPMB device",
+        (0x1af4, 0x105D) => "mac80211 hwsim wireless simulation device",
+        (0x1af4, 0x105E) => "Video encoder device",
+        (0x1af4, 0x105F) => "Video decoder device",
+        (0x1af4, 0x1060) => "SCMI device",
+        (0x1af4, 0x1061) => "NitroSecureModule",
+        (0x1af4, 0x1062) => "I2C adapter",
+        (0x1af4, 0x1063) => "Watchdog",
+        (0x1af4, 0x1064) => "CAN device",
+        (0x1af4, 0x1066) => "Parameter Server",
+        (0x1af4, 0x1067) => "Audio policy device",
+        (0x1af4, 0x1068) => "Bluetooth device",
+        (0x1af4, 0x1069) => "GPIO device",
+        (0x1af4, 0x106A) => "RDMA device",
+
         _ => "UNKNOWN",
     }
 }
+
 
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
