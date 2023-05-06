@@ -4,7 +4,7 @@ use acpi::mcfg::{Mcfg, McfgEntry};
 use acpi::{AcpiHandler, AcpiTable, AcpiTables, PhysicalMapping};
 use x86_64::PhysAddr;
 
-use crate::{pci, serial_println};
+use crate::{pci, serial, serial_println};
 
 /// We need to implement `acpi::AcpiHandler` to use the `acpi` crate. This is
 /// needed so we can map physical regions of memory to virtual regions. Luckily,
@@ -109,7 +109,11 @@ pub fn print_acpi_info(rsdp_addr: PhysAddr) {
     }
 
     // Iterate over PCI devices
-    pci::brute_force_search_pci(pci_config_region_base_address);
+    pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
+        device
+            .print(serial::serial1_writer())
+            .expect("failed to print PCI device");
+    });
 }
 
 /// For some reason this code is private in the acpi crate. See

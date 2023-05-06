@@ -1,7 +1,6 @@
 use core::fmt;
 use core::fmt::Write;
 
-use crate::serial;
 use crate::strings::IndentWriter;
 
 const MAX_PCI_BUS: u8 = 255;
@@ -12,16 +11,17 @@ const MAX_PCI_BUS_DEVICE_FUNCTION: u8 = 7;
 ///
 /// NOTE: I think this would miss devices that are behind a PCI bridge, except
 /// we are enumerating all buses, so maybe it is fine?
-pub fn brute_force_search_pci(base_addr: u64) {
+pub fn for_pci_devices_brute_force<F>(base_addr: u64, f: F)
+where
+    F: Fn(PCIeDeviceConfig),
+{
     for bus in 0..=MAX_PCI_BUS {
         for slot in 0..=MAX_PCI_BUS_DEVICE {
             for function in 0..=MAX_PCI_BUS_DEVICE_FUNCTION {
                 let device =
                     unsafe { PCIeDeviceConfig::new(base_addr as *const u8, bus, slot, function) };
                 let Some(device) = device else { continue; };
-                device
-                    .print(serial::serial1_writer())
-                    .expect("failed to print device config");
+                f(device);
             }
         }
     }
@@ -32,7 +32,7 @@ pub fn brute_force_search_pci(base_addr: u64) {
 /// - <https://wiki.osdev.org/PCI_Express#Configuration_Space>
 /// - Section 7.5 "7.5 PCI and PCIe Capabilities Required by the Base Spec for all Ports" of the PCI Express Base Specification
 /// - <https://wiki.osdev.org/PCI>, which is the legacy interface, but is still a good explanation.
-struct PCIeDeviceConfig {
+pub struct PCIeDeviceConfig {
     /// Base address of the PCI Express extended configuration mechanism memory
     /// region in which this device resides.
     _enhanced_config_region_address: *const u8,
@@ -104,7 +104,7 @@ impl PCIeDeviceConfig {
         Ok(body)
     }
 
-    fn print<W: Write>(&self, w: &mut W) -> fmt::Result {
+    pub fn print<W: Write>(&self, w: &mut W) -> fmt::Result {
         let w = &mut IndentWriter::new(w, 2);
 
         writeln!(w, "PCIe device config:")?;
@@ -362,7 +362,6 @@ fn lookup_known_device_id(vendor_id: u16, device_id: u16) -> &'static str {
         _ => "UNKNOWN",
     }
 }
-
 
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
