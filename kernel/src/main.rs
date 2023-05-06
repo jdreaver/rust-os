@@ -6,7 +6,7 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use rust_os::{acpi, allocator, boot_info, gdt, interrupts, memory, serial, serial_println};
+use rust_os::{acpi, allocator, boot_info, gdt, interrupts, memory, pci, serial, serial_println};
 use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable};
@@ -71,16 +71,6 @@ fn run_tests(
         };
     }
 
-    let rsdp_physical_addr = boot_info_data
-        .rsdp_address
-        .map(|addr| {
-            x86_64::PhysAddr::new(
-                addr.as_u64() - boot_info_data.higher_half_direct_map_offset.as_u64(),
-            )
-        })
-        .expect("failed to get RSDP physical address");
-    serial_println!("RSDP physical address: {:?}", rsdp_physical_addr);
-
     // Ensure we got a framebuffer.
     let mut framebuffer = unsafe {
         VESAFramebuffer32Bit::from_limine_framebuffer(boot_info_data.framebuffer)
@@ -97,7 +87,26 @@ fn run_tests(
         TEXT_BUFFER.flush(&mut framebuffer);
     };
 
-    acpi::print_acpi_info(rsdp_physical_addr);
+    let rsdp_physical_addr = boot_info_data
+        .rsdp_address
+        .map(|addr| {
+            x86_64::PhysAddr::new(
+                addr.as_u64() - boot_info_data.higher_half_direct_map_offset.as_u64(),
+            )
+        })
+        .expect("failed to get RSDP physical address");
+    serial_println!("RSDP physical address: {:?}", rsdp_physical_addr);
+
+    let acpi_info = unsafe { acpi::ACPIInfo::from_rsdp(rsdp_physical_addr) };
+    acpi::print_acpi_info(&acpi_info);
+    let pci_config_region_base_address = acpi_info.pci_config_region_base_address();
+
+    // Iterate over PCI devices
+    pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
+        device
+            .print(serial::serial1_writer())
+            .expect("failed to print PCI device");
+    });
 
     // Print out some test addresses
     let addresses = [

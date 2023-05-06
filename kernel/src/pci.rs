@@ -1,6 +1,8 @@
 use core::fmt;
 use core::fmt::Write;
 
+use x86_64::PhysAddr;
+
 use crate::strings::IndentWriter;
 
 const MAX_PCI_BUS: u8 = 255;
@@ -11,15 +13,14 @@ const MAX_PCI_BUS_DEVICE_FUNCTION: u8 = 7;
 ///
 /// NOTE: I think this would miss devices that are behind a PCI bridge, except
 /// we are enumerating all buses, so maybe it is fine?
-pub fn for_pci_devices_brute_force<F>(base_addr: u64, f: F)
+pub fn for_pci_devices_brute_force<F>(base_addr: PhysAddr, f: F)
 where
     F: Fn(PCIeDeviceConfig),
 {
     for bus in 0..=MAX_PCI_BUS {
         for slot in 0..=MAX_PCI_BUS_DEVICE {
             for function in 0..=MAX_PCI_BUS_DEVICE_FUNCTION {
-                let device =
-                    unsafe { PCIeDeviceConfig::new(base_addr as *const u8, bus, slot, function) };
+                let device = unsafe { PCIeDeviceConfig::new(base_addr, bus, slot, function) };
                 let Some(device) = device else { continue; };
                 f(device);
             }
@@ -35,7 +36,7 @@ where
 pub struct PCIeDeviceConfig {
     /// Base address of the PCI Express extended configuration mechanism memory
     /// region in which this device resides.
-    _enhanced_config_region_address: *const u8,
+    _enhanced_config_region_address: PhysAddr,
 
     /// Which PCIe bus this device is on.
     bus_number: u8,
@@ -59,7 +60,7 @@ impl PCIeDeviceConfig {
     /// Caller must ensure that `base_address` is a valid pointer to a PCI
     /// Express extended configuration mechanism memory region.
     unsafe fn new(
-        enhanced_config_region_address: *const u8,
+        enhanced_config_region_address: PhysAddr,
         bus_number: u8,
         device_number: u8,
         function_number: u8,
@@ -68,9 +69,9 @@ impl PCIeDeviceConfig {
         let device = u64::from(device_number);
         let function = u64::from(function_number);
         let base_addr =
-            enhanced_config_region_address as u64 | (bus << 20) | (device << 15) | (function << 12);
+            enhanced_config_region_address + ((bus << 20) | (device << 15) | (function << 12));
 
-        let header = PCIDeviceConfigHeaderPtr::new(base_addr as *mut PCIDeviceConfigHeader);
+        let header = PCIDeviceConfigHeaderPtr::new(base_addr);
 
         if !header.device_exists() {
             return None;
@@ -183,7 +184,8 @@ struct PCIDeviceConfigHeader {
 struct PCIDeviceConfigHeaderPtr(*mut PCIDeviceConfigHeader);
 
 impl PCIDeviceConfigHeaderPtr {
-    fn new(ptr: *mut PCIDeviceConfigHeader) -> Self {
+    fn new(addr: PhysAddr) -> Self {
+        let ptr = addr.as_u64() as *mut PCIDeviceConfigHeader;
         Self(ptr)
     }
 

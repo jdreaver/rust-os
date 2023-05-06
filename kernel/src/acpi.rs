@@ -4,7 +4,7 @@ use acpi::mcfg::{Mcfg, McfgEntry};
 use acpi::{AcpiHandler, AcpiTable, AcpiTables, PhysicalMapping};
 use x86_64::PhysAddr;
 
-use crate::{pci, serial, serial_println};
+use crate::serial_println;
 
 /// We need to implement `acpi::AcpiHandler` to use the `acpi` crate. This is
 /// needed so we can map physical regions of memory to virtual regions. Luckily,
@@ -42,16 +42,45 @@ impl AcpiHandler for IdentityMapAcpiHandler {
     }
 }
 
-fn acpi_tables_from_rsdp(rsdp_addr: PhysAddr) -> acpi::AcpiTables<IdentityMapAcpiHandler> {
-    let handler = IdentityMapAcpiHandler;
-    let rsdp_addr = rsdp_addr.as_u64() as usize;
-    unsafe {
-        AcpiTables::from_rsdp(handler, rsdp_addr).expect("failed to load ACPI tables from RSDP")
+/// Holds important Advanced Configuration and Power Interface (ACPI)
+/// information needed to start the kernel.
+pub struct ACPIInfo {
+    tables: AcpiTables<IdentityMapAcpiHandler>,
+}
+
+impl ACPIInfo {
+    /// # Safety
+    ///
+    /// Caller must ensure RSDP address is valid, and that page tables are set
+    /// up for identity mapping for any memory that could be used to access ACPI
+    /// tables (e.g. identity mapping physical memory).
+    pub unsafe fn from_rsdp(rsdp_addr: PhysAddr) -> Self {
+        let handler = IdentityMapAcpiHandler;
+        let rsdp_addr = rsdp_addr.as_u64() as usize;
+        let tables = unsafe {
+            AcpiTables::from_rsdp(handler, rsdp_addr).expect("failed to load ACPI tables from RSDP")
+        };
+        Self { tables }
+    }
+
+    /// Panics if PCI config regions cannot be found, simply because propagating
+    /// the error is a PITA.
+    pub fn pci_config_region_base_address(&self) -> PhysAddr {
+        let pci_config_regions = acpi::mcfg::PciConfigRegions::new(&self.tables)
+            .expect("couldn't get PCI config regions");
+
+        // For some reason, pci_config_regions.regions is a private field, so we
+        // have to just probe it.
+        let pci_config_region_base_address = pci_config_regions
+            .physical_address(0, 0, 0, 0)
+            .expect("couldn't get PCI config address");
+
+        PhysAddr::new(pci_config_region_base_address)
     }
 }
 
-pub fn print_acpi_info(rsdp_addr: PhysAddr) {
-    let acpi_tables = acpi_tables_from_rsdp(rsdp_addr);
+pub fn print_acpi_info(info: &ACPIInfo) {
+    let acpi_tables = &info.tables;
     let platform_info = acpi_tables
         .platform_info()
         .expect("failed to get platform info");
@@ -81,19 +110,6 @@ pub fn print_acpi_info(rsdp_addr: PhysAddr) {
     serial_println!("ACPI DSDT: {:#x?}", acpi_tables.dsdt);
     serial_println!("ACPI SSDTs: {:#x?}", acpi_tables.ssdts);
 
-    let pci_config_regions =
-        acpi::mcfg::PciConfigRegions::new(&acpi_tables).expect("failed to get PCI config regions");
-
-    // For some reason, pci_config_regions.regions is a private field, so we
-    // have to just probe it.
-    let pci_config_region_base_address = pci_config_regions
-        .physical_address(0, 0, 0, 0)
-        .expect("couldn't get PCI config address");
-    serial_println!(
-        "PCI config region base address: {:#x?}",
-        pci_config_region_base_address
-    );
-
     // This is another way of getting pci_config_region_base_address, kinda. I
     // don't know why this isn't exposed from the acpi crate.
     let mcfg = unsafe {
@@ -107,13 +123,6 @@ pub fn print_acpi_info(rsdp_addr: PhysAddr) {
     for (i, entry) in mcfg_entries.iter().enumerate() {
         serial_println!("  MCFG entry {}: {:#x?}", i, entry);
     }
-
-    // Iterate over PCI devices
-    pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
-        device
-            .print(serial::serial1_writer())
-            .expect("failed to print PCI device");
-    });
 }
 
 /// For some reason this code is private in the acpi crate. See
