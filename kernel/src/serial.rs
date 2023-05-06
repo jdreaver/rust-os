@@ -3,9 +3,38 @@ use core::fmt::Write;
 use lazy_static::lazy_static;
 use spin::Mutex;
 use uart_16550::SerialPort;
+use x86_64::instructions::interrupts;
+
+/// Simple wrapper around a serial port that implements the `Write` trait.
+/// Useful for use with the `write!` macro. We can't implement `Write` for
+/// `SerialPort` or `Mutex<SerialPort>` directly because we don't own those
+/// types.
+pub struct SerialWriter(Option<&'static Mutex<SerialPort>>);
+
+impl Write for SerialWriter {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let Some(writer) = self.0 else {
+            return Err(core::fmt::Error);
+        };
+
+        // Disable interrupts while taking mutex lock so we don't deadlock if an
+        // interrupt occurs and the interrupt handler tries to take the same lock.
+        interrupts::without_interrupts(|| writer.lock().write_str(s))
+    }
+}
+
+// N.B. The only reason this is mutable is to satisfy the `Write` trait
+// implementation. Under the hood SERIAL1 is wrapping in a mutex.
+pub static mut SERIAL1_WRITER: SerialWriter = SerialWriter(None);
+
+pub fn init_serial_writer() {
+    unsafe {
+        SERIAL1_WRITER = SerialWriter(Some(&SERIAL1));
+    }
+}
 
 lazy_static! {
-    pub static ref SERIAL1: Mutex<SerialPort> = {
+    static ref SERIAL1: Mutex<SerialPort> = {
         let mut serial_port = unsafe { SerialPort::new(0x3F8) };
         serial_port.init();
 
@@ -36,16 +65,11 @@ lazy_static! {
 
 #[doc(hidden)]
 pub fn _print(args: ::core::fmt::Arguments) {
-    use x86_64::instructions::interrupts;
-
-    // Disable interrupts while taking mutex lock so we don't deadlock if an
-    // interrupt occurs and the interrupt handler tries to take the same lock.
-    interrupts::without_interrupts(|| {
-        SERIAL1
-            .lock()
+    unsafe {
+        SERIAL1_WRITER
             .write_fmt(args)
             .expect("Printing to serial failed");
-    });
+    }
 }
 
 /// Prints to the host through the serial interface.

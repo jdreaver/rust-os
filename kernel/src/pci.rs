@@ -26,7 +26,10 @@ pub fn brute_force_search_pci(base_addr: u64) {
                     function,
                 );
                 serial_println!("Header: {:#x?}", device.header.as_ref());
-                serial_println!("Known device name: {:#x?}", device.header.known_device_name());
+                serial_println!(
+                    "Known device name: {:#x?}",
+                    device.header.known_device_name()
+                );
                 serial_println!("Known vendor_id: {:?}", device.header.known_vendor_id());
 
                 match device.read_body() {

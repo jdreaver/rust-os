@@ -6,7 +6,7 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use rust_os::{acpi, allocator, boot_info, gdt, interrupts, memory, serial_println};
+use rust_os::{acpi, allocator, boot_info, gdt, interrupts, memory, serial, serial_println};
 use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable};
@@ -15,6 +15,8 @@ static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
 
 #[no_mangle]
 extern "C" fn _start() -> ! {
+    serial::init_serial_writer();
+
     boot_info::init_boot_info();
     let boot_info_data = boot_info::boot_info();
 
