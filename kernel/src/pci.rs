@@ -1,32 +1,108 @@
+use core::fmt;
+
 use crate::serial_println;
 
-const MAX_PCI_BUSES: u64 = 256;
-const MAX_PCI_BUS_DEVICES: u64 = 32;
-const MAX_PCI_BUS_DEVICE_FUNCTIONS: u64 = 8;
+const MAX_PCI_BUS: u8 = 255;
+const MAX_PCI_BUS_DEVICE: u8 = 31;
+const MAX_PCI_BUS_DEVICE_FUNCTION: u8 = 7;
 
 /// <https://wiki.osdev.org/PCI#.22Brute_Force.22_Scan>
 ///
 /// NOTE: I think this would miss devices that are behind a PCI bridge, except
 /// we are enumerating all buses, so maybe it is fine?
 pub fn brute_force_search_pci(base_addr: u64) {
-    for bus in 0..MAX_PCI_BUSES {
-        for slot in 0..MAX_PCI_BUS_DEVICES {
-            for function in 0..MAX_PCI_BUS_DEVICE_FUNCTIONS {
-                let addr = base_addr | (bus << 20) | (slot << 15) | (function << 12);
-                let header = PCIDeviceConfig::from_ptr(addr as *mut u8)
-                    .expect("failed to read PCI device header");
-                if let Some(header) = header {
-                    serial_println!(
-                        "PCI device found at {:#x} (bus: {:x}, slot: {:x}, function: {:x}):\n{:#x?}",
-                        addr,
+    for bus in 0..=MAX_PCI_BUS {
+        for slot in 0..=MAX_PCI_BUS_DEVICE {
+            for function in 0..=MAX_PCI_BUS_DEVICE_FUNCTION {
+                let device = unsafe {
+                    PCIeDeviceConfig::new(
+                        base_addr as *mut u8,
                         bus,
                         slot,
                         function,
-                        header
+                    )
+                };
+                if device.device_exists() {
+                    serial_println!(
+                        "PCI device found at {:#x} (bus: {:x}, slot: {:x}, function: {:x})",
+                        device.physical_address(),
+                        bus,
+                        slot,
+                        function,
                     );
+                    serial_println!("  Header: {:#?}", device.header());
                 }
             }
         }
+    }
+}
+
+#[allow(clippy::doc_markdown)] // Clippy doesn't like PCIe
+/// Interface into a PCI Express device's configuration space. See:
+/// - <https://wiki.osdev.org/PCI_Express#Configuration_Space>
+/// - Section 7.5 "7.5 PCI and PCIe Capabilities Required by the Base Spec for all Ports" of the PCI Express Base Specification
+/// - <https://wiki.osdev.org/PCI>, which is the legacy interface, but is still a good explanation.
+struct PCIeDeviceConfig {
+    /// Base address of the PCI Express extended configuration mechanism memory
+    /// region in which this device resides.
+    enhanced_config_region_address: *mut u8,
+
+    /// Which PCIe bus this device is on.
+    bus_number: u8,
+
+    /// Device number of the device within the bus.
+    device_number: u8,
+
+    /// Function number of the device if the device is a multifunction device.
+    function_number: u8,
+}
+
+impl PCIeDeviceConfig {
+    /// # Safety
+    ///
+    /// Caller must ensure that `base_address` is a valid pointer to a PCI
+    /// Express extended configuration mechanism memory region.
+    unsafe fn new(
+        enhanced_config_region_address: *mut u8,
+        bus_number: u8,
+        device_number: u8,
+        function_number: u8,
+    ) -> Self {
+        Self {
+            enhanced_config_region_address,
+            bus_number,
+            device_number,
+            function_number,
+        }
+    }
+
+    /// Computes the physical address of the device's configuration space.
+    #[inline]
+    fn physical_address(&self) -> u64 {
+        // TODO: Instead of recomputing this every time, maybe we should store
+        // pointers to the header and device config in `new()` and then
+        // reference those directly, since they should be pointing at the right
+        // spot in memory.
+        let bus = u64::from(self.bus_number);
+        let device = u64::from(self.device_number);
+        let function = u64::from(self.function_number);
+        self.enhanced_config_region_address as u64 | (bus << 20) | (device << 15) | (function << 12)
+    }
+
+    #[inline]
+    fn header(&self) -> RawPCIDeviceConfigHeader {
+        // This is safe as long as our base address is valid.
+        let ptr = self.physical_address() as *const u8;
+        unsafe {
+            core::ptr::read(ptr.cast::<RawPCIDeviceConfigHeader>())
+        }
+    }
+
+    /// A device exists if the Vendor ID register is not 0xFFFF.
+    #[inline]
+    fn device_exists(&self) -> bool {
+        let header = self.header();
+        header.vendor_id != 0xFFFF
     }
 }
 
@@ -404,6 +480,7 @@ struct RawPCIDeviceConfigHeader {
 const PCI_DEVICE_CONFIG_HEADER_SIZE: usize = 16;
 
 impl RawPCIDeviceConfigHeader {
+    // TODO: deleteme
     fn from_bytes(bytes: &[u8; PCI_DEVICE_CONFIG_HEADER_SIZE]) -> Self {
         unsafe { core::ptr::read(bytes.as_ptr().cast::<Self>()) }
     }
