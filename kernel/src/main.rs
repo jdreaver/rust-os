@@ -6,7 +6,9 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use rust_os::{acpi, allocator, boot_info, gdt, interrupts, memory, pci, serial, serial_println};
+use rust_os::{
+    acpi, allocator, boot_info, gdt, interrupts, memory, pci, serial, serial_println, virtio,
+};
 use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable};
@@ -106,6 +108,29 @@ fn run_tests(
         device
             .print(serial::serial1_writer())
             .expect("failed to print PCI device");
+    });
+
+    // Find VirtIO devices
+    pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
+        // Filter for VirtIO devices
+        let header = device.header();
+        if header.vendor_id() != 0x1af4 {
+            return;
+        }
+
+        serial_println!("Found VirtIO device: {:?}", header);
+
+        let pci::PCIDeviceConfigBody::GeneralDevice(body) = device
+            .body()
+            .expect("failed to read device body")
+            else { return; };
+
+        for (i, capability) in body.iter_capabilities().enumerate() {
+            let virtio_cap = unsafe {
+                virtio::VirtIOPCICapabilityHeaderPtr::from_capability_header(&capability)
+            };
+            serial_println!("VirtIO capability {}: {:#x?}", i, virtio_cap.as_ref());
+        }
     });
 
     // Print out some test addresses

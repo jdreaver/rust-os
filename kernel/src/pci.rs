@@ -28,7 +28,6 @@ where
     }
 }
 
-#[allow(clippy::doc_markdown)] // Clippy doesn't like PCIe
 /// Interface into a PCI Express device's configuration space. See:
 /// - <https://wiki.osdev.org/PCI_Express#Configuration_Space>
 /// - Section 7.5 "7.5 PCI and PCIe Capabilities Required by the Base Spec for all Ports" of the PCI Express Base Specification
@@ -86,7 +85,7 @@ impl PCIeDeviceConfig {
         })
     }
 
-    fn read_body(&self) -> Result<PCIDeviceConfigBody, &str> {
+    pub fn body(&self) -> Result<PCIDeviceConfigBody, &str> {
         let layout = self.header.header_type().header_layout()?;
         let body = match layout {
             PCIDeviceConfigHeaderLayout::GeneralDevice => {
@@ -97,6 +96,10 @@ impl PCIeDeviceConfig {
             PCIDeviceConfigHeaderLayout::PCIToPCIBridge => PCIDeviceConfigBody::PCIToPCIBridge,
         };
         Ok(body)
+    }
+
+    pub fn header(&self) -> PCIDeviceConfigHeaderPtr {
+        self.header
     }
 
     pub fn print<W: Write>(&self, w: &mut W) -> fmt::Result {
@@ -115,7 +118,7 @@ impl PCIeDeviceConfig {
         self.header.print(w)?;
         w.unindent();
 
-        let body = self.read_body().expect("failed to read PCI device body");
+        let body = self.body().expect("failed to read PCI device body");
         match body {
             PCIDeviceConfigBody::GeneralDevice(body) => {
                 writeln!(w, "General Device Body:")?;
@@ -133,7 +136,7 @@ impl PCIeDeviceConfig {
 }
 
 #[derive(Clone, Copy)]
-enum PCIDeviceConfigBody {
+pub enum PCIDeviceConfigBody {
     GeneralDevice(PCIDeviceConfigBodyType0Ptr),
     PCIToPCIBridge,
     // N.B. PCIToCardBusBridge doesn't exist any longer in PCI Express. Let's
@@ -159,7 +162,7 @@ fn lookup_vendor_id(vendor_id: u16) -> Option<&'static str> {
 /// See <https://wiki.osdev.org/PCI#Common_Header_Fields>
 #[repr(packed)]
 #[derive(Clone, Copy)]
-struct PCIDeviceConfigHeader {
+pub struct PCIDeviceConfigHeader {
     vendor_id: u16,
     device_id: u16,
     command: u16,
@@ -174,8 +177,8 @@ struct PCIDeviceConfigHeader {
     _bist: u8,
 }
 
-#[derive(Clone, Copy)]
-struct PCIDeviceConfigHeaderPtr(*mut PCIDeviceConfigHeader);
+#[derive(Debug, Clone, Copy)]
+pub struct PCIDeviceConfigHeaderPtr(*mut PCIDeviceConfigHeader);
 
 impl PCIDeviceConfigHeaderPtr {
     fn new(addr: PhysAddr) -> Self {
@@ -190,6 +193,10 @@ impl PCIDeviceConfigHeaderPtr {
 
     fn header_type(self) -> PCIDeviceConfigHeaderType {
         self.as_ref().header_type
+    }
+
+    pub fn vendor_id(self) -> u16 {
+        self.as_ref().vendor_id
     }
 
     fn print<W: Write>(self, w: &mut IndentWriter<'_, W>) -> fmt::Result {
@@ -246,7 +253,7 @@ impl AsRef<PCIDeviceConfigHeader> for PCIDeviceConfigHeaderPtr {
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-struct PCIDeviceConfigHeaderType(u8);
+pub struct PCIDeviceConfigHeaderType(u8);
 
 impl PCIDeviceConfigHeaderType {
     /// The layout is in the first 7 bits of the Header Type register.
@@ -267,7 +274,7 @@ impl PCIDeviceConfigHeaderType {
 }
 
 #[derive(Clone, Copy)]
-enum PCIDeviceConfigHeaderLayout {
+pub enum PCIDeviceConfigHeaderLayout {
     GeneralDevice,
     PCIToPCIBridge,
     // N.B. PCIToCardBusBridge doesn't exist any longer in PCI Express. Let's
@@ -363,7 +370,7 @@ fn lookup_known_device_id(vendor_id: u16, device_id: u16) -> &'static str {
 
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
-enum PCIDeviceClass {
+pub enum PCIDeviceClass {
     Unclassified,
     MassStorageController,
     NetworkController,
@@ -467,7 +474,7 @@ fn device_type(class: u8, subclass: u8, prog_if: u8) -> Result<&'static str, &'s
 
 #[repr(packed)]
 #[derive(Clone, Copy)]
-struct PCIDeviceConfigBodyType0 {
+pub struct PCIDeviceConfigBodyType0 {
     bar0: u32,
     bar1: u32,
     bar2: u32,
@@ -487,7 +494,7 @@ struct PCIDeviceConfigBodyType0 {
 }
 
 #[derive(Clone, Copy)]
-struct PCIDeviceConfigBodyType0Ptr {
+pub struct PCIDeviceConfigBodyType0Ptr {
     /// Address of the PCI device configuration base (not for the body, but for
     /// the base of the whole config).
     config_base_address: PhysAddr,
@@ -508,6 +515,14 @@ impl PCIDeviceConfigBodyType0Ptr {
             config_base_address,
             ptr,
         }
+    }
+
+    pub fn iter_capabilities(&self) -> PCIDeviceCapabilityIterator {
+        let body = self.as_ref();
+        let cap_ptr = unsafe {
+            PCIDeviceCapabilityHeaderPtr::new(self.config_base_address, body.capabilities_pointer)
+        };
+        PCIDeviceCapabilityIterator::new(cap_ptr)
     }
 
     fn print<W: Write>(self, w: &mut IndentWriter<'_, W>) -> fmt::Result {
@@ -547,25 +562,18 @@ impl PCIDeviceConfigBodyType0Ptr {
         writeln!(w, "min_grant: 0x{:02x}", body.min_grant,)?;
         writeln!(w, "max_latency: 0x{:02x}", body.max_latency,)?;
 
-        let cap_ptr = unsafe {
-            PCIDeviceCapabilityHeaderPtr::new(self.config_base_address, body.capabilities_pointer)
-        };
-        if let Some(cap_ptr) = cap_ptr {
-            writeln!(w, "Capability Headers:")?;
-
-            w.indent();
-            let cap_iter = PCIDeviceCapabilityIterator::new(cap_ptr);
-            for (i, capability_header) in cap_iter.enumerate() {
-                let capability_header = capability_header.as_ref();
-                let id = capability_header.id;
-                let next = capability_header.next;
-                writeln!(
-                    w,
-                    "Capability Header {i}: id: {id:#x}, next_offset: {next:#x}"
-                )?;
-            }
-            w.unindent();
+        writeln!(w, "Capability Headers:")?;
+        w.indent();
+        for (i, capability_header) in self.iter_capabilities().enumerate() {
+            let capability_header = capability_header.as_ref();
+            let id = capability_header.id;
+            let next = capability_header.next;
+            writeln!(
+                w,
+                "Capability Header {i}: id: {id:#x}, next_offset: {next:#x}"
+            )?;
         }
+        w.unindent();
 
         Ok(())
     }
@@ -607,6 +615,10 @@ impl PCIDeviceCapabilityHeaderPtr {
         })
     }
 
+    pub fn address(&self) -> PhysAddr {
+        PhysAddr::new(self.ptr as u64)
+    }
+
     fn next_capability(&self) -> Option<Self> {
         unsafe { Self::new(self.config_base_address, self.as_ref().next) }
     }
@@ -626,13 +638,13 @@ pub struct PCIDeviceCapabilityHeader {
 }
 
 #[derive(Debug)]
-struct PCIDeviceCapabilityIterator {
+pub struct PCIDeviceCapabilityIterator {
     ptr: Option<PCIDeviceCapabilityHeaderPtr>,
 }
 
 impl PCIDeviceCapabilityIterator {
-    fn new(ptr: PCIDeviceCapabilityHeaderPtr) -> Self {
-        Self { ptr: Some(ptr) }
+    fn new(ptr: Option<PCIDeviceCapabilityHeaderPtr>) -> Self {
+        Self { ptr }
     }
 }
 

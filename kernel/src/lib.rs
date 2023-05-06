@@ -5,6 +5,7 @@
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
     clippy::cargo_common_metadata,
+    clippy::doc_markdown,
     clippy::implicit_hasher,
     clippy::implicit_return,
     clippy::missing_const_for_fn,
@@ -30,3 +31,4 @@ pub mod memory;
 pub mod pci;
 pub mod serial;
 pub mod strings;
+pub mod virtio;
