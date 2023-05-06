@@ -1,6 +1,8 @@
 use core::fmt;
+use core::fmt::Write;
 
 use crate::serial;
+use crate::strings::IndentWriter;
 
 const MAX_PCI_BUS: u8 = 255;
 const MAX_PCI_BUS_DEVICE: u8 = 31;
@@ -104,23 +106,32 @@ impl PCIeDeviceConfig {
         Ok(body)
     }
 
-    fn print<W: fmt::Write>(&self, w: &mut W) -> fmt::Result {
+    fn print<W: Write>(&self, w: &mut W) -> fmt::Result {
+        let w = &mut IndentWriter::new(w, 2);
+
         writeln!(w, "PCIe device config:")?;
-        writeln!(w, "  Address: {:#x?}", self.physical_address())?;
-        writeln!(w, "  Bus number: {}", self.bus_number)?;
-        writeln!(w, "  Device number: {}", self.device_number)?;
-        writeln!(w, "  Function number: {}", self.function_number)?;
-        writeln!(w, "  Header:")?;
-        self.header.print(w, 4)?;
+
+        w.indent();
+        writeln!(w, "Address: {:#x?}", self.physical_address())?;
+        writeln!(w, "Bus number: {}", self.bus_number)?;
+        writeln!(w, "Device number: {}", self.device_number)?;
+        writeln!(w, "Function number: {}", self.function_number)?;
+        writeln!(w, "Header:")?;
+
+        w.indent();
+        self.header.print(w)?;
+        w.unindent();
 
         let body = self.read_body().expect("failed to read PCI device body");
         match body {
             PCIDeviceConfigBody::GeneralDevice(body) => {
-                writeln!(w, "  General Device Body:")?;
-                body.print(w, 4)?;
+                writeln!(w, "General Device Body:")?;
+                w.indent();
+                body.print(w)?;
+                w.unindent();
             }
             PCIDeviceConfigBody::PCIToPCIBridge => {
-                writeln!(w, "  Body: PCI to PCI bridge")?;
+                writeln!(w, "Body: PCI to PCI bridge")?;
             }
         };
         Ok(())
@@ -202,78 +213,45 @@ impl PCIDeviceConfigHeaderPtr {
         self.as_ref().header_type & 0x80 != 0
     }
 
-    fn print<W: fmt::Write>(self, w: &mut W, indent: usize) -> fmt::Result {
+    fn print<W: Write>(self, w: &mut IndentWriter<'_, W>) -> fmt::Result {
         let header = self.as_ref();
 
         let layout = self
             .header_layout()
             .expect("couldn't construct header layout")
             .as_str();
-        writeln!(w, "{:indent$}layout: {}", "", layout, indent = indent)?;
+        writeln!(w, "layout: {layout}")?;
 
         let multifunction = self.is_multifunction();
-        writeln!(
-            w,
-            "{:indent$}multifunction: {}",
-            "",
-            multifunction,
-            indent = indent
-        )?;
+        writeln!(w, "multifunction: {multifunction}")?;
 
         let command = header.command;
-        writeln!(
-            w,
-            "{:indent$}command: {:#08b}",
-            "",
-            command,
-            indent = indent
-        )?;
+        writeln!(w, "command: {command:#08b}")?;
 
         let status = header.status;
-        writeln!(w, "{:indent$}status: {:#08b}", "", status, indent = indent)?;
+        writeln!(w, "status: {status:#08b}")?;
 
         let vendor_id = header.vendor_id;
         let vendor = lookup_vendor_id(vendor_id);
-        write!(w, "{:indent$}vendor: {:#x}", "", vendor_id, indent = indent)?;
+        write!(w, "vendor: {vendor_id:#x}")?;
         writeln!(w, " ({})", vendor.unwrap_or("UNKNOWN"))?;
 
         let device_id = header.device_id;
         let device = lookup_known_device_id(vendor_id, device_id);
         let revision_id = header.revision_id;
-        writeln!(
-            w,
-            "{:indent$}device_id: {:#x}, revision_id: {:#x}, ({device})",
-            "",
-            device_id,
-            revision_id,
-            indent = indent
-        )?;
+        write!(w, "device_id: {device_id:#x}")?;
+        write!(w, ", revision_id: {revision_id:#x}")?;
+        writeln!(w, " ({device})")?;
 
         let device = device_type(header.class, header.subclass, header.prog_if)
             .expect("couldn't construct device class");
-        writeln!(w, "{:indent$}device:", "", indent = indent)?;
-        writeln!(w, "{:indent$}name: {}", "", device, indent = indent + 2)?;
-        writeln!(
-            w,
-            "{:indent$}class: {:#x}",
-            "",
-            header.class,
-            indent = indent + 2
-        )?;
-        writeln!(
-            w,
-            "{:indent$}subclass: {:#x}",
-            "",
-            header.subclass,
-            indent = indent + 2
-        )?;
-        writeln!(
-            w,
-            "{:indent$}prog_if: {:#x}",
-            "",
-            header.prog_if,
-            indent = indent + 2
-        )?;
+        writeln!(w, "device:")?;
+        w.indent();
+        writeln!(w, "name: {device}")?;
+        writeln!(w, "class: {:#x}", header.class)?;
+        writeln!(w, "subclass: {:#x}", header.subclass,)?;
+        writeln!(w, "prog_if: {:#x}", header.prog_if)?;
+        w.unindent();
 
         Ok(())
     }
@@ -451,7 +429,7 @@ impl PCIDeviceConfigBodyType0Ptr {
         unsafe { &*self.0 }
     }
 
-    fn print<W: fmt::Write>(self, w: &mut W, indent: usize) -> fmt::Result {
+    fn print<W: Write>(self, w: &mut IndentWriter<'_, W>) -> fmt::Result {
         let body = self.as_ref();
 
         let bar0 = body.bar0;
@@ -465,75 +443,28 @@ impl PCIDeviceConfigBodyType0Ptr {
         let subsystem_id = body.subsystem_id;
         let expansion_rom_base_address = body.expansion_rom_base_address;
 
-        writeln!(w, "{:indent$}bar0: 0x{:08x}", "", bar0, indent = indent)?;
-        writeln!(w, "{:indent$}bar1: 0x{:08x}", "", bar1, indent = indent)?;
-        writeln!(w, "{:indent$}bar2: 0x{:08x}", "", bar2, indent = indent)?;
-        writeln!(w, "{:indent$}bar3: 0x{:08x}", "", bar3, indent = indent)?;
-        writeln!(w, "{:indent$}bar4: 0x{:08x}", "", bar4, indent = indent)?;
-        writeln!(w, "{:indent$}bar5: 0x{:08x}", "", bar5, indent = indent)?;
+        writeln!(w, "bar0: 0x{bar0:08x}")?;
+        writeln!(w, "bar1: 0x{bar1:08x}")?;
+        writeln!(w, "bar2: 0x{bar2:08x}")?;
+        writeln!(w, "bar3: 0x{bar3:08x}")?;
+        writeln!(w, "bar4: 0x{bar4:08x}")?;
+        writeln!(w, "bar5: 0x{bar5:08x}")?;
+        writeln!(w, "cardbus_cis_pointer: 0x{cardbus_cis_pointer:08x}")?;
+        writeln!(w, "subsystem_vendor_id: 0x{subsystem_vendor_id:04x}")?;
+        writeln!(w, "subsystem_id: 0x{subsystem_id:04x}")?;
         writeln!(
             w,
-            "{:indent$}cardbus_cis_pointer: 0x{:08x}",
-            "",
-            cardbus_cis_pointer,
-            indent = indent
+            "expansion_rom_base_address: 0x{expansion_rom_base_address:08x}"
         )?;
         writeln!(
             w,
-            "{:indent$}subsystem_vendor_id: 0x{:04x}",
-            "",
-            subsystem_vendor_id,
-            indent = indent
-        )?;
-        writeln!(
-            w,
-            "{:indent$}subsystem_id: 0x{:04x}",
-            "",
-            subsystem_id,
-            indent = indent
-        )?;
-        writeln!(
-            w,
-            "{:indent$}expansion_rom_base_address: 0x{:08x}",
-            "",
-            expansion_rom_base_address,
-            indent = indent
-        )?;
-        writeln!(
-            w,
-            "{:indent$}capabilities_pointer: 0x{:02x}",
-            "",
+            "capabilities_pointer: 0x{:02x}",
             body.capabilities_pointer,
-            indent = indent
         )?;
-        writeln!(
-            w,
-            "{:indent$}interrupt_line: 0x{:02x}",
-            "",
-            body.interrupt_line,
-            indent = indent
-        )?;
-        writeln!(
-            w,
-            "{:indent$}interrupt_pin: 0x{:02x}",
-            "",
-            body.interrupt_pin,
-            indent = indent
-        )?;
-        writeln!(
-            w,
-            "{:indent$}min_grant: 0x{:02x}",
-            "",
-            body.min_grant,
-            indent = indent
-        )?;
-        writeln!(
-            w,
-            "{:indent$}max_latency: 0x{:02x}",
-            "",
-            body.max_latency,
-            indent = indent
-        )?;
+        writeln!(w, "interrupt_line: 0x{:02x}", body.interrupt_line,)?;
+        writeln!(w, "interrupt_pin: 0x{:02x}", body.interrupt_pin,)?;
+        writeln!(w, "min_grant: 0x{:02x}", body.min_grant,)?;
+        writeln!(w, "max_latency: 0x{:02x}", body.max_latency,)?;
 
         Ok(())
     }
