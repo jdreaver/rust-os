@@ -96,7 +96,8 @@ impl PCIeDeviceConfig {
         let body_ptr_location =
             header_location + core::mem::size_of::<PCIDeviceConfigHeader>() as u64;
 
-        let body = match self.header.header_layout()? {
+        let layout = self.header.header_type().header_layout()?;
+        let body = match layout {
             PCIDeviceConfigHeaderLayout::GeneralDevice => {
                 let ptr = body_ptr_location as *mut PCIDeviceConfigBodyType0;
                 PCIDeviceConfigBody::GeneralDevice(PCIDeviceConfigBodyType0Ptr::new(ptr))
@@ -176,7 +177,7 @@ struct PCIDeviceConfigHeader {
     class: u8,
     _cache_line_size: u8,
     _latency_timer: u8,
-    header_type: u8, // TODO: Replace with wrapper type to get layout vs multifunction
+    header_type: PCIDeviceConfigHeaderType,
     _bist: u8,
 }
 
@@ -197,39 +198,29 @@ impl PCIDeviceConfigHeaderPtr {
         self.as_ref().vendor_id != 0xFFFF
     }
 
-    /// The layout is in the first 7 bits of the Header Type register.
-    fn header_layout(self) -> Result<PCIDeviceConfigHeaderLayout, &'static str> {
-        match self.as_ref().header_type & 0x7 {
-            0x00 => Ok(PCIDeviceConfigHeaderLayout::GeneralDevice),
-            0x01 => Ok(PCIDeviceConfigHeaderLayout::PCIToPCIBridge),
-            // 0x02 => Ok(PCIDeviceConfigHeaderType::PCIToCardBusBridge),
-            _ => Err("invalid PCI device header type"),
-        }
-    }
-
-    /// If the 8th bit of the Header Type register is set, the device is a
-    /// multifunction device.
-    fn is_multifunction(self) -> bool {
-        self.as_ref().header_type & 0x80 != 0
+    fn header_type(self) -> PCIDeviceConfigHeaderType {
+        self.as_ref().header_type
     }
 
     fn print<W: Write>(self, w: &mut IndentWriter<'_, W>) -> fmt::Result {
         let header = self.as_ref();
 
-        let layout = self
+        let header_type = header.header_type;
+
+        let layout = header_type
             .header_layout()
             .expect("couldn't construct header layout")
             .as_str();
         writeln!(w, "layout: {layout}")?;
 
-        let multifunction = self.is_multifunction();
+        let multifunction = header_type.is_multifunction();
         writeln!(w, "multifunction: {multifunction}")?;
 
         let command = header.command;
-        writeln!(w, "command: {command:#08b}")?;
+        writeln!(w, "command: {command:#016b}")?;
 
         let status = header.status;
-        writeln!(w, "status: {status:#08b}")?;
+        writeln!(w, "status: {status:#016b}")?;
 
         let vendor_id = header.vendor_id;
         let vendor = lookup_vendor_id(vendor_id);
@@ -254,6 +245,28 @@ impl PCIDeviceConfigHeaderPtr {
         w.unindent();
 
         Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+struct PCIDeviceConfigHeaderType(u8);
+
+impl PCIDeviceConfigHeaderType {
+    /// The layout is in the first 7 bits of the Header Type register.
+    fn header_layout(self) -> Result<PCIDeviceConfigHeaderLayout, &'static str> {
+        match self.0 & 0x7 {
+            0x00 => Ok(PCIDeviceConfigHeaderLayout::GeneralDevice),
+            0x01 => Ok(PCIDeviceConfigHeaderLayout::PCIToPCIBridge),
+            // 0x02 => Ok(PCIDeviceConfigHeaderType::PCIToCardBusBridge),
+            _ => Err("invalid PCI device header type"),
+        }
+    }
+
+    /// If the 8th bit of the Header Type register is set, the device is a
+    /// multifunction device.
+    fn is_multifunction(self) -> bool {
+        self.0 & 0x80 != 0
     }
 }
 
