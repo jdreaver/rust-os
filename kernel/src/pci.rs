@@ -249,18 +249,30 @@ impl PCIDeviceConfigHeaderPtr {
             indent = indent
         )?;
 
-        let device_class =
-            PCIDeviceClass::from_bytes(header.class, header.subclass, header.prog_if)
-                .expect("couldn't construct device class");
+        let device = device_type(header.class, header.subclass, header.prog_if)
+            .expect("couldn't construct device class");
+        writeln!(w, "{:indent$}device:", "", indent = indent)?;
+        writeln!(w, "{:indent$}name: {}", "", device, indent = indent + 2)?;
         writeln!(
             w,
-            "{:indent$}class: {:#x}, subclass: {:#x}, prog_if: {:#x}, ({:?})",
+            "{:indent$}class: {:#x}",
             "",
             header.class,
+            indent = indent + 2
+        )?;
+        writeln!(
+            w,
+            "{:indent$}subclass: {:#x}",
+            "",
             header.subclass,
+            indent = indent + 2
+        )?;
+        writeln!(
+            w,
+            "{:indent$}prog_if: {:#x}",
+            "",
             header.prog_if,
-            device_class,
-            indent = indent
+            indent = indent + 2
         )?;
 
         Ok(())
@@ -305,201 +317,104 @@ fn lookup_known_device_id(vendor_id: u16, device_id: u16) -> &'static str {
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
 enum PCIDeviceClass {
-    Unclassified {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    MassStorageController {
-        subclass: PCIDeviceMassStorageControllerSubclass,
-    },
-    NetworkController {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    DisplayController {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    MultimediaController {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    MemoryController {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    BridgeDevice {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    SimpleCommunicationController {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    BaseSystemPeripheral {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    InputDeviceController {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    DockingStation {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    Processor {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    SerialBusController {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    WirelessController {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    IntelligentController {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    SatelliteCommunicationController {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    EncryptionController {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    SignalProcessingController {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    ProcessingAccelerator {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    NonEssentialInstrumentation {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    Coprocessor {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    Unassigned {
-        subclass: PCIDeviceUnknownSubclass,
-        prog_if: PCIDeviceUnknownProgIF,
-    },
+    Unclassified,
+    MassStorageController,
+    NetworkController,
+    DisplayController,
+    MultimediaController,
+    MemoryController,
+    BridgeDevice,
+    SimpleCommunicationController,
+    BaseSystemPeripheral,
+    InputDeviceController,
+    DockingStation,
+    Processor,
+    SerialBusController,
+    WirelessController,
+    IntelligentController,
+    SatelliteCommunicationController,
+    EncryptionController,
+    SignalProcessingController,
+    ProcessingAccelerator,
+    NonEssentialInstrumentation,
+    Coprocessor,
+    Unassigned,
 }
 
-type PCIDeviceUnknownSubclass = u8;
-type PCIDeviceUnknownProgIF = u8;
-
 impl PCIDeviceClass {
-    fn from_bytes(class: u8, subclass: u8, prog_if: u8) -> Result<Self, &'static str> {
+    fn from_byte(class: u8) -> Result<Self, &'static str> {
         match class {
-            0x00 => Ok(Self::Unclassified { subclass, prog_if }),
-            0x01 => Ok(Self::MassStorageController {
-                subclass: PCIDeviceMassStorageControllerSubclass::from_bytes(subclass, prog_if)?,
-            }),
-            0x02 => Ok(Self::NetworkController { subclass, prog_if }),
-            0x03 => Ok(Self::DisplayController { subclass, prog_if }),
-            0x04 => Ok(Self::MultimediaController { subclass, prog_if }),
-            0x05 => Ok(Self::MemoryController { subclass, prog_if }),
-            0x06 => Ok(Self::BridgeDevice { subclass, prog_if }),
-            0x07 => Ok(Self::SimpleCommunicationController { subclass, prog_if }),
-            0x08 => Ok(Self::BaseSystemPeripheral { subclass, prog_if }),
-            0x09 => Ok(Self::InputDeviceController { subclass, prog_if }),
-            0x0A => Ok(Self::DockingStation { subclass, prog_if }),
-            0x0B => Ok(Self::Processor { subclass, prog_if }),
-            0x0C => Ok(Self::SerialBusController { subclass, prog_if }),
-            0x0D => Ok(Self::WirelessController { subclass, prog_if }),
-            0x0E => Ok(Self::IntelligentController { subclass, prog_if }),
-            0x0F => Ok(Self::SatelliteCommunicationController { subclass, prog_if }),
-            0x10 => Ok(Self::EncryptionController { subclass, prog_if }),
-            0x11 => Ok(Self::SignalProcessingController { subclass, prog_if }),
-            0x12 => Ok(Self::ProcessingAccelerator { subclass, prog_if }),
-            0x13 => Ok(Self::NonEssentialInstrumentation { subclass, prog_if }),
-            0x40 => Ok(Self::Coprocessor { subclass, prog_if }),
-            0xFF => Ok(Self::Unassigned { subclass, prog_if }),
+            0x00 => Ok(Self::Unclassified),
+            0x01 => Ok(Self::MassStorageController),
+            0x02 => Ok(Self::NetworkController),
+            0x03 => Ok(Self::DisplayController),
+            0x04 => Ok(Self::MultimediaController),
+            0x05 => Ok(Self::MemoryController),
+            0x06 => Ok(Self::BridgeDevice),
+            0x07 => Ok(Self::SimpleCommunicationController),
+            0x08 => Ok(Self::BaseSystemPeripheral),
+            0x09 => Ok(Self::InputDeviceController),
+            0x0A => Ok(Self::DockingStation),
+            0x0B => Ok(Self::Processor),
+            0x0C => Ok(Self::SerialBusController),
+            0x0D => Ok(Self::WirelessController),
+            0x0E => Ok(Self::IntelligentController),
+            0x0F => Ok(Self::SatelliteCommunicationController),
+            0x10 => Ok(Self::EncryptionController),
+            0x11 => Ok(Self::SignalProcessingController),
+            0x12 => Ok(Self::ProcessingAccelerator),
+            0x13 => Ok(Self::NonEssentialInstrumentation),
+            0x40 => Ok(Self::Coprocessor),
+            0xFF => Ok(Self::Unassigned),
             _ => Err("invalid PCI device class"),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
-enum PCIDeviceMassStorageControllerSubclass {
-    SCSI {
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    IDE {
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    FloppyDisk {
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    IPIBus {
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    RAID {
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    ATA {
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    SATA {
-        prog_if: PCIDeviceMassStorageControllerSATAProgIF,
-    },
-    SAS {
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    NVM {
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-    Other {
-        prog_if: PCIDeviceUnknownProgIF,
-    },
-}
-
-impl PCIDeviceMassStorageControllerSubclass {
-    fn from_bytes(subclass: u8, prog_if: u8) -> Result<Self, &'static str> {
-        match subclass {
-            0x00 => Ok(Self::SCSI { prog_if }),
-            0x01 => Ok(Self::IDE { prog_if }),
-            0x02 => Ok(Self::FloppyDisk { prog_if }),
-            0x03 => Ok(Self::IPIBus { prog_if }),
-            0x04 => Ok(Self::RAID { prog_if }),
-            0x05 => Ok(Self::ATA { prog_if }),
-            0x06 => Ok(Self::SATA {
-                prog_if: PCIDeviceMassStorageControllerSATAProgIF::from_bytes(prog_if)?,
-            }),
-            0x07 => Ok(Self::SAS { prog_if }),
-            0x08 => Ok(Self::NVM { prog_if }),
-            0x80 => Ok(Self::Other { prog_if }),
+fn device_type(class: u8, subclass: u8, prog_if: u8) -> Result<&'static str, &'static str> {
+    let class_name = PCIDeviceClass::from_byte(class)?;
+    match class_name {
+        PCIDeviceClass::Unclassified => Ok("Unclassified"),
+        PCIDeviceClass::MassStorageController => match subclass {
+            0x00 => Ok("Mass Storage Controller: SCSI"),
+            0x01 => Ok("Mass Storage Controller: IDE"),
+            0x02 => Ok("Mass Storage Controller: FloppyDisk"),
+            0x03 => Ok("Mass Storage Controller: IPIBus"),
+            0x04 => Ok("Mass Storage Controller: RAID"),
+            0x05 => Ok("Mass Storage Controller: ATA"),
+            0x06 => match prog_if {
+                0x00 => Ok("Mass Storage Controller: SATA: VendorSpecific"),
+                0x01 => Ok("Mass Storage Controller: SATA: AHCI1_0"),
+                0x02 => Ok("Mass Storage Controller: SATA: SerialStorageBus"),
+                _ => Err("invalid PCI device mass storage controller SATA prog_if"),
+            },
+            0x07 => Ok("Mass Storage Controller: SAS"),
+            0x08 => Ok("Mass Storage Controller: NVM"),
+            0x80 => Ok("Mass Storage Controller: Other"),
             _ => Err("invalid PCI device mass storage controller subclass"),
+        },
+        PCIDeviceClass::NetworkController => Ok("Network Controller"),
+        PCIDeviceClass::DisplayController => Ok("Display Controller"),
+        PCIDeviceClass::MultimediaController => Ok("Multimedia Controller"),
+        PCIDeviceClass::MemoryController => Ok("Memory Controller"),
+        PCIDeviceClass::BridgeDevice => Ok("Bridge Device"),
+        PCIDeviceClass::SimpleCommunicationController => Ok("Simple Communication Controller"),
+        PCIDeviceClass::BaseSystemPeripheral => Ok("Base System Peripheral"),
+        PCIDeviceClass::InputDeviceController => Ok("Input Device Controller"),
+        PCIDeviceClass::DockingStation => Ok("Docking Station"),
+        PCIDeviceClass::Processor => Ok("Processor"),
+        PCIDeviceClass::SerialBusController => Ok("Serial Bus Controller"),
+        PCIDeviceClass::WirelessController => Ok("Wireless Controller"),
+        PCIDeviceClass::IntelligentController => Ok("Intelligent Controller"),
+        PCIDeviceClass::SatelliteCommunicationController => {
+            Ok("Satellite Communication Controller")
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
-enum PCIDeviceMassStorageControllerSATAProgIF {
-    VendorSpecific,
-    AHCI1_0,
-    SerialStorageBus,
-}
-
-impl PCIDeviceMassStorageControllerSATAProgIF {
-    fn from_bytes(prog_if: u8) -> Result<Self, &'static str> {
-        match prog_if {
-            0x00 => Ok(Self::VendorSpecific),
-            0x01 => Ok(Self::AHCI1_0),
-            0x02 => Ok(Self::SerialStorageBus),
-            _ => Err("invalid PCI device mass storage controller SATA prog_if"),
-        }
+        PCIDeviceClass::EncryptionController => Ok("Encryption Controller"),
+        PCIDeviceClass::SignalProcessingController => Ok("Signal Processing Controller"),
+        PCIDeviceClass::ProcessingAccelerator => Ok("Processing Accelerator"),
+        PCIDeviceClass::NonEssentialInstrumentation => Ok("Non Essential Instrumentation"),
+        PCIDeviceClass::Coprocessor => Ok("Coprocessor"),
+        PCIDeviceClass::Unassigned => Ok("Unassigned"),
     }
 }
 
@@ -523,7 +438,6 @@ struct PCIDeviceConfigBodyType0 {
     min_grant: u8,
     max_latency: u8,
 }
-
 
 #[derive(Clone, Copy)]
 struct PCIDeviceConfigBodyType0Ptr(*mut PCIDeviceConfigBodyType0);
@@ -557,15 +471,69 @@ impl PCIDeviceConfigBodyType0Ptr {
         writeln!(w, "{:indent$}bar3: 0x{:08x}", "", bar3, indent = indent)?;
         writeln!(w, "{:indent$}bar4: 0x{:08x}", "", bar4, indent = indent)?;
         writeln!(w, "{:indent$}bar5: 0x{:08x}", "", bar5, indent = indent)?;
-        writeln!(w, "{:indent$}cardbus_cis_pointer: 0x{:08x}", "", cardbus_cis_pointer, indent = indent)?;
-        writeln!(w, "{:indent$}subsystem_vendor_id: 0x{:04x}", "", subsystem_vendor_id, indent = indent)?;
-        writeln!(w, "{:indent$}subsystem_id: 0x{:04x}", "", subsystem_id, indent = indent)?;
-        writeln!(w, "{:indent$}expansion_rom_base_address: 0x{:08x}", "", expansion_rom_base_address, indent = indent)?;
-        writeln!(w, "{:indent$}capabilities_pointer: 0x{:02x}", "", body.capabilities_pointer, indent = indent)?;
-        writeln!(w, "{:indent$}interrupt_line: 0x{:02x}", "", body.interrupt_line, indent = indent)?;
-        writeln!(w, "{:indent$}interrupt_pin: 0x{:02x}", "", body.interrupt_pin, indent = indent)?;
-        writeln!(w, "{:indent$}min_grant: 0x{:02x}", "", body.min_grant, indent = indent)?;
-        writeln!(w, "{:indent$}max_latency: 0x{:02x}", "", body.max_latency, indent = indent)?;
+        writeln!(
+            w,
+            "{:indent$}cardbus_cis_pointer: 0x{:08x}",
+            "",
+            cardbus_cis_pointer,
+            indent = indent
+        )?;
+        writeln!(
+            w,
+            "{:indent$}subsystem_vendor_id: 0x{:04x}",
+            "",
+            subsystem_vendor_id,
+            indent = indent
+        )?;
+        writeln!(
+            w,
+            "{:indent$}subsystem_id: 0x{:04x}",
+            "",
+            subsystem_id,
+            indent = indent
+        )?;
+        writeln!(
+            w,
+            "{:indent$}expansion_rom_base_address: 0x{:08x}",
+            "",
+            expansion_rom_base_address,
+            indent = indent
+        )?;
+        writeln!(
+            w,
+            "{:indent$}capabilities_pointer: 0x{:02x}",
+            "",
+            body.capabilities_pointer,
+            indent = indent
+        )?;
+        writeln!(
+            w,
+            "{:indent$}interrupt_line: 0x{:02x}",
+            "",
+            body.interrupt_line,
+            indent = indent
+        )?;
+        writeln!(
+            w,
+            "{:indent$}interrupt_pin: 0x{:02x}",
+            "",
+            body.interrupt_pin,
+            indent = indent
+        )?;
+        writeln!(
+            w,
+            "{:indent$}min_grant: 0x{:02x}",
+            "",
+            body.min_grant,
+            indent = indent
+        )?;
+        writeln!(
+            w,
+            "{:indent$}max_latency: 0x{:02x}",
+            "",
+            body.max_latency,
+            indent = indent
+        )?;
 
         Ok(())
     }
