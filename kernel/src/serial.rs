@@ -25,7 +25,21 @@ impl Write for SerialWriter {
 
 // N.B. The only reason this is mutable is to satisfy the `Write` trait
 // implementation. Under the hood SERIAL1 is wrapping in a mutex.
-pub static mut SERIAL1_WRITER: SerialWriter = SerialWriter(None);
+static mut SERIAL1_WRITER: SerialWriter = SerialWriter(None);
+
+/// Fetch the global serial writer for use in `write!` macros.
+///
+/// # Examples
+///
+/// ```
+/// writeln!(serial1_writer(), "Hello, world!");
+/// ```
+pub fn serial1_writer() -> &'static mut SerialWriter {
+    // This is safe because SerialWriter wraps a Mutex<SerialPort>. The only
+    // reason we do this is so we can use this in `write!` macros because the
+    // `Write` trait methods require a mutable reference.
+    unsafe { &mut SERIAL1_WRITER }
+}
 
 pub fn init_serial_writer() {
     unsafe {

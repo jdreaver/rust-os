@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crate::serial_println;
+use crate::serial;
 
 const MAX_PCI_BUS: u8 = 255;
 const MAX_PCI_BUS_DEVICE: u8 = 31;
@@ -17,34 +17,9 @@ pub fn brute_force_search_pci(base_addr: u64) {
                 let device =
                     unsafe { PCIeDeviceConfig::new(base_addr as *const u8, bus, slot, function) };
                 let Some(device) = device else { continue; };
-
-                serial_println!(
-                    "PCI device found at {:#x} (bus: {:x}, slot: {:x}, function: {:x})",
-                    device.physical_address(),
-                    bus,
-                    slot,
-                    function,
-                );
-                serial_println!("Header: {:#x?}", device.header.as_ref());
-                serial_println!(
-                    "Known device name: {:#x?}",
-                    device.header.known_device_name()
-                );
-                serial_println!("Known vendor_id: {:?}", device.header.known_vendor_id());
-
-                match device.read_body() {
-                    Ok(body) => match body {
-                        PCIDeviceConfigBody::GeneralDevice(body) => {
-                            serial_println!("Body: {:#x?}", body.as_ref());
-                        }
-                        PCIDeviceConfigBody::PCIToPCIBridge => {
-                            serial_println!("Body: PCI to PCI bridge");
-                        }
-                    },
-                    Err(e) => {
-                        serial_println!("Error reading body: {}", e);
-                    }
-                }
+                device
+                    .print(serial::serial1_writer())
+                    .expect("failed to print device config");
             }
         }
     }
@@ -58,7 +33,7 @@ pub fn brute_force_search_pci(base_addr: u64) {
 struct PCIeDeviceConfig {
     /// Base address of the PCI Express extended configuration mechanism memory
     /// region in which this device resides.
-    enhanced_config_region_address: *const u8,
+    _enhanced_config_region_address: *const u8,
 
     /// Which PCIe bus this device is on.
     bus_number: u8,
@@ -100,7 +75,7 @@ impl PCIeDeviceConfig {
         }
 
         Some(Self {
-            enhanced_config_region_address,
+            _enhanced_config_region_address: enhanced_config_region_address,
             bus_number,
             device_number,
             function_number,
@@ -128,9 +103,31 @@ impl PCIeDeviceConfig {
         };
         Ok(body)
     }
+
+    fn print<W: fmt::Write>(&self, w: &mut W) -> fmt::Result {
+        writeln!(w, "PCIe device config:")?;
+        writeln!(w, "  Address: {:#x?}", self.physical_address())?;
+        writeln!(w, "  Bus number: {}", self.bus_number)?;
+        writeln!(w, "  Device number: {}", self.device_number)?;
+        writeln!(w, "  Function number: {}", self.function_number)?;
+        writeln!(w, "  Header:")?;
+        self.header.print(w, 4)?;
+
+        let body = self.read_body().expect("failed to read PCI device body");
+        match body {
+            PCIDeviceConfigBody::GeneralDevice(body) => {
+                writeln!(w, "  General Device Body:")?;
+                body.print(w, 4)?;
+            }
+            PCIDeviceConfigBody::PCIToPCIBridge => {
+                writeln!(w, "  Body: PCI to PCI bridge")?;
+            }
+        };
+        Ok(())
+    }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 enum PCIDeviceConfigBody {
     GeneralDevice(PCIDeviceConfigBodyType0Ptr),
     PCIToPCIBridge,
@@ -156,7 +153,7 @@ fn lookup_vendor_id(vendor_id: u16) -> Option<&'static str> {
 
 /// See <https://wiki.osdev.org/PCI#Common_Header_Fields>
 #[repr(packed)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 struct PCIDeviceConfigHeader {
     vendor_id: u16,
     device_id: u16,
@@ -166,13 +163,13 @@ struct PCIDeviceConfigHeader {
     prog_if: u8,
     subclass: u8,
     class: u8,
-    cache_line_size: u8,
-    latency_timer: u8,
+    _cache_line_size: u8,
+    _latency_timer: u8,
     header_type: u8, // TODO: Replace with wrapper type to get layout vs multifunction
-    bist: u8,
+    _bist: u8,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 struct PCIDeviceConfigHeaderPtr(*mut PCIDeviceConfigHeader);
 
 impl PCIDeviceConfigHeaderPtr {
@@ -205,26 +202,88 @@ impl PCIDeviceConfigHeaderPtr {
         self.as_ref().header_type & 0x80 != 0
     }
 
-    // TODO Should this be a method on PCIDeviceConfigHeader?
-    fn known_device_name(self) -> &'static str {
+    fn print<W: fmt::Write>(self, w: &mut W, indent: usize) -> fmt::Result {
         let header = self.as_ref();
-        lookup_known_device_id(header.vendor_id, header.device_id)
-    }
 
-    // TODO Should this be a method on PCIDeviceConfigHeader?
-    fn known_vendor_id(self) -> Option<&'static str> {
-        let header = self.as_ref();
-        lookup_vendor_id(header.vendor_id)
+        let layout = self
+            .header_layout()
+            .expect("couldn't construct header layout")
+            .as_str();
+        writeln!(w, "{:indent$}layout: {}", "", layout, indent = indent)?;
+
+        let multifunction = self.is_multifunction();
+        writeln!(
+            w,
+            "{:indent$}multifunction: {}",
+            "",
+            multifunction,
+            indent = indent
+        )?;
+
+        let command = header.command;
+        writeln!(
+            w,
+            "{:indent$}command: {:#08b}",
+            "",
+            command,
+            indent = indent
+        )?;
+
+        let status = header.status;
+        writeln!(w, "{:indent$}status: {:#08b}", "", status, indent = indent)?;
+
+        let vendor_id = header.vendor_id;
+        let vendor = lookup_vendor_id(vendor_id);
+        write!(w, "{:indent$}vendor: {:#x}", "", vendor_id, indent = indent)?;
+        writeln!(w, " ({})", vendor.unwrap_or("UNKNOWN"))?;
+
+        let device_id = header.device_id;
+        let device = lookup_known_device_id(vendor_id, device_id);
+        let revision_id = header.revision_id;
+        writeln!(
+            w,
+            "{:indent$}device_id: {:#x}, revision_id: {:#x}, ({device})",
+            "",
+            device_id,
+            revision_id,
+            indent = indent
+        )?;
+
+        let device_class =
+            PCIDeviceClass::from_bytes(header.class, header.subclass, header.prog_if)
+                .expect("couldn't construct device class");
+        writeln!(
+            w,
+            "{:indent$}class: {:#x}, subclass: {:#x}, prog_if: {:#x}, ({:?})",
+            "",
+            header.class,
+            header.subclass,
+            header.prog_if,
+            device_class,
+            indent = indent
+        )?;
+
+        Ok(())
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 enum PCIDeviceConfigHeaderLayout {
     GeneralDevice,
     PCIToPCIBridge,
     // N.B. PCIToCardBusBridge doesn't exist any longer in PCI Express. Let's
     // just pretend it never existed.
     // PCIToCardBusBridge,
+}
+
+impl PCIDeviceConfigHeaderLayout {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::GeneralDevice => "0x00 (General Device)",
+            Self::PCIToPCIBridge => "0x01 (PCI-to-PCI Bridge)",
+            // PCIDeviceConfigHeaderLayout::PCIToCardBusBridge => "0x02 (PCI-to-CardBus Bridge)",
+        }
+    }
 }
 
 /// Reports on known PCI device IDs. This is absolutely not exhaustive, but
@@ -444,21 +503,8 @@ impl PCIDeviceMassStorageControllerSATAProgIF {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct PCIDeviceConfigBodyType0Ptr(*mut PCIDeviceConfigBodyType0);
-
-impl PCIDeviceConfigBodyType0Ptr {
-    fn new(ptr: *mut PCIDeviceConfigBodyType0) -> Self {
-        Self(ptr)
-    }
-
-    fn as_ref(&self) -> &'static PCIDeviceConfigBodyType0 {
-        unsafe { &*self.0 }
-    }
-}
-
 #[repr(packed)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 struct PCIDeviceConfigBodyType0 {
     bar0: u32,
     bar1: u32,
@@ -471,9 +517,56 @@ struct PCIDeviceConfigBodyType0 {
     subsystem_id: u16,
     expansion_rom_base_address: u32,
     capabilities_pointer: u8,
-    reserved: [u8; 7],
+    _reserved: [u8; 7],
     interrupt_line: u8,
     interrupt_pin: u8,
     min_grant: u8,
     max_latency: u8,
+}
+
+
+#[derive(Clone, Copy)]
+struct PCIDeviceConfigBodyType0Ptr(*mut PCIDeviceConfigBodyType0);
+
+impl PCIDeviceConfigBodyType0Ptr {
+    fn new(ptr: *mut PCIDeviceConfigBodyType0) -> Self {
+        Self(ptr)
+    }
+
+    fn as_ref(&self) -> &'static PCIDeviceConfigBodyType0 {
+        unsafe { &*self.0 }
+    }
+
+    fn print<W: fmt::Write>(self, w: &mut W, indent: usize) -> fmt::Result {
+        let body = self.as_ref();
+
+        let bar0 = body.bar0;
+        let bar1 = body.bar1;
+        let bar2 = body.bar2;
+        let bar3 = body.bar3;
+        let bar4 = body.bar4;
+        let bar5 = body.bar5;
+        let cardbus_cis_pointer = body.cardbus_cis_pointer;
+        let subsystem_vendor_id = body.subsystem_vendor_id;
+        let subsystem_id = body.subsystem_id;
+        let expansion_rom_base_address = body.expansion_rom_base_address;
+
+        writeln!(w, "{:indent$}bar0: 0x{:08x}", "", bar0, indent = indent)?;
+        writeln!(w, "{:indent$}bar1: 0x{:08x}", "", bar1, indent = indent)?;
+        writeln!(w, "{:indent$}bar2: 0x{:08x}", "", bar2, indent = indent)?;
+        writeln!(w, "{:indent$}bar3: 0x{:08x}", "", bar3, indent = indent)?;
+        writeln!(w, "{:indent$}bar4: 0x{:08x}", "", bar4, indent = indent)?;
+        writeln!(w, "{:indent$}bar5: 0x{:08x}", "", bar5, indent = indent)?;
+        writeln!(w, "{:indent$}cardbus_cis_pointer: 0x{:08x}", "", cardbus_cis_pointer, indent = indent)?;
+        writeln!(w, "{:indent$}subsystem_vendor_id: 0x{:04x}", "", subsystem_vendor_id, indent = indent)?;
+        writeln!(w, "{:indent$}subsystem_id: 0x{:04x}", "", subsystem_id, indent = indent)?;
+        writeln!(w, "{:indent$}expansion_rom_base_address: 0x{:08x}", "", expansion_rom_base_address, indent = indent)?;
+        writeln!(w, "{:indent$}capabilities_pointer: 0x{:02x}", "", body.capabilities_pointer, indent = indent)?;
+        writeln!(w, "{:indent$}interrupt_line: 0x{:02x}", "", body.interrupt_line, indent = indent)?;
+        writeln!(w, "{:indent$}interrupt_pin: 0x{:02x}", "", body.interrupt_pin, indent = indent)?;
+        writeln!(w, "{:indent$}min_grant: 0x{:02x}", "", body.min_grant, indent = indent)?;
+        writeln!(w, "{:indent$}max_latency: 0x{:02x}", "", body.max_latency, indent = indent)?;
+
+        Ok(())
+    }
 }
