@@ -110,3 +110,9 @@ make test
 - <https://wiki.osdev.org/Virtio>
 - <https://blogs.oracle.com/linux/post/introduction-to-virtio>
 - <https://wiki.libvirt.org/Virtio.html>
+
+### Volatile memory access in Rust, and spurious reads
+
+TL;DR: Use raw pointers instead of references to memory-mapped IO regions to
+guarantee you won't have spurious reads. There is an excellent [blog
+post](https://lokathor.github.io/volatile/) that explains this.

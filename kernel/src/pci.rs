@@ -14,23 +14,33 @@ pub fn brute_force_search_pci(base_addr: u64) {
     for bus in 0..=MAX_PCI_BUS {
         for slot in 0..=MAX_PCI_BUS_DEVICE {
             for function in 0..=MAX_PCI_BUS_DEVICE_FUNCTION {
-                let device = unsafe {
-                    PCIeDeviceConfig::new(
-                        base_addr as *mut u8,
-                        bus,
-                        slot,
-                        function,
-                    )
-                };
-                if device.device_exists() {
-                    serial_println!(
-                        "PCI device found at {:#x} (bus: {:x}, slot: {:x}, function: {:x})",
-                        device.physical_address(),
-                        bus,
-                        slot,
-                        function,
-                    );
-                    serial_println!("  Header: {:#?}", device.header());
+                let device =
+                    unsafe { PCIeDeviceConfig::new(base_addr as *const u8, bus, slot, function) };
+                let Some(device) = device else { continue; };
+
+                serial_println!(
+                    "PCI device found at {:#x} (bus: {:x}, slot: {:x}, function: {:x})",
+                    device.physical_address(),
+                    bus,
+                    slot,
+                    function,
+                );
+                serial_println!("Header: {:#x?}", device.header.as_ref());
+                serial_println!("Known device name: {:#x?}", device.header.known_device_name());
+                serial_println!("Known vendor_id: {:?}", device.header.known_vendor_id());
+
+                match device.read_body() {
+                    Ok(body) => match body {
+                        PCIDeviceConfigBody::GeneralDevice(body) => {
+                            serial_println!("Body: {:#x?}", body.as_ref());
+                        }
+                        PCIDeviceConfigBody::PCIToPCIBridge => {
+                            serial_println!("Body: PCI to PCI bridge");
+                        }
+                    },
+                    Err(e) => {
+                        serial_println!("Error reading body: {}", e);
+                    }
                 }
             }
         }
@@ -45,7 +55,7 @@ pub fn brute_force_search_pci(base_addr: u64) {
 struct PCIeDeviceConfig {
     /// Base address of the PCI Express extended configuration mechanism memory
     /// region in which this device resides.
-    enhanced_config_region_address: *mut u8,
+    enhanced_config_region_address: *const u8,
 
     /// Which PCIe bus this device is on.
     bus_number: u8,
@@ -55,182 +65,163 @@ struct PCIeDeviceConfig {
 
     /// Function number of the device if the device is a multifunction device.
     function_number: u8,
+
+    /// All PCI/PCIe devices have a common header field that lives at the base
+    /// of the device's configuration space.
+    header: PCIDeviceConfigHeaderPtr,
 }
 
 impl PCIeDeviceConfig {
+    /// Returns `Some` if a device exists at the given location.
+    ///
     /// # Safety
     ///
     /// Caller must ensure that `base_address` is a valid pointer to a PCI
     /// Express extended configuration mechanism memory region.
     unsafe fn new(
-        enhanced_config_region_address: *mut u8,
+        enhanced_config_region_address: *const u8,
         bus_number: u8,
         device_number: u8,
         function_number: u8,
-    ) -> Self {
-        Self {
+    ) -> Option<Self> {
+        let bus = u64::from(bus_number);
+        let device = u64::from(device_number);
+        let function = u64::from(function_number);
+        let base_addr =
+            enhanced_config_region_address as u64 | (bus << 20) | (device << 15) | (function << 12);
+
+        let header = PCIDeviceConfigHeaderPtr::new(base_addr as *mut PCIDeviceConfigHeader);
+
+        if !header.device_exists() {
+            return None;
+        }
+
+        Some(Self {
             enhanced_config_region_address,
             bus_number,
             device_number,
             function_number,
-        }
+            header,
+        })
     }
 
     /// Computes the physical address of the device's configuration space.
     #[inline]
     fn physical_address(&self) -> u64 {
-        // TODO: Instead of recomputing this every time, maybe we should store
-        // pointers to the header and device config in `new()` and then
-        // reference those directly, since they should be pointing at the right
-        // spot in memory.
-        let bus = u64::from(self.bus_number);
-        let device = u64::from(self.device_number);
-        let function = u64::from(self.function_number);
-        self.enhanced_config_region_address as u64 | (bus << 20) | (device << 15) | (function << 12)
+        self.header.0 as *const _ as u64
     }
 
-    #[inline]
-    fn header(&self) -> RawPCIDeviceConfigHeader {
-        // This is safe as long as our base address is valid.
-        let ptr = self.physical_address() as *const u8;
-        unsafe {
-            core::ptr::read(ptr.cast::<RawPCIDeviceConfigHeader>())
-        }
-    }
+    fn read_body(&self) -> Result<PCIDeviceConfigBody, &str> {
+        let header_location = self.header.0 as u64;
+        let body_ptr_location =
+            header_location + core::mem::size_of::<PCIDeviceConfigHeader>() as u64;
 
-    /// A device exists if the Vendor ID register is not 0xFFFF.
-    #[inline]
-    fn device_exists(&self) -> bool {
-        let header = self.header();
-        header.vendor_id != 0xFFFF
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
-struct PCIDeviceConfig {
-    header: PCIDeviceConfigHeader,
-    body: PCIDeviceConfigBody,
-}
-
-impl PCIDeviceConfig {
-    fn from_ptr(ptr: *mut u8) -> Result<Option<Self>, &'static str> {
-        let bytes = unsafe { *ptr.cast::<[u8; 256]>() };
-        Self::from_bytes(&bytes)
-    }
-
-    fn from_bytes(bytes: &[u8; 256]) -> Result<Option<Self>, &'static str> {
-        let header = PCIDeviceConfigHeader::from_bytes(
-            &bytes[..PCI_DEVICE_CONFIG_HEADER_SIZE].try_into().unwrap(),
-        )?;
-        let Some(header) = header else { return Ok(None); };
-
-        let body = match header.header_type {
-            PCIDeviceConfigHeaderType::GeneralDevice => {
-                let offset = PCI_DEVICE_CONFIG_HEADER_SIZE;
-                let end = offset + PCI_DEVICE_CONFIG_BODY_TYPE0_SIZE;
-                let body_bytes = bytes[offset..end].try_into().unwrap();
-                let body = RawPCIDeviceConfigBodyType0::from_bytes(body_bytes);
-                PCIDeviceConfigBody::GeneralDevice(body)
+        let body = match self.header.header_layout()? {
+            PCIDeviceConfigHeaderLayout::GeneralDevice => {
+                let ptr = body_ptr_location as *mut PCIDeviceConfigBodyType0;
+                PCIDeviceConfigBody::GeneralDevice(PCIDeviceConfigBodyType0Ptr::new(ptr))
             }
-            PCIDeviceConfigHeaderType::PCIToPCIBridge => PCIDeviceConfigBody::PCIToPCIBridge,
-            PCIDeviceConfigHeaderType::PCIToCardBusBridge => {
-                PCIDeviceConfigBody::PCIToCardBusBridge
-            }
+            PCIDeviceConfigHeaderLayout::PCIToPCIBridge => PCIDeviceConfigBody::PCIToPCIBridge,
         };
-
-        Ok(Some(Self { header, body }))
+        Ok(body)
     }
-}
-
-/// See <https://wiki.osdev.org/PCI#Common_Header_Fields>
-#[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
-struct PCIDeviceConfigHeader {
-    raw_vendor_id: u16,
-    known_vendor_id: PCIDeviceVendorID,
-    raw_device_id: u16,
-    known_device_id: &'static str,
-    command: u16,
-    status: u16,
-    revision_id: u8,
-    class: PCIDeviceClass,
-    cache_line_size: u8,
-    latency_timer: u8,
-    header_type: PCIDeviceConfigHeaderType,
-    multiple_functions: bool,
-    bist: u8,
 }
 
 #[derive(Debug, Clone, Copy)]
 enum PCIDeviceConfigBody {
-    GeneralDevice(RawPCIDeviceConfigBodyType0),
-    PCIToPCIBridge,     // TODO
-    PCIToCardBusBridge, // TODO
-}
-
-impl PCIDeviceConfigHeader {
-    fn from_bytes(
-        bytes: &[u8; PCI_DEVICE_CONFIG_HEADER_SIZE],
-    ) -> Result<Option<Self>, &'static str> {
-        let raw = RawPCIDeviceConfigHeader::from_bytes(bytes);
-
-        let Some(known_vendor_id) = PCIDeviceVendorID::from_bytes(raw.vendor_id) else { return Ok(None); };
-        let known_device_id = lookup_known_device_id(raw.vendor_id, raw.device_id);
-
-        let header_type = match raw.header_type & 0xF {
-            0x0 => PCIDeviceConfigHeaderType::GeneralDevice,
-            0x1 => PCIDeviceConfigHeaderType::PCIToPCIBridge,
-            0x2 => PCIDeviceConfigHeaderType::PCIToCardBusBridge,
-            _ => return Err("invalid PCI header type"),
-        };
-
-        let multiple_functions = raw.header_type & 0x80 != 0;
-
-        let class = PCIDeviceClass::from_bytes(raw.class, raw.subclass, raw.prog_if)?;
-
-        Ok(Some(Self {
-            raw_vendor_id: raw.vendor_id,
-            known_vendor_id,
-            raw_device_id: raw.device_id,
-            known_device_id,
-            command: raw.command,
-            status: raw.status,
-            revision_id: raw.revision_id,
-            class,
-            cache_line_size: raw.cache_line_size,
-            latency_timer: raw.latency_timer,
-            header_type,
-            multiple_functions,
-            bist: raw.bist,
-        }))
-    }
+    GeneralDevice(PCIDeviceConfigBodyType0Ptr),
+    PCIToPCIBridge,
+    // N.B. PCIToCardBusBridge doesn't exist any longer in PCI Express. Let's
+    // just pretend it never existed.
+    // PCIToCardBusBridge,
 }
 
 /// Reports some known PCI vendor IDs. This is absolutely not exhaustive, but
 /// known vendor IDs are useful for debugging.
 ///
 /// Great resource for vendor IDs: <https://www.pcilookup.com>
-#[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
-enum PCIDeviceVendorID {
-    Intel,
-    VirtIO,
-    AMD,
-    Unknown,
+fn lookup_vendor_id(vendor_id: u16) -> Option<&'static str> {
+    match vendor_id {
+        // If the vendor ID is 0xffff, then the device doesn't exist
+        0xFFFF => None,
+        0x8086 | 0x8087 => Some("Intel Corp."),
+        0x1af4 => Some("virtio"), // This is actually Red Hat, Inc., but it means virtio
+        0x1002 => Some("Advanced Micro Devices, Inc. [AMD/ATI]"),
+        _ => Some("UNKNOWN"),
+    }
 }
 
-impl PCIDeviceVendorID {
-    fn from_bytes(bytes: u16) -> Option<Self> {
-        match bytes {
-            // If the vendor ID is 0xffff, then the device doesn't exist
-            0xFFFF => None,
-            0x8086 | 0x8087 => Some(Self::Intel),
-            0x1af4 => Some(Self::VirtIO),
-            0x1002 => Some(Self::AMD),
-            _ => Some(Self::Unknown),
+/// See <https://wiki.osdev.org/PCI#Common_Header_Fields>
+#[repr(packed)]
+#[derive(Debug, Clone, Copy)]
+struct PCIDeviceConfigHeader {
+    vendor_id: u16,
+    device_id: u16,
+    command: u16,
+    status: u16,
+    revision_id: u8,
+    prog_if: u8,
+    subclass: u8,
+    class: u8,
+    cache_line_size: u8,
+    latency_timer: u8,
+    header_type: u8, // TODO: Replace with wrapper type to get layout vs multifunction
+    bist: u8,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PCIDeviceConfigHeaderPtr(*mut PCIDeviceConfigHeader);
+
+impl PCIDeviceConfigHeaderPtr {
+    fn new(ptr: *mut PCIDeviceConfigHeader) -> Self {
+        Self(ptr)
+    }
+
+    fn as_ref(self) -> &'static PCIDeviceConfigHeader {
+        unsafe { &*self.0 }
+    }
+
+    /// A device exists if the Vendor ID register is not 0xFFFF.
+    fn device_exists(self) -> bool {
+        self.as_ref().vendor_id != 0xFFFF
+    }
+
+    /// The layout is in the first 7 bits of the Header Type register.
+    fn header_layout(self) -> Result<PCIDeviceConfigHeaderLayout, &'static str> {
+        match self.as_ref().header_type & 0x7 {
+            0x00 => Ok(PCIDeviceConfigHeaderLayout::GeneralDevice),
+            0x01 => Ok(PCIDeviceConfigHeaderLayout::PCIToPCIBridge),
+            // 0x02 => Ok(PCIDeviceConfigHeaderType::PCIToCardBusBridge),
+            _ => Err("invalid PCI device header type"),
         }
     }
+
+    /// If the 8th bit of the Header Type register is set, the device is a
+    /// multifunction device.
+    fn is_multifunction(self) -> bool {
+        self.as_ref().header_type & 0x80 != 0
+    }
+
+    // TODO Should this be a method on PCIDeviceConfigHeader?
+    fn known_device_name(self) -> &'static str {
+        let header = self.as_ref();
+        lookup_known_device_id(header.vendor_id, header.device_id)
+    }
+
+    // TODO Should this be a method on PCIDeviceConfigHeader?
+    fn known_vendor_id(self) -> Option<&'static str> {
+        let header = self.as_ref();
+        lookup_vendor_id(header.vendor_id)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PCIDeviceConfigHeaderLayout {
+    GeneralDevice,
+    PCIToPCIBridge,
+    // N.B. PCIToCardBusBridge doesn't exist any longer in PCI Express. Let's
+    // just pretend it never existed.
+    // PCIToCardBusBridge,
 }
 
 /// Reports on known PCI device IDs. This is absolutely not exhaustive, but
@@ -247,13 +238,6 @@ fn lookup_known_device_id(vendor_id: u16, device_id: u16) -> &'static str {
         (0x1af4, 0x1050) => "Virtio GPU",
         _ => "UNKNOWN",
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum PCIDeviceConfigHeaderType {
-    GeneralDevice,
-    PCIToPCIBridge,
-    PCIToCardBusBridge,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -457,38 +441,22 @@ impl PCIDeviceMassStorageControllerSATAProgIF {
     }
 }
 
-/// Just used for IO to corral the bits for `PCIDeviceConfigHeader`.
-///
-/// See <https://wiki.osdev.org/PCI#Common_Header_Fields>
-#[repr(packed)]
 #[derive(Debug, Clone, Copy)]
-struct RawPCIDeviceConfigHeader {
-    vendor_id: u16,
-    device_id: u16,
-    command: u16,
-    status: u16,
-    revision_id: u8,
-    prog_if: u8,
-    subclass: u8,
-    class: u8,
-    cache_line_size: u8,
-    latency_timer: u8,
-    header_type: u8,
-    bist: u8,
-}
+struct PCIDeviceConfigBodyType0Ptr(*mut PCIDeviceConfigBodyType0);
 
-const PCI_DEVICE_CONFIG_HEADER_SIZE: usize = 16;
+impl PCIDeviceConfigBodyType0Ptr {
+    fn new(ptr: *mut PCIDeviceConfigBodyType0) -> Self {
+        Self(ptr)
+    }
 
-impl RawPCIDeviceConfigHeader {
-    // TODO: deleteme
-    fn from_bytes(bytes: &[u8; PCI_DEVICE_CONFIG_HEADER_SIZE]) -> Self {
-        unsafe { core::ptr::read(bytes.as_ptr().cast::<Self>()) }
+    fn as_ref(&self) -> &'static PCIDeviceConfigBodyType0 {
+        unsafe { &*self.0 }
     }
 }
 
 #[repr(packed)]
 #[derive(Debug, Clone, Copy)]
-struct RawPCIDeviceConfigBodyType0 {
+struct PCIDeviceConfigBodyType0 {
     bar0: u32,
     bar1: u32,
     bar2: u32,
@@ -505,12 +473,4 @@ struct RawPCIDeviceConfigBodyType0 {
     interrupt_pin: u8,
     min_grant: u8,
     max_latency: u8,
-}
-
-const PCI_DEVICE_CONFIG_BODY_TYPE0_SIZE: usize = 48;
-
-impl RawPCIDeviceConfigBodyType0 {
-    fn from_bytes(bytes: &[u8; PCI_DEVICE_CONFIG_BODY_TYPE0_SIZE]) -> Self {
-        unsafe { core::ptr::read(bytes.as_ptr().cast::<Self>()) }
-    }
 }
