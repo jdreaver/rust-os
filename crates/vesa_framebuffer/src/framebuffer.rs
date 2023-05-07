@@ -105,7 +105,8 @@ impl VESAFramebuffer32Bit {
         let bytes_per_pixel = 4; // Assumption of this type is 32 bits (4 bytes) per pixel
         let pixel_offset = y * self.pitch + x * bytes_per_pixel;
         unsafe {
-            *self.address.add(pixel_offset).cast::<ARGB32Bit>() = color;
+            let ptr = self.address.add(pixel_offset).cast::<ARGB32Bit>();
+            core::ptr::write_volatile(ptr, color);
         }
     }
 
