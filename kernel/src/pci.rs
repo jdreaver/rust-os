@@ -13,9 +13,9 @@ const MAX_PCI_BUS_DEVICE_FUNCTION: u8 = 7;
 ///
 /// NOTE: I think this would miss devices that are behind a PCI bridge, except
 /// we are enumerating all buses, so maybe it is fine?
-pub fn for_pci_devices_brute_force<F>(base_addr: PhysAddr, f: F)
+pub fn for_pci_devices_brute_force<F>(base_addr: PhysAddr, mut f: F)
 where
-    F: Fn(PCIeDeviceConfig),
+    F: FnMut(PCIeDeviceConfig),
 {
     for bus in 0..=MAX_PCI_BUS {
         for slot in 0..=MAX_PCI_BUS_DEVICE {

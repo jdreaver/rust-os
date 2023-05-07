@@ -1,10 +1,19 @@
+use x86_64::structures::paging::{FrameAllocator, Mapper, PageTableFlags, PhysFrame, Size4KiB};
 use x86_64::PhysAddr;
 
 use crate::pci::{self, PCIDeviceCapabilityHeaderPtr, PCIeDeviceConfig};
 use crate::serial_println;
 
+// /// TODO: This is a hack. We are hard-coding the PCI virtio addresses from QEMU
+// /// (see `info mtree`) so we can access VirtIO device configs. We should instead
+// /// inspect the VirtIO PCI devices to find this memory, and then map it.
+
 /// Temporary function for debugging how we get VirtIO information.
-pub fn print_virtio_device(device: &PCIeDeviceConfig) {
+pub fn print_virtio_device(
+    device: &PCIeDeviceConfig,
+    mapper: &mut impl Mapper<Size4KiB>,
+    frame_allocator: &mut impl FrameAllocator<Size4KiB>,
+) {
     let header = device.header();
     assert_eq!(
         header.vendor_id(),
@@ -34,7 +43,37 @@ pub fn print_virtio_device(device: &PCIeDeviceConfig) {
             // TODO: We get a bar BAR here for the virtio GPU. It wants address
             // 0x800000000, or the address at 32 GiB.
             let offset = virtio_cap.as_ref().offset;
-            serial_println!("bar: {:#x?}, offset: {:#x?}", bar_idx, bar);
+            let cap_length = virtio_cap.as_ref().length;
+            serial_println!(
+                "bar: {:#x?}, offset: {:#x?}, cap_length: {:#x?}",
+                bar_idx,
+                bar,
+                cap_length
+            );
+
+            // Need to identity map the BAR target page(s) so we can access them
+            // without faults. Note that these addresses can be outside of
+            // physical memory, in which case they are intercepted by the PCI
+            // bus and handled by the device, so we aren't mapping physical RAM
+            // pages here, we are just ensuring these addresses are identity
+            // mapped in the page table so they don't fault.
+            let bar_start = bar + u64::from(offset);
+            let bar_start_frame = PhysFrame::<Size4KiB>::containing_address(bar_start);
+            let bar_end_frame = PhysFrame::containing_address(bar_start + u64::from(cap_length));
+            let frame_range = PhysFrame::range_inclusive(bar_start_frame, bar_end_frame);
+            for frame in frame_range {
+                unsafe {
+                    mapper
+                        .identity_map(
+                            frame,
+                            PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                            frame_allocator,
+                        )
+                        .expect("failed to identity map VirtIO BAR page")
+                        .flush();
+                };
+            }
+
             let common_cfg = unsafe { VirtIOPCICommonConfigPtr::from_bar_offset(bar, offset) };
             serial_println!("VirtIO common config: {:#x?}", common_cfg.as_ref());
         }

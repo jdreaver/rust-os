@@ -52,6 +52,13 @@ make test
 
 ## TODO
 
+- PCI/virtio
+  - Identity map the BAR address regions in page tables
+  - Ensure that we handle "prefetchable" BARs
+
+    > If you are using paging and want maximum performance, you should map
+    > prefetchable MMIO regions as WT (write-through) instead of UC
+    > (uncacheable)
 - Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
 - Filesystem support
   - Now that I have PCI working, attach a drive via QEMU and see what is looks like under PCI
@@ -103,6 +110,10 @@ make test
 - Rust code/crate: <https://docs.rs/pci-driver/latest/pci_driver/>
 - Great example Rust code <https://gitlab.com/robigalia/pci/-/blob/master/src/lib.rs>
   - I think this is the crate but it is old <https://docs.rs/pci/latest/pci/>
+- <https://marz.utk.edu/my-courses/cosc562/pcie/>
+- BAR mapping
+  - <https://stackoverflow.com/questions/20901221/pci-express-bar-memory-mapping-basic-understanding>
+  - <https://superuser.com/questions/746458/pci-bar-memory-addresses>
 
 ### Virtio
 
@@ -110,6 +121,7 @@ make test
 - <https://wiki.osdev.org/Virtio>
 - <https://blogs.oracle.com/linux/post/introduction-to-virtio>
 - <https://wiki.libvirt.org/Virtio.html>
+- <https://airbus-seclab.github.io/qemu_blog/regions.html> (show virtio regions with `info mtree`)
 
 ### Volatile memory access in Rust, and spurious reads
 
