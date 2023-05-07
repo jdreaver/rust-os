@@ -4,9 +4,7 @@ use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::{FrameAllocator, Mapper, PageTableFlags, PhysFrame, Size4KiB};
 use x86_64::PhysAddr;
 
-use crate::pci::{
-    self, PCIDeviceCapabilityHeaderPtr, PCIDeviceConfigBodyType0Ptr, PCIeDeviceConfig,
-};
+use crate::pci::{self, PCIDeviceCapabilityHeader, PCIDeviceConfigBodyType0, PCIeDeviceConfig};
 use crate::strings::IndentWriter;
 
 // /// TODO: This is a hack. We are hard-coding the PCI virtio addresses from QEMU
@@ -61,26 +59,26 @@ pub fn print_virtio_device<W: Write>(
 
         let config = virtio_cap.config(mapper, frame_allocator);
         match config {
-            VirtIOConfigPtr::Common(cfg) => {
+            VirtIOConfig::Common(cfg) => {
                 let cfg = cfg.as_ref();
                 writeln!(w, "VirtIO Common Config: {cfg:#x?}").expect("failed to write");
             }
-            VirtIOConfigPtr::Notify => {
+            VirtIOConfig::Notify => {
                 writeln!(w, "VirtIO Notify Config: TODO").expect("failed to write");
             }
-            VirtIOConfigPtr::ISR => {
+            VirtIOConfig::ISR => {
                 writeln!(w, "VirtIO ISR Config: TODO").expect("failed to write");
             }
-            VirtIOConfigPtr::Device => {
+            VirtIOConfig::Device => {
                 writeln!(w, "VirtIO Device Config: TODO").expect("failed to write");
             }
-            VirtIOConfigPtr::PCI => {
+            VirtIOConfig::PCI => {
                 writeln!(w, "VirtIO PCI Config: TODO").expect("failed to write");
             }
-            VirtIOConfigPtr::SharedMemory => {
+            VirtIOConfig::SharedMemory => {
                 writeln!(w, "VirtIO Shared Memory Config: TODO").expect("failed to write");
             }
-            VirtIOConfigPtr::Vendor => {
+            VirtIOConfig::Vendor => {
                 writeln!(w, "VirtIO Vendor Config: TODO").expect("failed to write");
             }
         }
@@ -94,7 +92,7 @@ pub fn print_virtio_device<W: Write>(
 #[derive(Debug, Clone, Copy)]
 pub struct VirtIOPCICapabilityHeaderPtr {
     /// The body of the PCID device for this VirtIO device.
-    device_config_body: PCIDeviceConfigBodyType0Ptr,
+    device_config_body: PCIDeviceConfigBodyType0,
 
     /// Physical address of the capability structure.
     base_address: PhysAddr,
@@ -105,8 +103,8 @@ impl VirtIOPCICapabilityHeaderPtr {
     ///
     /// Caller must ensure that the capability header is from a VirtIO device.
     pub unsafe fn from_pci_capability(
-        device_config_body: PCIDeviceConfigBodyType0Ptr,
-        header: &PCIDeviceCapabilityHeaderPtr,
+        device_config_body: PCIDeviceConfigBodyType0,
+        header: &PCIDeviceCapabilityHeader,
     ) -> Self {
         Self {
             device_config_body,
@@ -125,7 +123,7 @@ impl VirtIOPCICapabilityHeaderPtr {
         self,
         mapper: &mut impl Mapper<Size4KiB>,
         frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-    ) -> VirtIOConfigPtr {
+    ) -> VirtIOConfig {
         let capability = self.as_ref();
         let config_type = self.config_type();
 
@@ -175,7 +173,7 @@ impl VirtIOPCICapabilityHeaderPtr {
             }
         }
 
-        unsafe { VirtIOConfigPtr::from_address(config_type, config_addr) }
+        unsafe { VirtIOConfig::from_address(config_type, config_addr) }
     }
 
     pub fn print<W: Write>(&self, w: &mut IndentWriter<W>) -> fmt::Result {
@@ -253,8 +251,8 @@ impl VirtIOPCIConfigType {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum VirtIOConfigPtr {
-    Common(VirtIOPCICommonConfigPtr),
+enum VirtIOConfig {
+    Common(VirtIOPCICommonConfig),
     Notify,
     ISR,
     Device,
@@ -263,14 +261,14 @@ enum VirtIOConfigPtr {
     Vendor,
 }
 
-impl VirtIOConfigPtr {
+impl VirtIOConfig {
     /// # Safety
     ///
     /// Caller must ensure that the given BAR (base address register) is valid
     /// and is for the VirtIO device.
     pub unsafe fn from_address(config_type: VirtIOPCIConfigType, config_addr: PhysAddr) -> Self {
         match config_type {
-            VirtIOPCIConfigType::Common => Self::Common(VirtIOPCICommonConfigPtr {
+            VirtIOPCIConfigType::Common => Self::Common(VirtIOPCICommonConfig {
                 address: config_addr,
             }),
             VirtIOPCIConfigType::Notify => Self::Notify,
@@ -284,18 +282,18 @@ impl VirtIOConfigPtr {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct VirtIOPCICommonConfigPtr {
+struct VirtIOPCICommonConfig {
     address: PhysAddr,
 }
 
-impl AsRef<VirtIOPCICommonConfig> for VirtIOPCICommonConfigPtr {
-    fn as_ref(&self) -> &VirtIOPCICommonConfig {
-        unsafe { &*(self.address.as_u64() as *const VirtIOPCICommonConfig) }
+impl AsRef<VirtIOPCICommonConfigRaw> for VirtIOPCICommonConfig {
+    fn as_ref(&self) -> &VirtIOPCICommonConfigRaw {
+        unsafe { &*(self.address.as_u64() as *const VirtIOPCICommonConfigRaw) }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-struct VirtIOPCICommonConfig {
+struct VirtIOPCICommonConfigRaw {
     device_feature_select: u32,
     device_feature: u32,
     driver_feature_select: u32,
