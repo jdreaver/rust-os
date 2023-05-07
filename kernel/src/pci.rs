@@ -475,12 +475,7 @@ fn device_type(class: u8, subclass: u8, prog_if: u8) -> Result<&'static str, &'s
 #[repr(packed)]
 #[derive(Clone, Copy)]
 pub struct PCIDeviceConfigBodyType0 {
-    bar0: u32,
-    bar1: u32,
-    bar2: u32,
-    bar3: u32,
-    bar4: u32,
-    bar5: u32,
+    bars: [u32; 6],
     cardbus_cis_pointer: u32,
     subsystem_vendor_id: u16,
     subsystem_id: u16,
@@ -525,38 +520,49 @@ impl PCIDeviceConfigBodyType0Ptr {
         PCIDeviceCapabilityIterator::new(cap_ptr)
     }
 
-    pub fn bar(self, bar_idx: usize) -> PhysAddr {
-        match bar_idx {
-            0 => bar_address(self.as_ref().bar0, Some(self.as_ref().bar1)),
-            1 => bar_address(self.as_ref().bar1, Some(self.as_ref().bar2)),
-            2 => bar_address(self.as_ref().bar2, Some(self.as_ref().bar3)),
-            3 => bar_address(self.as_ref().bar3, Some(self.as_ref().bar4)),
-            4 => bar_address(self.as_ref().bar4, Some(self.as_ref().bar5)),
-            5 => bar_address(self.as_ref().bar5, None),
-            _ => panic!("invalid PCI device BAR index"),
-        }
+    pub fn bar(self, bar_idx: usize) -> BARAddress {
+        let bars = self.as_ref().bars;
+        let bar_addresses = bar_addresses(bars);
+        let bar_address = bar_addresses
+            .get(bar_idx)
+            .expect("invalid PCI device BAR index");
+        bar_address.unwrap_or_else(|| panic!("failed to get BAR address, perhaps you tried to index the second half of a 64 bit BAR?"))
     }
 
     fn print<W: Write>(self, w: &mut IndentWriter<'_, W>) -> fmt::Result {
         let body = self.as_ref();
 
-        let bar0 = body.bar0;
-        let bar1 = body.bar1;
-        let bar2 = body.bar2;
-        let bar3 = body.bar3;
-        let bar4 = body.bar4;
-        let bar5 = body.bar5;
+        let bars = body.bars;
         let cardbus_cis_pointer = body.cardbus_cis_pointer;
         let subsystem_vendor_id = body.subsystem_vendor_id;
         let subsystem_id = body.subsystem_id;
         let expansion_rom_base_address = body.expansion_rom_base_address;
 
-        writeln!(w, "bar0: 0x{bar0:08x}")?;
-        writeln!(w, "bar1: 0x{bar1:08x}")?;
-        writeln!(w, "bar2: 0x{bar2:08x}")?;
-        writeln!(w, "bar3: 0x{bar3:08x}")?;
-        writeln!(w, "bar4: 0x{bar4:08x}")?;
-        writeln!(w, "bar5: 0x{bar5:08x}")?;
+        let bar_addresses = bar_addresses(bars);
+        for (i, bar_address) in bar_addresses.iter().enumerate() {
+            match bar_address {
+                Some(BARAddress::Mem32Bit {
+                    address,
+                    prefetchable,
+                }) => {
+                    let prefetch = if *prefetchable { " (prefetchable)" } else { "" };
+                    writeln!(w, "BAR{i}: 32-bit memory at 0x{address:x}{prefetch}")?;
+                }
+                Some(BARAddress::Mem64Bit {
+                    address,
+                    prefetchable,
+                }) => {
+                    let prefetch = if *prefetchable { " (prefetchable)" } else { "" };
+                    writeln!(w, "BAR{i}: 64-bit memory at 0x{address:x}{prefetch}")?;
+                }
+                Some(BARAddress::IO(address)) => {
+                    writeln!(w, "BAR{i}: I/O at 0x{address:x}")?;
+                }
+                None => {
+                    continue;
+                }
+            }
+        }
         writeln!(w, "cardbus_cis_pointer: 0x{cardbus_cis_pointer:08x}")?;
         writeln!(w, "subsystem_vendor_id: 0x{subsystem_vendor_id:04x}")?;
         writeln!(w, "subsystem_id: 0x{subsystem_id:04x}")?;
@@ -591,28 +597,70 @@ impl PCIDeviceConfigBodyType0Ptr {
     }
 }
 
-fn bar_address(bar: u32, next_bar: Option<u32>) -> PhysAddr {
-    // First bit of the BAR decides if we are in memory space (0x0) or I/O space
-    // (0x1)
-    let bit_0 = bar & 0b1;
-    assert_eq!(bit_0, 0, "we don't support I/O space BARs yet");
+#[derive(Debug, Copy, Clone)]
+pub enum BARAddress {
+    /// 32-bit BAR address. Uses a single BAR register.
+    Mem32Bit { address: u32, prefetchable: bool },
 
-    let bit_1_2 = (bar >> 1) & 0b11;
-    match bit_1_2 {
-        0b00 => {
-            // 32-bit address
-            let addr = bar & 0xffff_fff0;
-            PhysAddr::new(u64::from(addr))
+    /// 64-bit BAR address. Uses a single BAR register.
+    Mem64Bit { address: u64, prefetchable: bool },
+
+    /// I/O BAR address. Uses a single BAR register.
+    IO(u32),
+}
+
+/// Interpretes the BAR addresses into `BARAddress`es. This is a bit non-trivial
+/// because adjacent BAR addresses can be part of the same 64 bit address, so we
+/// can't just look at them 1 by 1.
+fn bar_addresses<const N: usize>(bars: [u32; N]) -> [Option<BARAddress>; N] {
+    let mut addresses = [None; N];
+
+    let mut i = 0;
+    while i < bars.len() {
+        let bar = bars[i];
+        let next_bar = bars.get(i + 1).copied();
+
+        let bit_0 = bar & 0b1;
+
+        let bit_1_2 = (bar >> 1) & 0b11;
+        let bit_3 = (bar >> 3) & 0b1;
+        match (bit_0, bit_1_2) {
+            (0b0, 0b00) => {
+                // 32-bit address
+                let address = bar & 0xffff_fff0;
+                let prefetchable = bit_3 == 0b1;
+                addresses[i] = Some(BARAddress::Mem32Bit {
+                    address,
+                    prefetchable,
+                });
+                i += 1;
+            }
+            (0b0, 0b10) => {
+                // 64-bit address. Use the next BAR as well for the upper 32 bits.
+                let next_bar = next_bar.expect("got 64 bit address BAR, but there is no next BAR");
+                let address = (u64::from(next_bar) << 32) | u64::from(bar) & 0xffff_fff0;
+                let prefetchable = bit_3 == 0b1;
+                addresses[i] = Some(BARAddress::Mem64Bit {
+                    address,
+                    prefetchable,
+                });
+
+                // This address is being used by the 64-bit BAR, so we shouldn't
+                // try to interpret it on its own.
+                addresses[i + 1] = None;
+                i += 2;
+            }
+            (0b1, _) => {
+                // I/O address
+                let addr = bar & 0xffff_fffc;
+                addresses[i] = Some(BARAddress::IO(addr));
+                i += 1;
+            }
+            _ => panic!("invalid BAR address configuration bits"),
         }
-        0b10 => {
-            let Some(next_bar) = next_bar else { panic!("got 64 bit address BAR, but there is no next BAR") };
-            // 64-bit address. Use the next BAR to get the upper 32 bits.
-            let addr = bar & 0xffff_fff0;
-            let addr = (u64::from(next_bar) << 32) | u64::from(addr);
-            PhysAddr::new(addr)
-        }
-        _ => panic!("invalid BAR address type"),
     }
+
+    addresses
 }
 
 impl AsRef<PCIDeviceConfigBodyType0> for PCIDeviceConfigBodyType0Ptr {

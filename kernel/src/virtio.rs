@@ -39,17 +39,28 @@ pub fn print_virtio_device(
         if config_type == VirtIOPCIConfigType::Common {
             let bar_idx = virtio_cap.as_ref().bar;
             serial_println!("common: bar_idx: {}", bar_idx);
-            let bar = body.bar(bar_idx as usize);
-            // TODO: We get a bar BAR here for the virtio GPU. It wants address
-            // 0x800000000, or the address at 32 GiB.
+            let bar_address = body.bar(bar_idx as usize);
             let offset = virtio_cap.as_ref().offset;
             let cap_length = virtio_cap.as_ref().length;
             serial_println!(
                 "bar: {:#x?}, offset: {:#x?}, cap_length: {:#x?}",
-                bar_idx,
-                bar,
+                bar_address,
+                offset,
                 cap_length
             );
+
+            let bar_phys_addr = match bar_address {
+                // TODO: Use the prefetchable field when doing mapping.
+                pci::BARAddress::Mem32Bit {
+                    address,
+                    prefetchable: _,
+                } => PhysAddr::new(u64::from(address)),
+                pci::BARAddress::Mem64Bit {
+                    address,
+                    prefetchable: _,
+                } => PhysAddr::new(address),
+                pci::BARAddress::IO(_) => panic!("VirtIO device has IO BAR, not supported"),
+            };
 
             // Need to identity map the BAR target page(s) so we can access them
             // without faults. Note that these addresses can be outside of
@@ -57,7 +68,7 @@ pub fn print_virtio_device(
             // bus and handled by the device, so we aren't mapping physical RAM
             // pages here, we are just ensuring these addresses are identity
             // mapped in the page table so they don't fault.
-            let bar_start = bar + u64::from(offset);
+            let bar_start = bar_phys_addr + u64::from(offset);
             let bar_start_frame = PhysFrame::<Size4KiB>::containing_address(bar_start);
             let bar_end_frame = PhysFrame::containing_address(bar_start + u64::from(cap_length));
             let frame_range = PhysFrame::range_inclusive(bar_start_frame, bar_end_frame);
@@ -74,7 +85,8 @@ pub fn print_virtio_device(
                 };
             }
 
-            let common_cfg = unsafe { VirtIOPCICommonConfigPtr::from_bar_offset(bar, offset) };
+            let common_cfg =
+                unsafe { VirtIOPCICommonConfigPtr::from_bar_offset(bar_phys_addr, offset) };
             serial_println!("VirtIO common config: {:#x?}", common_cfg.as_ref());
         }
     }

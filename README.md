@@ -111,9 +111,10 @@ make test
 - Great example Rust code <https://gitlab.com/robigalia/pci/-/blob/master/src/lib.rs>
   - I think this is the crate but it is old <https://docs.rs/pci/latest/pci/>
 - <https://marz.utk.edu/my-courses/cosc562/pcie/>
-- BAR mapping
+- BAR memory mapping
   - <https://stackoverflow.com/questions/20901221/pci-express-bar-memory-mapping-basic-understanding>
   - <https://superuser.com/questions/746458/pci-bar-memory-addresses>
+  - <https://softwareengineering.stackexchange.com/questions/358817/how-does-the-base-address-registers-bars-in-a-pci-card-work>
 
 ### Virtio
 
