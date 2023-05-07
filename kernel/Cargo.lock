@@ -185,7 +185,6 @@ dependencies = [
  "uart_16550",
  "uefi",
  "vesa_framebuffer",
- "volatile 0.2.7",
  "x86_64",
 ]
 
@@ -294,12 +293,6 @@ dependencies = [
 
 [[package]]
 name = "volatile"
-version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6b06ad3ed06fef1713569d547cdbdb439eafed76341820fb0e0344f29a41945"
-
-[[package]]
-name = "volatile"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "442887c63f2c839b346c192d047a7c87e73d0689c9157b00b53dcc27dd5ea793"
@@ -322,5 +315,5 @@ dependencies = [
  "bit_field",
  "bitflags",
  "rustversion",
- "volatile 0.4.6",
+ "volatile",
 ]

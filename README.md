@@ -130,4 +130,7 @@ make test
 
 TL;DR: Use raw pointers instead of references to memory-mapped IO regions to
 guarantee you won't have spurious reads. There is an excellent [blog
-post](https://lokathor.github.io/volatile/) that explains this.
+post](https://lokathor.github.io/volatile/) that explains this. There is also a
+good [forum
+thread](https://users.rust-lang.org/t/how-to-make-an-access-volatile-without-std-library/85533/)
+explaining the dangers of this.
