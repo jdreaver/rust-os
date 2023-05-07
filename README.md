@@ -52,6 +52,17 @@ make test
 
 ## TODO
 
+- PCI/VirtIO struct abstractions
+  - Concepts:
+    - Wrapper around raw pointer
+    - Raw struct to do field-level IO (is this even correct? Does it work with volatile reads/writes? Perhaps not...)
+    - Enums: different variants of a thing at the same memory address, depending on some field (e.g. different PCI devices, different VirtIO capabilities)
+  - Ideas:
+    - Re-research how to do register-based IO properly without spurious reads.
+    - Remove `Ptr` from pointer wrapper type, and add `Raw` to the structs used for IO. Users should use the wrappers, not the raw structs.
+    - Research existing crates and just use those.
+    - Consider using `bit_field`
+
 - PCI/virtio
   - Identity map the BAR address regions in page tables
   - Ensure that we handle "prefetchable" BARs

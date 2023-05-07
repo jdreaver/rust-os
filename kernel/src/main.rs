@@ -117,7 +117,7 @@ fn run_tests(
         if header.vendor_id() != 0x1af4 {
             return;
         }
-        virtio::print_virtio_device(&device, mapper, frame_allocator);
+        virtio::print_virtio_device(serial::serial1_writer(), &device, mapper, frame_allocator);
     });
 
     // Print out some test addresses

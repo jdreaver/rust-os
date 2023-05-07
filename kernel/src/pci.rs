@@ -488,7 +488,7 @@ pub struct PCIDeviceConfigBodyType0 {
     max_latency: u8,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct PCIDeviceConfigBodyType0Ptr {
     /// Address of the PCI device configuration base (not for the body, but for
     /// the base of the whole config).

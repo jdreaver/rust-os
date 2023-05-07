@@ -5,7 +5,7 @@ use core::fmt::Write;
 /// If the string is not null-terminated, this will happily iterate through
 /// memory and print garbage until it finds a null byte or we hit a protection
 /// fault because we tried to ready a page we don't have access to.
-pub(crate) unsafe fn c_str_from_pointer(ptr: *const u8, max_size: usize) -> &'static str {
+pub unsafe fn c_str_from_pointer(ptr: *const u8, max_size: usize) -> &'static str {
     let mut len: usize = 0;
     while len < max_size {
         let c = *ptr.add(len);
@@ -20,7 +20,7 @@ pub(crate) unsafe fn c_str_from_pointer(ptr: *const u8, max_size: usize) -> &'st
 }
 
 /// A wrapper around a `Write` that handles indentation.
-pub(crate) struct IndentWriter<'a, W: Write> {
+pub struct IndentWriter<'a, W: Write> {
     writer: &'a mut W,
     indent: usize,
     indent_delta: usize,
@@ -28,7 +28,7 @@ pub(crate) struct IndentWriter<'a, W: Write> {
 }
 
 impl<W: Write> IndentWriter<'_, W> {
-    pub(crate) fn new(writer: &mut W, indent_delta: usize) -> IndentWriter<W> {
+    pub fn new(writer: &mut W, indent_delta: usize) -> IndentWriter<W> {
         IndentWriter {
             writer,
             indent: 0,
@@ -37,11 +37,11 @@ impl<W: Write> IndentWriter<'_, W> {
         }
     }
 
-    pub(crate) fn indent(&mut self) {
+    pub fn indent(&mut self) {
         self.indent += self.indent_delta;
     }
 
-    pub(crate) fn unindent(&mut self) {
+    pub fn unindent(&mut self) {
         self.indent -= self.indent_delta;
     }
 }

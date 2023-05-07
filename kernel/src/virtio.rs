@@ -1,19 +1,27 @@
+use core::fmt::{self, Write};
+
+use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::{FrameAllocator, Mapper, PageTableFlags, PhysFrame, Size4KiB};
 use x86_64::PhysAddr;
 
-use crate::pci::{self, PCIDeviceCapabilityHeaderPtr, PCIeDeviceConfig};
-use crate::serial_println;
+use crate::pci::{
+    self, PCIDeviceCapabilityHeaderPtr, PCIDeviceConfigBodyType0Ptr, PCIeDeviceConfig,
+};
+use crate::strings::IndentWriter;
 
 // /// TODO: This is a hack. We are hard-coding the PCI virtio addresses from QEMU
 // /// (see `info mtree`) so we can access VirtIO device configs. We should instead
 // /// inspect the VirtIO PCI devices to find this memory, and then map it.
 
 /// Temporary function for debugging how we get VirtIO information.
-pub fn print_virtio_device(
+pub fn print_virtio_device<W: Write>(
+    w: &mut W,
     device: &PCIeDeviceConfig,
     mapper: &mut impl Mapper<Size4KiB>,
     frame_allocator: &mut impl FrameAllocator<Size4KiB>,
 ) {
+    // TODO: Move everything from here down into a "VirtIODevice" type
+
     let header = device.header();
     assert_eq!(
         header.vendor_id(),
@@ -21,79 +29,73 @@ pub fn print_virtio_device(
         "invalid vendor ID, not a VirtIO device"
     );
 
-    serial_println!("Found VirtIO device: {:?}", header);
-
     let pci::PCIDeviceConfigBody::GeneralDevice(body) = device
             .body()
             .expect("failed to read device body")
             else { return; };
 
+    let w = &mut IndentWriter::new(w, 2);
+
+    writeln!(w, "Found VirtIO device: {header:?}").expect("failed to write");
+    w.indent();
+
     for (i, capability) in body.iter_capabilities().enumerate() {
+        writeln!(w, "VirtIO Capability {i}:").expect("failed to write");
+        w.indent();
+
         let virtio_cap =
-            unsafe { VirtIOPCICapabilityHeaderPtr::from_capability_header(&capability) };
-        serial_println!("VirtIO capability {}: {:#x?}", i, virtio_cap.as_ref());
+            unsafe { VirtIOPCICapabilityHeaderPtr::from_pci_capability(body, &capability) };
+        virtio_cap
+            .print(w)
+            .expect("failed to print VirtIO capability header");
 
-        let config_type = virtio_cap.config_type();
-        serial_println!("VirtIO config type: {:?}", config_type);
-
-        if config_type == VirtIOPCIConfigType::Common {
-            let bar_idx = virtio_cap.as_ref().bar;
-            serial_println!("common: bar_idx: {}", bar_idx);
-            let bar_address = body.bar(bar_idx as usize);
-            let offset = virtio_cap.as_ref().offset;
-            let cap_length = virtio_cap.as_ref().length;
-            serial_println!(
-                "bar: {:#x?}, offset: {:#x?}, cap_length: {:#x?}",
-                bar_address,
-                offset,
-                cap_length
-            );
-
-            let bar_phys_addr = match bar_address {
-                // TODO: Use the prefetchable field when doing mapping.
-                pci::BARAddress::Mem32Bit {
-                    address,
-                    prefetchable: _,
-                } => PhysAddr::new(u64::from(address)),
-                pci::BARAddress::Mem64Bit {
-                    address,
-                    prefetchable: _,
-                } => PhysAddr::new(address),
-                pci::BARAddress::IO(_) => panic!("VirtIO device has IO BAR, not supported"),
-            };
-
-            // Need to identity map the BAR target page(s) so we can access them
-            // without faults. Note that these addresses can be outside of
-            // physical memory, in which case they are intercepted by the PCI
-            // bus and handled by the device, so we aren't mapping physical RAM
-            // pages here, we are just ensuring these addresses are identity
-            // mapped in the page table so they don't fault.
-            let bar_start = bar_phys_addr + u64::from(offset);
-            let bar_start_frame = PhysFrame::<Size4KiB>::containing_address(bar_start);
-            let bar_end_frame = PhysFrame::containing_address(bar_start + u64::from(cap_length));
-            let frame_range = PhysFrame::range_inclusive(bar_start_frame, bar_end_frame);
-            for frame in frame_range {
-                unsafe {
-                    mapper
-                        .identity_map(
-                            frame,
-                            PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                            frame_allocator,
-                        )
-                        .expect("failed to identity map VirtIO BAR page")
-                        .flush();
-                };
-            }
-
-            let common_cfg =
-                unsafe { VirtIOPCICommonConfigPtr::from_bar_offset(bar_phys_addr, offset) };
-            serial_println!("VirtIO common config: {:#x?}", common_cfg.as_ref());
+        // The PCI config type is a way to access the configuration over PCI
+        // (not PCI Express, which is the memory mapped method we are using).
+        // Just skip it, because this requires accessing the capability config
+        // over I/O, which we don't support. See "4.1.4.9 PCI configuration
+        // access capability" in the spec.
+        if virtio_cap.config_type() == VirtIOPCIConfigType::PCI {
+            w.unindent();
+            continue;
         }
+
+        let config = virtio_cap.config(mapper, frame_allocator);
+        match config {
+            VirtIOConfigPtr::Common(cfg) => {
+                let cfg = cfg.as_ref();
+                writeln!(w, "VirtIO Common Config: {cfg:#x?}").expect("failed to write");
+            }
+            VirtIOConfigPtr::Notify => {
+                writeln!(w, "VirtIO Notify Config: TODO").expect("failed to write");
+            }
+            VirtIOConfigPtr::ISR => {
+                writeln!(w, "VirtIO ISR Config: TODO").expect("failed to write");
+            }
+            VirtIOConfigPtr::Device => {
+                writeln!(w, "VirtIO Device Config: TODO").expect("failed to write");
+            }
+            VirtIOConfigPtr::PCI => {
+                writeln!(w, "VirtIO PCI Config: TODO").expect("failed to write");
+            }
+            VirtIOConfigPtr::SharedMemory => {
+                writeln!(w, "VirtIO Shared Memory Config: TODO").expect("failed to write");
+            }
+            VirtIOConfigPtr::Vendor => {
+                writeln!(w, "VirtIO Vendor Config: TODO").expect("failed to write");
+            }
+        }
+
+        w.unindent();
     }
+
+    w.unindent();
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct VirtIOPCICapabilityHeaderPtr {
+    /// The body of the PCID device for this VirtIO device.
+    device_config_body: PCIDeviceConfigBodyType0Ptr,
+
     /// Physical address of the capability structure.
     base_address: PhysAddr,
 }
@@ -102,8 +104,12 @@ impl VirtIOPCICapabilityHeaderPtr {
     /// # Safety
     ///
     /// Caller must ensure that the capability header is from a VirtIO device.
-    pub unsafe fn from_capability_header(header: &PCIDeviceCapabilityHeaderPtr) -> Self {
+    pub unsafe fn from_pci_capability(
+        device_config_body: PCIDeviceConfigBodyType0Ptr,
+        header: &PCIDeviceCapabilityHeaderPtr,
+    ) -> Self {
         Self {
+            device_config_body,
             base_address: header.address(),
         }
     }
@@ -111,6 +117,87 @@ impl VirtIOPCICapabilityHeaderPtr {
     fn config_type(self) -> VirtIOPCIConfigType {
         let cfg_type = self.as_ref().cfg_type;
         VirtIOPCIConfigType::from_cfg_type(cfg_type).expect("invalid VirtIO config type")
+    }
+
+    /// Returns the VirtIO device configuration associated with this capability
+    /// header.
+    fn config(
+        self,
+        mapper: &mut impl Mapper<Size4KiB>,
+        frame_allocator: &mut impl FrameAllocator<Size4KiB>,
+    ) -> VirtIOConfigPtr {
+        let capability = self.as_ref();
+        let config_type = self.config_type();
+
+        let bar_address = self.device_config_body.bar(capability.bar as usize);
+
+        let bar_phys_addr = match bar_address {
+            // TODO: Use the prefetchable field when doing mapping.
+            pci::BARAddress::Mem32Bit {
+                address,
+                prefetchable: _,
+            } => PhysAddr::new(u64::from(address)),
+            pci::BARAddress::Mem64Bit {
+                address,
+                prefetchable: _,
+            } => PhysAddr::new(address),
+            pci::BARAddress::IO(address) => panic!(
+                "VirtIO capability {:?} uses I/O BAR (address: {:#x}), not supported",
+                config_type, address,
+            ),
+        };
+
+        // Need to identity map the BAR target page(s) so we can access them
+        // without faults. Note that these addresses can be outside of physical
+        // memory, in which case they are intercepted by the PCI bus and handled
+        // by the device, so we aren't mapping physical RAM pages here, we are
+        // just ensuring these addresses are identity mapped in the page table
+        // so they don't fault.
+        let config_addr = bar_phys_addr + u64::from(capability.offset);
+        let config_start_frame = PhysFrame::<Size4KiB>::containing_address(config_addr);
+        let config_end_frame =
+            PhysFrame::containing_address(config_addr + u64::from(capability.cap_len));
+        let frame_range = PhysFrame::range_inclusive(config_start_frame, config_end_frame);
+        for frame in frame_range {
+            let map_result = unsafe {
+                mapper.identity_map(
+                    frame,
+                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                    frame_allocator,
+                )
+            };
+            match map_result {
+                // These errors are okay. They just mean the frame is already
+                // identity mapped (well, hopefully).
+                Ok(_) | Err(MapToError::ParentEntryHugePage | MapToError::PageAlreadyMapped(_)) => {
+                }
+                Err(e) => panic!("failed to map VirtIO device config page: {:?}", e),
+            }
+        }
+
+        unsafe { VirtIOConfigPtr::from_address(config_type, config_addr) }
+    }
+
+    pub fn print<W: Write>(&self, w: &mut IndentWriter<W>) -> fmt::Result {
+        writeln!(w, "VirtIO PCI capability header:")?;
+
+        w.indent();
+        let header = self.as_ref();
+        let offset = header.offset;
+        let length = header.length;
+        let config_type = self.config_type();
+
+        writeln!(w, "cap_vndr: {:#x}", header.cap_vndr)?;
+        writeln!(w, "cap_next: {:#x}", header.cap_next)?;
+        writeln!(w, "cap_len: {:#x}", header.cap_len)?;
+        writeln!(w, "cfg_type: {:#x} ({config_type:?})", header.cfg_type)?;
+        writeln!(w, "bar: {:#x}", header.bar)?;
+        writeln!(w, "id: {:#x}", header.id)?;
+        writeln!(w, "offset: {offset:#x}")?;
+        writeln!(w, "length: {length:?}")?;
+        w.unindent();
+
+        Ok(())
     }
 }
 
@@ -132,7 +219,7 @@ pub struct VirtIOPCICapabilityHeader {
     cfg_type: u8,
     bar: u8,
     id: u8,
-    padding: [u8; 2],
+    _padding: [u8; 2],
     offset: u32,
 
     /// Length of the entire capability structure, in bytes.
@@ -165,20 +252,40 @@ impl VirtIOPCIConfigType {
     }
 }
 
-struct VirtIOPCICommonConfigPtr {
-    address: PhysAddr,
+#[derive(Debug, Clone, Copy)]
+enum VirtIOConfigPtr {
+    Common(VirtIOPCICommonConfigPtr),
+    Notify,
+    ISR,
+    Device,
+    PCI,
+    SharedMemory,
+    Vendor,
 }
 
-impl VirtIOPCICommonConfigPtr {
+impl VirtIOConfigPtr {
     /// # Safety
     ///
     /// Caller must ensure that the given BAR (base address register) is valid
     /// and is for the VirtIO device.
-    pub unsafe fn from_bar_offset(bar: PhysAddr, offset: u32) -> Self {
-        Self {
-            address: bar + u64::from(offset),
+    pub unsafe fn from_address(config_type: VirtIOPCIConfigType, config_addr: PhysAddr) -> Self {
+        match config_type {
+            VirtIOPCIConfigType::Common => Self::Common(VirtIOPCICommonConfigPtr {
+                address: config_addr,
+            }),
+            VirtIOPCIConfigType::Notify => Self::Notify,
+            VirtIOPCIConfigType::ISR => Self::ISR,
+            VirtIOPCIConfigType::Device => Self::Device,
+            VirtIOPCIConfigType::PCI => Self::PCI,
+            VirtIOPCIConfigType::SharedMemory => Self::SharedMemory,
+            VirtIOPCIConfigType::Vendor => Self::Vendor,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct VirtIOPCICommonConfigPtr {
+    address: PhysAddr,
 }
 
 impl AsRef<VirtIOPCICommonConfig> for VirtIOPCICommonConfigPtr {
