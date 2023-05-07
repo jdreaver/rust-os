@@ -525,6 +525,18 @@ impl PCIDeviceConfigBodyType0Ptr {
         PCIDeviceCapabilityIterator::new(cap_ptr)
     }
 
+    pub fn bar(self, bar_idx: usize) -> PhysAddr {
+        match bar_idx {
+            0 => bar_address(self.as_ref().bar0, Some(self.as_ref().bar1)),
+            1 => bar_address(self.as_ref().bar1, Some(self.as_ref().bar2)),
+            2 => bar_address(self.as_ref().bar2, Some(self.as_ref().bar3)),
+            3 => bar_address(self.as_ref().bar3, Some(self.as_ref().bar4)),
+            4 => bar_address(self.as_ref().bar4, Some(self.as_ref().bar5)),
+            5 => bar_address(self.as_ref().bar5, None),
+            _ => panic!("invalid PCI device BAR index"),
+        }
+    }
+
     fn print<W: Write>(self, w: &mut IndentWriter<'_, W>) -> fmt::Result {
         let body = self.as_ref();
 
@@ -576,6 +588,30 @@ impl PCIDeviceConfigBodyType0Ptr {
         w.unindent();
 
         Ok(())
+    }
+}
+
+fn bar_address(bar: u32, next_bar: Option<u32>) -> PhysAddr {
+    // First bit of the BAR decides if we are in memory space (0x0) or I/O space
+    // (0x1)
+    let bit_0 = bar & 0b1;
+    assert_eq!(bit_0, 0, "we don't support I/O space BARs yet");
+
+    let bit_1_2 = (bar >> 1) & 0b11;
+    match bit_1_2 {
+        0b00 => {
+            // 32-bit address
+            let addr = bar & 0xffff_fff0;
+            PhysAddr::new(u64::from(addr))
+        }
+        0b10 => {
+            let Some(next_bar) = next_bar else { panic!("got 64 bit address BAR, but there is no next BAR") };
+            // 64-bit address. Use the next BAR to get the upper 32 bits.
+            let addr = bar & 0xffff_fff0;
+            let addr = (u64::from(next_bar) << 32) | u64::from(addr);
+            PhysAddr::new(addr)
+        }
+        _ => panic!("invalid BAR address type"),
     }
 }
 

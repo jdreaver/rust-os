@@ -1,6 +1,45 @@
 use x86_64::PhysAddr;
 
-use crate::pci::PCIDeviceCapabilityHeaderPtr;
+use crate::pci::{self, PCIDeviceCapabilityHeaderPtr, PCIeDeviceConfig};
+use crate::serial_println;
+
+/// Temporary function for debugging how we get VirtIO information.
+pub fn print_virtio_device(device: &PCIeDeviceConfig) {
+    let header = device.header();
+    assert_eq!(
+        header.vendor_id(),
+        0x1af4,
+        "invalid vendor ID, not a VirtIO device"
+    );
+
+    serial_println!("Found VirtIO device: {:?}", header);
+
+    let pci::PCIDeviceConfigBody::GeneralDevice(body) = device
+            .body()
+            .expect("failed to read device body")
+            else { return; };
+
+    for (i, capability) in body.iter_capabilities().enumerate() {
+        let virtio_cap =
+            unsafe { VirtIOPCICapabilityHeaderPtr::from_capability_header(&capability) };
+        serial_println!("VirtIO capability {}: {:#x?}", i, virtio_cap.as_ref());
+
+        let config_type = virtio_cap.config_type();
+        serial_println!("VirtIO config type: {:?}", config_type);
+
+        if config_type == VirtIOPCIConfigType::Common {
+            let bar_idx = virtio_cap.as_ref().bar;
+            serial_println!("common: bar_idx: {}", bar_idx);
+            let bar = body.bar(bar_idx as usize);
+            // TODO: We get a bar BAR here for the virtio GPU. It wants address
+            // 0x800000000, or the address at 32 GiB.
+            let offset = virtio_cap.as_ref().offset;
+            serial_println!("bar: {:#x?}, offset: {:#x?}", bar_idx, bar);
+            let common_cfg = unsafe { VirtIOPCICommonConfigPtr::from_bar_offset(bar, offset) };
+            serial_println!("VirtIO common config: {:#x?}", common_cfg.as_ref());
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct VirtIOPCICapabilityHeaderPtr {
@@ -16,6 +55,11 @@ impl VirtIOPCICapabilityHeaderPtr {
         Self {
             base_address: header.address(),
         }
+    }
+
+    fn config_type(self) -> VirtIOPCIConfigType {
+        let cfg_type = self.as_ref().cfg_type;
+        VirtIOPCIConfigType::from_cfg_type(cfg_type).expect("invalid VirtIO config type")
     }
 }
 
@@ -42,4 +86,74 @@ pub struct VirtIOPCICapabilityHeader {
 
     /// Length of the entire capability structure, in bytes.
     length: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VirtIOPCIConfigType {
+    Common = 1,
+    Notify = 2,
+    ISR = 3,
+    Device = 4,
+    PCI = 5,
+    SharedMemory = 8,
+    Vendor = 9,
+}
+
+impl VirtIOPCIConfigType {
+    fn from_cfg_type(cfg_type: u8) -> Option<Self> {
+        match cfg_type {
+            1 => Some(Self::Common),
+            2 => Some(Self::Notify),
+            3 => Some(Self::ISR),
+            4 => Some(Self::Device),
+            5 => Some(Self::PCI),
+            8 => Some(Self::SharedMemory),
+            9 => Some(Self::Vendor),
+            _ => None,
+        }
+    }
+}
+
+struct VirtIOPCICommonConfigPtr {
+    address: PhysAddr,
+}
+
+impl VirtIOPCICommonConfigPtr {
+    /// # Safety
+    ///
+    /// Caller must ensure that the given BAR (base address register) is valid
+    /// and is for the VirtIO device.
+    pub unsafe fn from_bar_offset(bar: PhysAddr, offset: u32) -> Self {
+        Self {
+            address: bar + u64::from(offset),
+        }
+    }
+}
+
+impl AsRef<VirtIOPCICommonConfig> for VirtIOPCICommonConfigPtr {
+    fn as_ref(&self) -> &VirtIOPCICommonConfig {
+        unsafe { &*(self.address.as_u64() as *const VirtIOPCICommonConfig) }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct VirtIOPCICommonConfig {
+    device_feature_select: u32,
+    device_feature: u32,
+    driver_feature_select: u32,
+    driver_feature: u32,
+    msix_config: u16,
+    num_queues: u16,
+    device_status: u8,
+    config_generation: u8,
+    queue_select: u16,
+    queue_size: u16,
+    queue_msix_vector: u16,
+    queue_enable: u16,
+    queue_notify_off: u16,
+    queue_desc: u64,
+    queue_driver: u64,
+    queue_device: u64,
+    queue_notify_data: u16,
+    queue_reset: u16,
 }

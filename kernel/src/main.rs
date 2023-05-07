@@ -117,20 +117,7 @@ fn run_tests(
         if header.vendor_id() != 0x1af4 {
             return;
         }
-
-        serial_println!("Found VirtIO device: {:?}", header);
-
-        let pci::PCIDeviceConfigBody::GeneralDevice(body) = device
-            .body()
-            .expect("failed to read device body")
-            else { return; };
-
-        for (i, capability) in body.iter_capabilities().enumerate() {
-            let virtio_cap = unsafe {
-                virtio::VirtIOPCICapabilityHeaderPtr::from_capability_header(&capability)
-            };
-            serial_println!("VirtIO capability {}: {:#x?}", i, virtio_cap.as_ref());
-        }
+        virtio::print_virtio_device(&device);
     });
 
     // Print out some test addresses
