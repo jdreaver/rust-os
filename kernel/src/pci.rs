@@ -521,8 +521,13 @@ fn device_type(class: u8, subclass: u8, prog_if: u8) -> Result<&'static str, &'s
 register_struct!(
     /// 7.5.1.2 Type 0 Configuration Space Header
     PCIDeviceConfigBodyType0Registers {
-        // N.B. Base is from the beginning of the header, not the type 0 region.
-        // This makes it easier to cross reference with the spec.
+        // TODO: It is neat that we can embed the header registers like this. It
+        // would be event neater if we could embed the wrapper object. I think
+        // it would work if the wrapper object accepted `from_address`
+        // initialization. Or, if we could add methods to the register object so
+        // we don't need a wrapper? Or, maybe we shouldn't do this, and instead
+        // we should have something just wrap both?
+        0x00 => header: PCIDeviceConfigHeaderRegisters,
         0x10 => raw_bar0: RegisterRW<u32>,
         0x14 => raw_bar1: RegisterRW<u32>,
         0x18 => raw_bar2: RegisterRW<u32>,

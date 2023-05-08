@@ -34,7 +34,7 @@ pub fn print_virtio_device<W: Write>(
 
     let w = &mut IndentWriter::new(w, 2);
 
-    writeln!(w, "Found VirtIO device: {header:x?}").expect("failed to write");
+    writeln!(w, "Found VirtIO device: {body:#x?}").expect("failed to write");
     w.indent();
 
     for (i, capability) in body.iter_capabilities().enumerate() {

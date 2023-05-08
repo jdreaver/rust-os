@@ -52,14 +52,18 @@ make test
 
 ## TODO
 
+- VirtIO
+  - Get RNG (Entropy) device working
+  - Figure out PCI interrupts (MSI-X?)
+- PCI enums:
+  - Have a wrapper object that does all the necessary inspection of bits (e.g. header_type to decide on body type 0/1, or vendor_id to decide on VirtIO device type) and returns an enum.
+  - VirtIO device can check for vendor_id, decide it is VirtIO, assert type 0 body, and then call another function to get a more specific device.
+  - The more specific type wraps sub types. For example, type 0 device wraps header and type 0 body. VirtIO device wraps header, body, and VirtIO specific stuff
+    - Wrapper objects should contain multiple `register_struct` structs. Don't try nesting them.
+  - Leaf level VirtIO objects can pre-parse their capabilities and store pointers to important ones, like the common config (and error if there are multiple?)
+    - Alternatively, they could alloc a `Vec` per capability type.
 - Consider moving `registers.rs` stuff into dedicated crate with unit tests
-- PCI/VirtIO struct abstractions
-  - Concepts:
-    - Wrapper around raw pointer
-    - Raw struct to do field-level IO (is this even correct? Does it work with volatile reads/writes? Perhaps not...)
-    - Enums: different variants of a thing at the same memory address, depending on some field (e.g. different PCI devices, different VirtIO capabilities)
-  - TODO
-    - Ensure successful VirtIO device initiation end-to-end to ensure I'm not going down a rabbit hole
+  - Also document `registers.rs` stuff
 - Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
 - Filesystem support
   - Now that I have PCI working, attach a drive via QEMU and see what is looks like under PCI

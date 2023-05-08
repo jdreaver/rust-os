@@ -128,7 +128,7 @@ macro_rules! register_struct {
         $(#[$attr:meta])*
         $struct_name:ident {
             $(
-                $offset:literal => $name:ident : $register_type:ident < $type:ty >
+                $offset:literal => $name:ident : $register_type:ident $(< $type:ty >)?
             ),* $(,)?
         }
     ) => {
@@ -139,12 +139,12 @@ macro_rules! register_struct {
         }
 
         impl $struct_name {
-            fn from_address(address: usize) -> Self {
+            unsafe fn from_address(address: usize) -> Self {
                 Self { address }
             }
 
             $(
-                $crate::register_struct!(@register_method $offset, $name, $register_type, $type);
+                $crate::register_struct!(@register_method $offset, $name, $register_type, $(< $type >)? );
             )*
         }
 
@@ -160,8 +160,8 @@ macro_rules! register_struct {
         }
     };
 
-    (@register_method $offset:expr, $name:ident, $register_type:ident, $type:ty) => {
-        fn $name(&self) -> $register_type<$type> {
+    (@register_method $offset:expr, $name:ident, $register_type:ident, $(< $type:ty >)? ) => {
+        fn $name(&self) -> $register_type $(< $type >)? {
             unsafe { $register_type::from_address(self.address + $offset) }
         }
     };
