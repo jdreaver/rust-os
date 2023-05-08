@@ -29,6 +29,10 @@ pub mod gdt;
 pub mod interrupts;
 pub mod memory;
 pub mod pci;
+pub mod registers;
 pub mod serial;
 pub mod strings;
 pub mod virtio;
+
+// So we can use the `paste!` macro in our macros.
+pub extern crate paste;

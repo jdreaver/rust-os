@@ -58,8 +58,10 @@ make test
     - Raw struct to do field-level IO (is this even correct? Does it work with volatile reads/writes? Perhaps not...)
     - Enums: different variants of a thing at the same memory address, depending on some field (e.g. different PCI devices, different VirtIO capabilities)
   - Ideas:
-    - Re-research how to do register-based IO properly without spurious reads.
-    - Research existing crates and just use those.
+    - Use a macro to create `read_<field>(&self)` and `write_field(&self, value: <type>)` methods on wrapper types. We don't need to actually create structs.
+      - Macro could be `register_method_RW!(self.address, <name, like vendor_id>, <offset, like 0x4>)`
+        - Variations for read-only, write-only, and read-write
+      - Alternatively, we could have a single method that returns a `VolAddress`
     - Consider using `bit_field`
 - Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
 - Filesystem support
