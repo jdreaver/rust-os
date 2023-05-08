@@ -57,12 +57,10 @@ make test
     - Wrapper around raw pointer
     - Raw struct to do field-level IO (is this even correct? Does it work with volatile reads/writes? Perhaps not...)
     - Enums: different variants of a thing at the same memory address, depending on some field (e.g. different PCI devices, different VirtIO capabilities)
-  - Ideas:
-    - Use a macro to create `read_<field>(&self)` and `write_field(&self, value: <type>)` methods on wrapper types. We don't need to actually create structs.
-      - Macro could be `register_method_RW!(self.address, <name, like vendor_id>, <offset, like 0x4>)`
-        - Variations for read-only, write-only, and read-write
-      - Alternatively, we could have a single method that returns a `VolAddress`
-    - Consider using `bit_field`
+  - TODO
+    - Create bit-field abstraction similar to <https://docs.rs/pci-driver/latest/pci_driver/#pci_struct-and-pci_bit_field>
+    - Ensure successful VirtIO device initiation end-to-end to ensure I'm not going down a rabbit hole
+    - Finish nuking all remaining `Raw` structs in favor of new struct type
 - Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
 - Filesystem support
   - Now that I have PCI working, attach a drive via QEMU and see what is looks like under PCI

@@ -3,6 +3,8 @@ use core::fmt::Write;
 
 use x86_64::PhysAddr;
 
+use crate::register_struct;
+use crate::registers::{RegisterRO, RegisterRW};
 use crate::strings::IndentWriter;
 
 const MAX_PCI_BUS: u8 = 255;
@@ -159,51 +161,52 @@ fn lookup_vendor_id(vendor_id: u16) -> Option<&'static str> {
     }
 }
 
-/// See <https://wiki.osdev.org/PCI#Common_Header_Fields>
-#[repr(packed)]
-#[derive(Clone, Copy)]
-pub struct PCIDeviceConfigHeaderRaw {
-    vendor_id: u16,
-    device_id: u16,
-    command: u16,
-    status: u16,
-    revision_id: u8,
-    prog_if: u8,
-    subclass: u8,
-    class: u8,
-    _cache_line_size: u8,
-    _latency_timer: u8,
-    header_type: PCIDeviceConfigHeaderType,
-    _bist: u8,
-}
+register_struct!(
+    /// See <https://wiki.osdev.org/PCI#Common_Header_Fields>
+    PCIDeviceConfigHeaderRegisters {
+        0x00 => vendor_id: RegisterRO<u16>,
+        0x02 => device_id: RegisterRO<u16>,
+        0x04 => command: RegisterRW<u16>, // TODO: Read only?
+        0x06 => status: RegisterRW<u16>, // TODO: Read only?
+        0x08 => revision_id: RegisterRO<u8>,
+        0x09 => prog_if: RegisterRO<u8>,
+        0x0A => subclass: RegisterRO<u8>,
+        0x0B => class: RegisterRO<u8>,
+        // 0x0C => cache_line_size: RegisterRW<u8>,
+        // 0x0D => latency_timer: RegisterRW<u8>,
+        0x0E => header_type: RegisterRO<PCIDeviceConfigHeaderType>,
+        // 0x0F => bist: RegisterRW<u8>,
+    }
+);
 
 #[derive(Debug, Clone, Copy)]
 pub struct PCIDeviceConfigHeader {
-    address: PhysAddr,
+    header: PCIDeviceConfigHeaderRegisters,
 }
 
 impl PCIDeviceConfigHeader {
-    fn new(address: PhysAddr) -> Self {
-        Self { address }
+    unsafe fn new(address: PhysAddr) -> Self {
+        #[allow(unused_unsafe)]
+        let header =
+            unsafe { PCIDeviceConfigHeaderRegisters::from_address(address.as_u64() as usize) };
+        Self { header }
     }
 
     /// A device exists if the Vendor ID register is not 0xFFFF.
     fn device_exists(self) -> bool {
-        self.as_ref().vendor_id != 0xFFFF
+        self.header.vendor_id().read() != 0xFFFF
     }
 
     fn header_type(self) -> PCIDeviceConfigHeaderType {
-        self.as_ref().header_type
+        self.header.header_type().read()
     }
 
     pub fn vendor_id(self) -> u16 {
-        self.as_ref().vendor_id
+        self.header.vendor_id().read()
     }
 
     fn print<W: Write>(self, w: &mut IndentWriter<'_, W>) -> fmt::Result {
-        let header = self.as_ref();
-
-        let header_type = header.header_type;
+        let header_type = self.header.header_type().read();
 
         let layout = header_type
             .header_layout()
@@ -214,42 +217,39 @@ impl PCIDeviceConfigHeader {
         let multifunction = header_type.is_multifunction();
         writeln!(w, "multifunction: {multifunction}")?;
 
-        let command = header.command;
+        let command = self.header.command().read();
         writeln!(w, "command: {command:#016b}")?;
 
-        let status = header.status;
+        let status = self.header.status().read();
         writeln!(w, "status: {status:#016b}")?;
 
-        let vendor_id = header.vendor_id;
+        let vendor_id = self.header.vendor_id().read();
         let vendor = lookup_vendor_id(vendor_id);
         write!(w, "vendor: {vendor_id:#x}")?;
         writeln!(w, " ({})", vendor.unwrap_or("UNKNOWN"))?;
 
-        let device_id = header.device_id;
+        let device_id = self.header.device_id().read();
         let device = lookup_known_device_id(vendor_id, device_id);
-        let revision_id = header.revision_id;
+        let revision_id = self.header.revision_id().read();
         write!(w, "device_id: {device_id:#x}")?;
         write!(w, ", revision_id: {revision_id:#x}")?;
         writeln!(w, " ({device})")?;
 
-        let device = device_type(header.class, header.subclass, header.prog_if)
-            .expect("couldn't construct device class");
+        let device = device_type(
+            self.header.class().read(),
+            self.header.subclass().read(),
+            self.header.prog_if().read(),
+        )
+        .expect("couldn't construct device class");
         writeln!(w, "device:")?;
         w.indent();
         writeln!(w, "name: {device}")?;
-        writeln!(w, "class: {:#x}", header.class)?;
-        writeln!(w, "subclass: {:#x}", header.subclass,)?;
-        writeln!(w, "prog_if: {:#x}", header.prog_if)?;
+        writeln!(w, "class: {:#x}", self.header.class().read())?;
+        writeln!(w, "subclass: {:#x}", self.header.subclass().read(),)?;
+        writeln!(w, "prog_if: {:#x}", self.header.prog_if().read())?;
         w.unindent();
 
         Ok(())
-    }
-}
-
-impl AsRef<PCIDeviceConfigHeaderRaw> for PCIDeviceConfigHeader {
-    fn as_ref(&self) -> &PCIDeviceConfigHeaderRaw {
-        let ptr = self.address.as_u64() as *const PCIDeviceConfigHeaderRaw;
-        unsafe { &*ptr }
     }
 }
 
@@ -503,7 +503,8 @@ pub struct PCIDeviceConfigBodyType0 {
 
 impl PCIDeviceConfigBodyType0 {
     unsafe fn from_config_base(config_base_address: PhysAddr) -> Self {
-        let address = config_base_address + core::mem::size_of::<PCIDeviceConfigHeaderRaw>();
+        // Body starts at offset 0x10 from the config base.
+        let address = config_base_address + 0x10u64;
         Self {
             config_base_address,
             address,
