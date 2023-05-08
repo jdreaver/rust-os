@@ -1,10 +1,9 @@
 // Inspiration taken from
 // https://docs.rs/pci-driver/latest/pci_driver/#pci_struct-and-pci_bit_field
-//
-// TODO:
-// - Support for bit fields, like the PCI driver crate does.
 
+use core::cmp::Eq;
 use core::marker::PhantomData;
+use core::ops::{BitAnd, BitOr, Not, Shl, Shr};
 
 /// Register mapped to some underlying memory address.
 #[derive(Clone, Copy)]
@@ -168,7 +167,6 @@ macro_rules! register_struct {
             unsafe { $register_type::from_address(self.address + $offset) }
         }
     };
-
 }
 
 // /// Experimental macro to automatically compute field offsets. I'm scared to
@@ -208,3 +206,206 @@ macro_rules! register_struct {
 //         $crate::register_struct_v2!(@internal $offset + core::mem::size_of::<$type>(), $($rest_name : $rest_type),*);
 //     };
 // }
+
+// TODO: This bit field stuff is super cool, but it can get very complicated.
+// Maybe I don't need it for now? See
+// https://docs.rs/pci-driver/latest/pci_driver/#pci_struct-and-pci_bit_field
+// for inspiration.
+
+/// TODO: Document this better once it is stabilized.
+#[macro_export]
+macro_rules! bit_field_struct {
+    (
+        $(#[$attr:meta])*
+        $struct_name:ident: $register_type:ident {
+            $(
+                $bit_start:literal $(.. $bit_end:literal)? => $name:ident : $bits_type:ident $(< $field_type:ty >)?
+            ),* $(,)?
+        }
+    ) => {
+        $(#[$attr])*
+        #[derive(Clone, Copy)]
+        struct $struct_name {
+            address: usize,
+        }
+
+        impl $struct_name {
+            fn from_address(address: usize) -> Self {
+                Self { address }
+            }
+
+            $(
+                $crate::bit_field_struct!(@field_method $register_type $bit_start $(..$bit_end )? => $name, $bits_type $(< $field_type >)?);
+            )*
+        }
+
+        impl core::fmt::Debug for $struct_name {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.debug_struct(stringify!($struct_name))
+                    .field("address", &self.address)
+                    $(
+                        .field(stringify!($name), &self.$name())
+                    )*
+                    .finish()
+            }
+        }
+    };
+
+    // No bits end. Default to 0.
+    (@field_method $register_type: ident $bit_start:literal => $name:ident, $bits_type:ident $(< $field_type:ty> )? ) => {
+        $crate::bit_field_struct!(@field_method $register_type $bit_start..0 => $name, $bits_type $(< $field_type> )?);
+    };
+
+    (@field_method $register_type: ident $bit_start:literal..$bit_end:literal => $name:ident, $bits_type:ident $(< $field_type:ty> )?) => {
+        fn $name(&self) -> $bits_type< $( $field_type,)? $register_type> {
+            todo!();
+        }
+    };
+}
+
+/// Access to some bits, represented by type `T`, in an underlying
+/// `RegisterRW<U>`.
+pub struct BitsRW<T, U> {
+    register: RegisterRW<U>,
+    mask: U,
+    shift: u8,
+    _phantom: PhantomData<T>,
+}
+
+impl<T, U> BitsRW<T, U>
+where
+    U: TryInto<T>
+        + Shr<u8, Output = U>
+        + Shl<u8, Output = U>
+        + BitAnd<Output = U>
+        + BitOr<Output = U>
+        + Not<Output = U>
+        + Copy,
+    U::Error: core::fmt::Debug,
+    T: Into<U>,
+{
+    /// # Safety
+    ///
+    /// The caller must ensure that the address is a valid memory location for a
+    /// register of size `U`.
+    pub unsafe fn from_address(address: usize, mask: U, shift: u8) -> Self {
+        Self {
+            register: unsafe { RegisterRW::from_address(address) },
+            mask,
+            shift,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn read(&self) -> T {
+        let val: U = self.register.read();
+        let masked: U = val & self.mask;
+        let shifted: U = masked >> self.shift;
+        shifted
+            .try_into()
+            .expect("failed to convert underlying to type")
+    }
+
+    pub fn write(&self, value: T) {
+        let val: U = value.into();
+        let shifted: U = val << self.shift;
+        let masked: U = shifted & self.mask;
+        self.register.modify(|old| (old & !self.mask) | masked);
+    }
+
+    pub fn modify(&self, f: impl FnOnce(T) -> T) {
+        let old = self.read();
+        let new = f(old);
+        self.write(new);
+    }
+}
+
+impl<T, U> core::fmt::Debug for BitsRW<T, U>
+where
+    U: TryInto<T>
+        + Shr<u8, Output = U>
+        + Shl<u8, Output = U>
+        + BitAnd<Output = U>
+        + BitOr<Output = U>
+        + Not<Output = U>
+        + Copy,
+    U::Error: core::fmt::Debug,
+    T: Into<U> + core::fmt::Debug,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("BitsRW")
+            .field("value", &self.read())
+            .finish()
+    }
+}
+
+/// Similar to `BitsRW`, but only for a single bit.
+pub struct BitRW<U> {
+    register: RegisterRW<U>,
+    mask: U,
+    shift: u8,
+}
+
+impl<U> BitRW<U>
+where
+    U: Shr<u8, Output = U>
+        + Shl<u8, Output = U>
+        + BitAnd<Output = U>
+        + BitOr<Output = U>
+        + Eq
+        + Not<Output = U>
+        + From<bool>
+        + From<u8>
+        + Copy,
+{
+    /// # Safety
+    ///
+    /// The caller must ensure that the address is a valid memory location for a
+    /// register of size `U`.
+    pub unsafe fn from_address(address: usize, mask: U, shift: u8) -> Self {
+        Self {
+            register: unsafe { RegisterRW::from_address(address) },
+            mask,
+            shift,
+        }
+    }
+
+    pub fn read(&self) -> bool {
+        let val: U = self.register.read();
+        let masked: U = val & self.mask;
+        let shifted: U = masked >> self.shift;
+        shifted != U::from(0u8)
+    }
+
+    pub fn write(&self, value: bool) {
+        let val: U = value.into();
+        let shifted: U = val << self.shift;
+        let masked: U = shifted & self.mask;
+        self.register.modify(|old| (old & !self.mask) | masked);
+    }
+
+    pub fn modify(&self, f: impl FnOnce(bool) -> bool) {
+        let old = self.read();
+        let new = f(old);
+        self.write(new);
+    }
+}
+
+impl<U> core::fmt::Debug for BitRW<U>
+where
+    U: Shr<u8, Output = U>
+        + Shl<u8, Output = U>
+        + BitAnd<Output = U>
+        + BitOr<Output = U>
+        + Eq
+        + Not<Output = U>
+        + From<bool>
+        + From<u8>
+        + Copy,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("BitRW")
+            .field("value", &self.read())
+            .finish()
+    }
+}

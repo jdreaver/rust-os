@@ -52,6 +52,7 @@ make test
 
 ## TODO
 
+- Consider moving `registers.rs` stuff into dedicated crate with unit tests
 - PCI/VirtIO struct abstractions
   - Concepts:
     - Wrapper around raw pointer
