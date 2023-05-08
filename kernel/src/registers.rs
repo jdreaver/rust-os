@@ -7,7 +7,7 @@
 use core::marker::PhantomData;
 
 /// Register mapped to some underlying memory address.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct RegisterRW<T> {
     ptr: *mut T,
     _phantom: PhantomData<T>,
@@ -36,8 +36,17 @@ impl<T> RegisterRW<T> {
     }
 }
 
+impl<T: core::fmt::Debug> core::fmt::Debug for RegisterRW<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("RegisterRW")
+            .field("ptr", &self.ptr)
+            .field("value", &self.read())
+            .finish()
+    }
+}
+
 /// Read-only register mapped to some underlying memory address.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct RegisterRO<T> {
     ptr: *const T,
     _phantom: PhantomData<T>,
@@ -60,8 +69,17 @@ impl<T> RegisterRO<T> {
     }
 }
 
+impl<T: core::fmt::Debug> core::fmt::Debug for RegisterRO<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("RegisterRO")
+            .field("ptr", &self.ptr)
+            .field("value", &self.read())
+            .finish()
+    }
+}
+
 /// Write-only register mapped to some underlying memory address.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct RegisterWO<T> {
     ptr: *mut T,
     _phantom: PhantomData<T>,
@@ -86,6 +104,16 @@ impl<T> RegisterWO<T> {
     }
 }
 
+impl<T: core::fmt::Debug> core::fmt::Debug for RegisterWO<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("RegisterWO")
+            .field("ptr", &self.ptr)
+            .field("value", &"UNKNOWN (write only)")
+            .finish()
+    }
+}
+
+/// TODO: Document this better once it is stabilized.
 #[macro_export]
 macro_rules! register_struct {
     (
@@ -97,7 +125,7 @@ macro_rules! register_struct {
         }
     ) => {
         $(#[$attr])*
-        #[derive(Debug, Clone, Copy)]
+        #[derive(Clone, Copy)]
         struct $struct_name {
             address: usize,
         }
@@ -110,6 +138,26 @@ macro_rules! register_struct {
             $(
                 $crate::register_method!($offset, $name, $register_type, $type);
             )*
+        }
+
+        impl core::fmt::Debug for $struct_name {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.debug_struct(stringify!($struct_name))
+                    .field("address", &self.address)
+                    $(
+                        .field(stringify!($name), &self.$name())
+                    )*
+                    .finish()
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! register_method {
+    ($offset:expr, $name:ident, $register_type:ident, $type:ty) => {
+        fn $name(&self) -> $register_type<$type> {
+            unsafe { $register_type::from_address(self.address + $offset) }
         }
     };
 }
@@ -149,50 +197,5 @@ macro_rules! register_struct {
 //     (@internal $offset:expr, $name:ident : $type:ty, $($rest_name:ident : $rest_type:ty),* $(,)?) => {
 //         $crate::register_method_RW!($offset, $name, $type);
 //         $crate::register_struct_v2!(@internal $offset + core::mem::size_of::<$type>(), $($rest_name : $rest_type),*);
-//     };
-// }
-
-#[macro_export]
-macro_rules! register_method {
-    ($offset:expr, $name:ident, $register_type:ident, $type:ty) => {
-        fn $name(&self) -> $register_type<$type> {
-            unsafe { $register_type::from_address(self.address + $offset) }
-        }
-    };
-}
-
-// #[macro_export]
-// macro_rules! register_method_R {
-//     ($offset:expr, $name:ident, $type:ty) => {
-//         $crate::paste::paste! {
-//             fn [<read_ $name>](&self) -> $type {
-//                 unsafe {
-//                     let ptr = (self.address + $offset) as *const $type;
-//                     core::ptr::read_volatile(ptr)
-//                 }
-//             }
-//         }
-//     };
-// }
-
-// #[macro_export]
-// macro_rules! register_method_W {
-//     ($offset:expr, $name:ident, $type:ty) => {
-//         $crate::paste::paste! {
-//             fn [<write_ $name>](&mut self, value: $type) {
-//                 unsafe {
-//                     let ptr = (self.address + $offset) as *mut $type;
-//                     core::ptr::write_volatile(ptr, value)
-//                 }
-//             }
-//         }
-//     };
-// }
-
-// #[macro_export]
-// macro_rules! register_method_RW {
-//     ($offset:expr, $name:ident, $type:ty) => {
-//         $crate::register_method_R!($offset, $name, $type);
-//         $crate::register_method_W!($offset, $name, $type);
 //     };
 // }

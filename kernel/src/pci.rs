@@ -253,7 +253,7 @@ impl PCIDeviceConfigHeader {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub struct PCIDeviceConfigHeaderType(u8);
 
