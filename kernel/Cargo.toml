@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 acpi = "4.1"
+bitfield-struct = "0.3"
 lazy_static = { version = "1", features = ["spin_no_std"] }
 # N.B. Make sure this matches vesa_framebuffer version so tests are consistent.
 limine = "0.1.10"

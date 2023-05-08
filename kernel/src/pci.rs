@@ -1,6 +1,7 @@
 use core::fmt;
 use core::fmt::Write;
 
+use bitfield_struct::bitfield;
 use x86_64::PhysAddr;
 
 use crate::register_struct;
@@ -88,7 +89,7 @@ impl PCIeDeviceConfig {
     }
 
     pub fn body(&self) -> Result<PCIDeviceConfigBody, &str> {
-        let layout = self.header.header_type().header_layout()?;
+        let layout = self.header.header_type().layout()?;
         let body = match layout {
             PCIDeviceConfigHeaderLayout::GeneralDevice => {
                 PCIDeviceConfigBody::GeneralDevice(unsafe {
@@ -166,8 +167,8 @@ register_struct!(
     PCIDeviceConfigHeaderRegisters {
         0x00 => vendor_id: RegisterRO<u16>,
         0x02 => device_id: RegisterRO<u16>,
-        0x04 => command: RegisterRW<u16>, // TODO: Read only?
-        0x06 => status: RegisterRW<u16>, // TODO: Read only?
+        0x04 => command: RegisterRW<PCIDeviceConfigCommand>,
+        0x06 => status: RegisterRW<PCIDeviceConfigStatus>,
         0x08 => revision_id: RegisterRO<u8>,
         0x09 => prog_if: RegisterRO<u8>,
         0x0A => subclass: RegisterRO<u8>,
@@ -209,19 +210,21 @@ impl PCIDeviceConfigHeader {
         let header_type = self.header.header_type().read();
 
         let layout = header_type
-            .header_layout()
+            .layout()
             .expect("couldn't construct header layout")
             .as_str();
         writeln!(w, "layout: {layout}")?;
 
-        let multifunction = header_type.is_multifunction();
+        let multifunction = header_type.multifunction();
         writeln!(w, "multifunction: {multifunction}")?;
 
         let command = self.header.command().read();
-        writeln!(w, "command: {command:#016b}")?;
+        let command_bits = u16::from(command);
+        writeln!(w, "command: {command_bits:#016b} ({command:?})")?;
 
         let status = self.header.status().read();
-        writeln!(w, "status: {status:#016b}")?;
+        let status_bits = u16::from(status);
+        writeln!(w, "status: {status_bits:#016b} ({status:?})")?;
 
         let vendor_id = self.header.vendor_id().read();
         let vendor = lookup_vendor_id(vendor_id);
@@ -253,25 +256,66 @@ impl PCIDeviceConfigHeader {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-#[repr(transparent)]
-pub struct PCIDeviceConfigHeaderType(u8);
+/// See "7.5.1.1.3 Command Register (Offset 04h)" in the PCI Express Spec
+#[bitfield(u16)]
+pub struct PCIDeviceConfigCommand {
+    io_space_enable: bool,
+    memory_space_enable: bool,
+    bus_master_enable: bool,
+    special_cycle_enable: bool,
+    memory_write_and_invalidate: bool,
+    vga_palette_snoop: bool,
+    parity_error_response: bool,
+    idsel_stepping_wait_cycle_control: bool,
+    serr_enable: bool,
+    fast_back_to_back_transactions_enable: bool,
+    interrupt_disable: bool,
+    #[bits(5)]
+    __: u8,
+}
+
+/// See "7.5.1.1.4 Status Register (Offset 06h)" in the PCI Express spec.
+#[bitfield(u16)]
+pub struct PCIDeviceConfigStatus {
+    immediate_readiness: bool,
+    #[bits(2)]
+    __: u8,
+    interrupt_status: bool,
+    capabilities_list: bool,
+    mhz_66_capable: bool,
+    __: bool,
+    fast_back_to_back_transactions_capable: bool,
+    master_data_parity_error: bool,
+    #[bits(2)]
+    devsel_timing: u8,
+    signaled_target_abort: bool,
+    received_target_abort: bool,
+    received_master_abort: bool,
+    signaled_system_error: bool,
+    detected_parity_error: bool,
+}
+
+/// 7.5.1.1.9 Header Type Register (Offset 0Eh)
+#[bitfield(u8)]
+pub struct PCIDeviceConfigHeaderType {
+    #[bits(2)]
+    raw_layout: u8,
+
+    #[bits(5)]
+    _reserved: u8,
+
+    multifunction: bool,
+}
 
 impl PCIDeviceConfigHeaderType {
     /// The layout is in the first 7 bits of the Header Type register.
-    fn header_layout(self) -> Result<PCIDeviceConfigHeaderLayout, &'static str> {
+    fn layout(self) -> Result<PCIDeviceConfigHeaderLayout, &'static str> {
         match self.0 & 0x7 {
             0x00 => Ok(PCIDeviceConfigHeaderLayout::GeneralDevice),
             0x01 => Ok(PCIDeviceConfigHeaderLayout::PCIToPCIBridge),
             // 0x02 => Ok(PCIDeviceConfigHeaderType::PCIToCardBusBridge),
             _ => Err("invalid PCI device header type"),
         }
-    }
-
-    /// If the 8th bit of the Header Type register is set, the device is a
-    /// multifunction device.
-    fn is_multifunction(self) -> bool {
-        self.0 & 0x80 != 0
     }
 }
 
