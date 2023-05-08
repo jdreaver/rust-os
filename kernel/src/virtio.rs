@@ -11,10 +11,6 @@ use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW};
 use crate::strings::IndentWriter;
 
-// /// TODO: This is a hack. We are hard-coding the PCI virtio addresses from QEMU
-// /// (see `info mtree`) so we can access VirtIO device configs. We should instead
-// /// inspect the VirtIO PCI devices to find this memory, and then map it.
-
 /// Temporary function for debugging how we get VirtIO information.
 pub fn print_virtio_device<W: Write>(
     w: &mut W,
