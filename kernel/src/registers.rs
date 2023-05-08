@@ -25,14 +25,23 @@ impl<T> RegisterRW<T> {
         }
     }
 
+    /// Read from the register using `read_volatile`.
     pub fn read(&self) -> T {
         unsafe { core::ptr::read_volatile(self.ptr) }
     }
 
+    /// Write to the register using `write_volatile`.
     pub fn write(&self, val: T) {
         unsafe {
             core::ptr::write_volatile(self.ptr, val);
         }
+    }
+
+    /// Modify the value of the register by reading it, applying the given
+    /// function, and writing the result back.
+    pub fn modify(&self, f: impl FnOnce(T) -> T) {
+        let val = self.read();
+        self.write(f(val));
     }
 }
 
@@ -64,6 +73,7 @@ impl<T> RegisterRO<T> {
         }
     }
 
+    /// Read from the register using `read_volatile`.
     pub fn read(&self) -> T {
         unsafe { core::ptr::read_volatile(self.ptr) }
     }
@@ -97,6 +107,7 @@ impl<T> RegisterWO<T> {
         }
     }
 
+    /// Write to the register using `write_volatile`.
     pub fn write(&self, val: T) {
         unsafe {
             core::ptr::write_volatile(self.ptr, val);
@@ -136,7 +147,7 @@ macro_rules! register_struct {
             }
 
             $(
-                $crate::register_method!($offset, $name, $register_type, $type);
+                $crate::register_struct!(@register_method $offset, $name, $register_type, $type);
             )*
         }
 
@@ -151,15 +162,13 @@ macro_rules! register_struct {
             }
         }
     };
-}
 
-#[macro_export]
-macro_rules! register_method {
-    ($offset:expr, $name:ident, $register_type:ident, $type:ty) => {
+    (@register_method $offset:expr, $name:ident, $register_type:ident, $type:ty) => {
         fn $name(&self) -> $register_type<$type> {
             unsafe { $register_type::from_address(self.address + $offset) }
         }
     };
+
 }
 
 // /// Experimental macro to automatically compute field offsets. I'm scared to
