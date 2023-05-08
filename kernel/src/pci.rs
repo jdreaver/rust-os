@@ -173,10 +173,10 @@ register_struct!(
         0x09 => prog_if: RegisterRO<u8>,
         0x0A => subclass: RegisterRO<u8>,
         0x0B => class: RegisterRO<u8>,
-        // 0x0C => cache_line_size: RegisterRW<u8>,
-        // 0x0D => latency_timer: RegisterRW<u8>,
+        0x0C => cache_line_size: RegisterRW<u8>,
+        0x0D => latency_timer: RegisterRW<u8>,
         0x0E => header_type: RegisterRO<PCIDeviceConfigHeaderType>,
-        // 0x0F => bist: RegisterRW<u8>,
+        0x0F => bist: RegisterRW<u8>,
     }
 );
 
@@ -518,53 +518,67 @@ fn device_type(class: u8, subclass: u8, prog_if: u8) -> Result<&'static str, &'s
     }
 }
 
-#[repr(packed)]
-#[derive(Clone, Copy)]
-pub struct PCIDeviceConfigBodyType0Raw {
-    bars: [u32; 6],
-    cardbus_cis_pointer: u32,
-    subsystem_vendor_id: u16,
-    subsystem_id: u16,
-    expansion_rom_base_address: u32,
-    capabilities_pointer: u8,
-    _reserved: [u8; 7],
-    interrupt_line: u8,
-    interrupt_pin: u8,
-    min_grant: u8,
-    max_latency: u8,
-}
+register_struct!(
+    /// 7.5.1.2 Type 0 Configuration Space Header
+    PCIDeviceConfigBodyType0Registers {
+        // N.B. Base is from the beginning of the header, not the type 0 region.
+        // This makes it easier to cross reference with the spec.
+        0x10 => raw_bar0: RegisterRW<u32>,
+        0x14 => raw_bar1: RegisterRW<u32>,
+        0x18 => raw_bar2: RegisterRW<u32>,
+        0x1C => raw_bar3: RegisterRW<u32>,
+        0x20 => raw_bar4: RegisterRW<u32>,
+        0x24 => raw_bar5: RegisterRW<u32>,
+        0x28 => cardbus_cis_pointer: RegisterRW<u32>,
+        0x2C => subsystem_vendor_id: RegisterRW<u16>,
+        0x2E => subsystem_id: RegisterRW<u16>,
+        0x30 => expansion_rom_base_address: RegisterRW<u32>,
+        0x34 => capabilities_pointer: RegisterRW<u8>,
+        // 7 bytes reserved
+        0x3C => interrupt_line: RegisterRW<u8>,
+        0x3D => interrupt_pin: RegisterRW<u8>,
+        0x3E => min_grant: RegisterRW<u8>,
+        0x3F => max_latency: RegisterRW<u8>,
+    }
+);
 
 #[derive(Debug, Clone, Copy)]
 pub struct PCIDeviceConfigBodyType0 {
-    /// Address of the PCI device configuration base (not for the body, but for
-    /// the base of the whole config).
-    config_base_address: PhysAddr,
-
-    /// Address for the device's configuration body (so not including the
-    /// header).
-    address: PhysAddr,
+    registers: PCIDeviceConfigBodyType0Registers,
 }
 
 impl PCIDeviceConfigBodyType0 {
     unsafe fn from_config_base(config_base_address: PhysAddr) -> Self {
-        // Body starts at offset 0x10 from the config base.
-        let address = config_base_address + 0x10u64;
         Self {
-            config_base_address,
-            address,
+            registers: PCIDeviceConfigBodyType0Registers::from_address(
+                config_base_address.as_u64() as usize,
+            ),
         }
     }
 
-    pub fn iter_capabilities(&self) -> PCIDeviceCapabilityIterator {
-        let body = self.as_ref();
+    pub fn iter_capabilities(self) -> PCIDeviceCapabilityIterator {
         let cap_ptr = unsafe {
-            PCIDeviceCapabilityHeader::new(self.config_base_address, body.capabilities_pointer)
+            PCIDeviceCapabilityHeader::new(
+                self.registers.address,
+                self.registers.capabilities_pointer().read(),
+            )
         };
         PCIDeviceCapabilityIterator::new(cap_ptr)
     }
 
-    pub fn bar(self, bar_idx: usize) -> BARAddress {
-        let bars = self.as_ref().bars;
+    fn bars(self) -> [u32; 6] {
+        [
+            self.registers.raw_bar0().read(),
+            self.registers.raw_bar1().read(),
+            self.registers.raw_bar2().read(),
+            self.registers.raw_bar3().read(),
+            self.registers.raw_bar4().read(),
+            self.registers.raw_bar5().read(),
+        ]
+    }
+
+    pub fn bar(&self, bar_idx: usize) -> BARAddress {
+        let bars = self.bars();
         let bar_addresses = bar_addresses(bars);
         let bar_address = bar_addresses
             .get(bar_idx)
@@ -573,13 +587,7 @@ impl PCIDeviceConfigBodyType0 {
     }
 
     fn print<W: Write>(self, w: &mut IndentWriter<'_, W>) -> fmt::Result {
-        let body = self.as_ref();
-
-        let bars = body.bars;
-        let cardbus_cis_pointer = body.cardbus_cis_pointer;
-        let subsystem_vendor_id = body.subsystem_vendor_id;
-        let subsystem_id = body.subsystem_id;
-        let expansion_rom_base_address = body.expansion_rom_base_address;
+        let bars = self.bars();
 
         let bar_addresses = bar_addresses(bars);
         for (i, bar_address) in bar_addresses.iter().enumerate() {
@@ -606,29 +614,39 @@ impl PCIDeviceConfigBodyType0 {
                 }
             }
         }
+
+        let cardbus_cis_pointer = self.registers.cardbus_cis_pointer().read();
         writeln!(w, "cardbus_cis_pointer: 0x{cardbus_cis_pointer:08x}")?;
+
+        let subsystem_vendor_id = self.registers.subsystem_vendor_id().read();
         writeln!(w, "subsystem_vendor_id: 0x{subsystem_vendor_id:04x}")?;
+
+        let subsystem_id = self.registers.subsystem_id().read();
         writeln!(w, "subsystem_id: 0x{subsystem_id:04x}")?;
-        writeln!(
-            w,
-            "expansion_rom_base_address: 0x{expansion_rom_base_address:08x}"
-        )?;
-        writeln!(
-            w,
-            "capabilities_pointer: 0x{:02x}",
-            body.capabilities_pointer,
-        )?;
-        writeln!(w, "interrupt_line: 0x{:02x}", body.interrupt_line,)?;
-        writeln!(w, "interrupt_pin: 0x{:02x}", body.interrupt_pin,)?;
-        writeln!(w, "min_grant: 0x{:02x}", body.min_grant,)?;
-        writeln!(w, "max_latency: 0x{:02x}", body.max_latency,)?;
+
+        let exp_rom_base = self.registers.expansion_rom_base_address().read();
+        writeln!(w, "expansion_rom_base_address: 0x{exp_rom_base:08x}")?;
+
+        let cap_ptr = self.registers.capabilities_pointer().read();
+        writeln!(w, "capabilities_pointer: 0x{cap_ptr:02x}",)?;
+
+        let intpt_line = self.registers.interrupt_line().read();
+        writeln!(w, "interrupt_line: 0x{intpt_line:02x}")?;
+
+        let intpt_pin = self.registers.interrupt_pin().read();
+        writeln!(w, "interrupt_pin: 0x{intpt_pin:02x}")?;
+
+        let min_grant = self.registers.min_grant().read();
+        writeln!(w, "min_grant: 0x{min_grant:02x}")?;
+
+        let max_latency = self.registers.max_latency().read();
+        writeln!(w, "max_latency: 0x{max_latency:02x}")?;
 
         writeln!(w, "Capability Headers:")?;
         w.indent();
         for (i, capability_header) in self.iter_capabilities().enumerate() {
-            let capability_header = capability_header.as_ref();
-            let id = capability_header.id;
-            let next = capability_header.next;
+            let id = capability_header.registers.id().read();
+            let next = capability_header.registers.next().read();
             writeln!(
                 w,
                 "Capability Header {i}: id: {id:#x}, next_offset: {next:#x}"
@@ -712,17 +730,10 @@ fn bar_addresses<const N: usize>(bars: [u32; N]) -> [Option<BARAddress>; N] {
     addresses
 }
 
-impl AsRef<PCIDeviceConfigBodyType0Raw> for PCIDeviceConfigBodyType0 {
-    fn as_ref(&self) -> &PCIDeviceConfigBodyType0Raw {
-        let ptr = self.address.as_u64() as *const PCIDeviceConfigBodyType0Raw;
-        unsafe { &*ptr }
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct PCIDeviceCapabilityHeader {
-    config_base_address: PhysAddr,
-    address: PhysAddr,
+    config_base_address: usize,
+    registers: PCIDeviceCapabilityHeaderRegisters,
 }
 
 impl PCIDeviceCapabilityHeader {
@@ -733,41 +744,35 @@ impl PCIDeviceCapabilityHeader {
     /// # Safety
     ///
     /// Both `config_region_base` and `offset` must be valid.
-    unsafe fn new(config_base_address: PhysAddr, offset: u8) -> Option<Self> {
+    unsafe fn new(config_base_address: usize, offset: u8) -> Option<Self> {
         if offset == 0 {
             return None;
         }
 
-        let address = config_base_address + u64::from(offset);
+        let address = config_base_address + usize::from(offset);
+        let registers = PCIDeviceCapabilityHeaderRegisters::from_address(address);
 
         Some(Self {
             config_base_address,
-            address,
+            registers,
         })
     }
 
-    pub fn address(&self) -> PhysAddr {
-        self.address
+    pub fn address(&self) -> usize {
+        self.registers.address
     }
 
     fn next_capability(&self) -> Option<Self> {
-        unsafe { Self::new(self.config_base_address, self.as_ref().next) }
+        unsafe { Self::new(self.config_base_address, self.registers.next().read()) }
     }
 }
 
-impl AsRef<PCIDeviceCapabilityHeaderRaw> for PCIDeviceCapabilityHeader {
-    fn as_ref(&self) -> &PCIDeviceCapabilityHeaderRaw {
-        let ptr = self.address.as_u64() as *const PCIDeviceCapabilityHeaderRaw;
-        unsafe { &*ptr }
+register_struct!(
+    PCIDeviceCapabilityHeaderRegisters {
+        0x0 => id: RegisterRO<u8>,
+        0x1 => next: RegisterRO<u8>,
     }
-}
-
-#[repr(packed)]
-#[derive(Debug, Clone, Copy)]
-pub struct PCIDeviceCapabilityHeaderRaw {
-    id: u8,
-    next: u8,
-}
+);
 
 #[derive(Debug)]
 pub struct PCIDeviceCapabilityIterator {

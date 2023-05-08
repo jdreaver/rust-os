@@ -59,9 +59,7 @@ make test
     - Raw struct to do field-level IO (is this even correct? Does it work with volatile reads/writes? Perhaps not...)
     - Enums: different variants of a thing at the same memory address, depending on some field (e.g. different PCI devices, different VirtIO capabilities)
   - TODO
-    - Create bit-field abstraction similar to <https://docs.rs/pci-driver/latest/pci_driver/#pci_struct-and-pci_bit_field>
     - Ensure successful VirtIO device initiation end-to-end to ensure I'm not going down a rabbit hole
-    - Finish nuking all remaining `Raw` structs in favor of new struct type
 - Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
 - Filesystem support
   - Now that I have PCI working, attach a drive via QEMU and see what is looks like under PCI
