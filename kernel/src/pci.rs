@@ -542,6 +542,7 @@ register_struct!(
 
 #[derive(Debug, Clone, Copy)]
 pub struct PCIDeviceConfigType0 {
+    common_config: PCIDeviceConfig,
     registers: PCIDeviceConfigType0Registers,
 }
 
@@ -549,11 +550,23 @@ impl PCIDeviceConfigType0 {
     unsafe fn from_common_config(common_config: PCIDeviceConfig) -> Self {
         let address = common_config.location.device_base_address().as_u64() as usize;
         Self {
+            common_config,
             registers: PCIDeviceConfigType0Registers::from_address(address),
         }
     }
 
     pub fn iter_capabilities(self) -> PCIDeviceCapabilityIterator {
+        // Check if the device even has capabilities.
+        let has_caps = self
+            .common_config
+            .common_registers()
+            .status()
+            .read()
+            .capabilities_list();
+        if !has_caps {
+            return PCIDeviceCapabilityIterator::new(None);
+        }
+
         let cap_ptr = unsafe {
             PCIDeviceCapabilityHeader::new(
                 self.registers.address,
