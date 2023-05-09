@@ -763,6 +763,11 @@ impl PCIDeviceCapabilityHeader {
         self.registers.address
     }
 
+    /// Vendor-specific capability headers have an ID of 0x09.
+    pub fn is_vendor_specific(&self) -> bool {
+        self.registers.id().read() == 0x09
+    }
+
     fn next_capability(&self) -> Option<Self> {
         unsafe { Self::new(self.config_base_address, self.registers.next().read()) }
     }

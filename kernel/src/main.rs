@@ -113,12 +113,8 @@ fn run_tests(
 
     // Find VirtIO devices
     pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
-        // Filter for VirtIO devices
-        if device.common_registers().vendor_id().read() != 0x1af4 {
-            return;
-        }
-        let w = &mut IndentWriter::new(serial::serial1_writer(), 2);
-        virtio::print_virtio_device(w, device, mapper, frame_allocator);
+        let Some(virtio_device) = virtio::VirtIODevice::from_pci_config(device, mapper, frame_allocator) else { return; };
+        serial_println!("Found VirtIO device: {:#x?}", virtio_device);
     });
 
     // Print out some test addresses

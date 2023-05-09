@@ -1,88 +1,117 @@
 use core::fmt::{self, Write};
 
+use bitfield_struct::bitfield;
 use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::{FrameAllocator, Mapper, PageTableFlags, PhysFrame, Size4KiB};
 use x86_64::PhysAddr;
 
 use crate::pci::{
     self, BARAddress, PCIDeviceCapabilityHeader, PCIDeviceConfig, PCIDeviceConfigType0,
+    PCIDeviceConfigTypes,
 };
 use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW};
+use crate::serial_println;
 use crate::strings::IndentWriter;
 
-/// Temporary function for debugging how we get VirtIO information.
-pub fn print_virtio_device<W: Write>(
-    w: &mut IndentWriter<W>,
-    config: PCIDeviceConfig,
-    mapper: &mut impl Mapper<Size4KiB>,
-    frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-) {
-    // TODO: Move everything from here down into a "VirtIODevice" type
+/// Holds the configuration for a VirtIO device.
+#[derive(Debug, Clone, Copy)]
+pub struct VirtIODevice {
+    /// Common PCI configuration registers.
+    pci_config: PCIDeviceConfig,
 
-    assert_eq!(
-        config.common_registers().vendor_id().read(),
-        0x1af4,
-        "invalid vendor ID, not a VirtIO device"
-    );
+    /// Registers specifically for type 0 devices (which all VirtIO devices
+    /// are).
+    pci_type0_config: PCIDeviceConfigType0,
 
-    let pci::PCIDeviceConfigTypes::GeneralDevice(general_config) = config
+    common_virtio_config: VirtIOPCICommonConfigRegisters,
+    isr: VirtIOPCIISRRegisters,
+    notify_config: VirtIONotifyConfig,
+}
+
+impl VirtIODevice {
+    pub fn from_pci_config(
+        pci_config: PCIDeviceConfig,
+        mapper: &mut impl Mapper<Size4KiB>,
+        frame_allocator: &mut impl FrameAllocator<Size4KiB>,
+    ) -> Option<Self> {
+        // Check that this is a VirtIO device.
+        let vendor_id = pci_config.common_registers().vendor_id().read();
+        if vendor_id != 0x1af4 {
+            return None;
+        };
+
+        let config_type = pci_config
             .config_type()
-            .expect("failed to read device body")
-            else { return; };
+            .expect("failed to read device config type");
+        let PCIDeviceConfigTypes::GeneralDevice(pci_type0_config) = config_type else {
+            panic!("invalid VirtIO device config type, expected Type 0");
+        };
 
-    writeln!(w, "Found VirtIO device: {config:#x?}").expect("failed to write");
-    w.indent();
+        // Scan capabilities to record the ones we need
+        let mut common_virtio_config = None;
+        let mut isr = None;
+        let mut notify_config = None;
+        for capability in pci_type0_config.iter_capabilities() {
+            let capability = unsafe {
+                VirtIOPCICapabilityHeader::from_pci_capability(pci_type0_config, &capability)
+            };
+            let Some(capability) = capability else { continue; };
 
-    for (i, capability) in general_config.iter_capabilities().enumerate() {
-        writeln!(w, "VirtIO Capability {i}:").expect("failed to write");
-        w.indent();
+            // The PCI config type is a way to access the configuration over PCI
+            // (not PCI Express, which is the memory mapped method we are using).
+            // Just skip it, because this requires accessing the capability config
+            // over I/O, which we don't support. See "4.1.4.9 PCI configuration
+            // access capability" in the spec.
+            if capability.config_type() == VirtIOPCIConfigType::PCI {
+                continue;
+            }
 
-        let virtio_cap =
-            unsafe { VirtIOPCICapabilityHeader::from_pci_capability(general_config, &capability) };
-        virtio_cap
-            .print(w)
-            .expect("failed to print VirtIO capability header");
+            let config = capability.config(mapper, frame_allocator);
 
-        // The PCI config type is a way to access the configuration over PCI
-        // (not PCI Express, which is the memory mapped method we are using).
-        // Just skip it, because this requires accessing the capability config
-        // over I/O, which we don't support. See "4.1.4.9 PCI configuration
-        // access capability" in the spec.
-        if virtio_cap.config_type() == VirtIOPCIConfigType::PCI {
-            w.unindent();
-            continue;
+            // N.B. The VirtIO spec says that capabilities of the same type
+            // should be ordered by preference. It also says "The driver
+            // SHOULD use the first instance of each virtio structure type
+            // they can support." That means we take the first instance of
+            // each type we find, hence the use of `get_or_insert`.
+            match config {
+                VirtIOConfig::Common(cfg) => {
+                    common_virtio_config.get_or_insert(cfg);
+                }
+                VirtIOConfig::Notify(cfg) => {
+                    notify_config.get_or_insert(cfg);
+                }
+                VirtIOConfig::ISR(isr_regs) => {
+                    isr.get_or_insert(isr_regs);
+                }
+                VirtIOConfig::Device => {
+                    serial_println!("VirtIO Device config found: {:#x?}", capability);
+                }
+                VirtIOConfig::PCI => {
+                    serial_println!("VirtIO PCI config found: {:#x?}", capability);
+                }
+                VirtIOConfig::SharedMemory => {
+                    serial_println!("VirtIO SharedMemory config found: {:#x?}", capability);
+                }
+                VirtIOConfig::Vendor => {
+                    serial_println!("VirtIO Vendor config found: {:#x?}", capability);
+                }
+            }
         }
 
-        let config = virtio_cap.config(mapper, frame_allocator);
-        match config {
-            VirtIOConfig::Common(cfg) => {
-                writeln!(w, "VirtIO Common Config: {cfg:#x?}").expect("failed to write");
-            }
-            VirtIOConfig::Notify => {
-                writeln!(w, "VirtIO Notify Config: TODO").expect("failed to write");
-            }
-            VirtIOConfig::ISR => {
-                writeln!(w, "VirtIO ISR Config: TODO").expect("failed to write");
-            }
-            VirtIOConfig::Device => {
-                writeln!(w, "VirtIO Device Config: TODO").expect("failed to write");
-            }
-            VirtIOConfig::PCI => {
-                writeln!(w, "VirtIO PCI Config: TODO").expect("failed to write");
-            }
-            VirtIOConfig::SharedMemory => {
-                writeln!(w, "VirtIO Shared Memory Config: TODO").expect("failed to write");
-            }
-            VirtIOConfig::Vendor => {
-                writeln!(w, "VirtIO Vendor Config: TODO").expect("failed to write");
-            }
-        }
+        let common_virtio_config =
+            common_virtio_config.expect("failed to find VirtIO common config");
+        let isr = isr.expect("failed to find VirtIO ISR");
+        let notify_config = notify_config.expect("failed to find VirtIO notify config");
 
-        w.unindent();
+        Some(Self {
+            pci_config,
+            pci_type0_config,
+            common_virtio_config,
+            isr,
+            notify_config,
+        })
     }
-
-    w.unindent();
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -100,11 +129,16 @@ impl VirtIOPCICapabilityHeader {
     pub unsafe fn from_pci_capability(
         device_config_body: PCIDeviceConfigType0,
         header: &PCIDeviceCapabilityHeader,
-    ) -> Self {
-        Self {
+    ) -> Option<Self> {
+        // VirtIO-specific capabilities must have an ID for vendor-specific.
+        if !header.is_vendor_specific() {
+            return None;
+        }
+
+        Some(Self {
             device_config_body,
             registers: VirtIOPCICapabilityHeaderRegisters::from_address(header.address()),
-        }
+        })
     }
 
     fn bar_address(self) -> BARAddress {
@@ -124,8 +158,44 @@ impl VirtIOPCICapabilityHeader {
         mapper: &mut impl Mapper<Size4KiB>,
         frame_allocator: &mut impl FrameAllocator<Size4KiB>,
     ) -> VirtIOConfig {
-        let config_type = self.config_type();
+        match self.config_type() {
+            VirtIOPCIConfigType::Common => VirtIOConfig::Common(unsafe {
+                let config_addr = self.compute_and_map_config_address(mapper, frame_allocator);
+                VirtIOPCICommonConfigRegisters::from_address(config_addr.as_u64() as usize)
+            }),
+            VirtIOPCIConfigType::Notify => VirtIOConfig::Notify({
+                // Per 4.1.4.4 Notification structure layout, the notify
+                // configuration is in the capabilities struct and the notify
+                // offset multiplier is right after the capabilities struct.
+                let cap_offset = self.registers.offset().read();
 
+                // Assumes the capabilities registers sum to 16 bytes total!
+                let notify_off_ptr = (self.registers.address + 16) as *const u32;
+                let notify_off_multiplier = unsafe { *notify_off_ptr };
+
+                VirtIONotifyConfig {
+                    cap_offset,
+                    notify_off_multiplier,
+                }
+            }),
+            VirtIOPCIConfigType::ISR => VirtIOConfig::ISR(unsafe {
+                let config_addr = self.compute_and_map_config_address(mapper, frame_allocator);
+                VirtIOPCIISRRegisters::from_address(config_addr.as_u64() as usize)
+            }),
+            VirtIOPCIConfigType::Device => VirtIOConfig::Device,
+            VirtIOPCIConfigType::PCI => VirtIOConfig::PCI,
+            VirtIOPCIConfigType::SharedMemory => VirtIOConfig::SharedMemory,
+            VirtIOPCIConfigType::Vendor => VirtIOConfig::Vendor,
+        }
+    }
+
+    /// Compute and map physical address for VirtIO capabilities that need to
+    /// reach through a BAR to access their configuration.
+    pub fn compute_and_map_config_address(
+        self,
+        mapper: &mut impl Mapper<Size4KiB>,
+        frame_allocator: &mut impl FrameAllocator<Size4KiB>,
+    ) -> PhysAddr {
         let bar_phys_addr = match self.bar_address() {
             // TODO: Use the prefetchable field when doing mapping.
             pci::BARAddress::Mem32Bit {
@@ -137,8 +207,8 @@ impl VirtIOPCICapabilityHeader {
                 prefetchable: _,
             } => PhysAddr::new(address),
             pci::BARAddress::IO(address) => panic!(
-                "VirtIO capability {:?} uses I/O BAR (address: {:#x}), not supported",
-                config_type, address,
+                "VirtIO capability uses I/O BAR (address: {:#x}), not supported",
+                address,
             ),
         };
 
@@ -170,7 +240,7 @@ impl VirtIOPCICapabilityHeader {
             }
         }
 
-        unsafe { VirtIOConfig::from_address(config_type, config_addr) }
+        config_addr
     }
 
     pub fn print<W: Write>(&self, w: &mut IndentWriter<W>) -> fmt::Result {
@@ -259,32 +329,12 @@ impl VirtIOPCIConfigType {
 #[derive(Debug, Clone, Copy)]
 enum VirtIOConfig {
     Common(VirtIOPCICommonConfigRegisters),
-    Notify,
-    ISR,
+    Notify(VirtIONotifyConfig),
+    ISR(VirtIOPCIISRRegisters),
     Device,
     PCI,
     SharedMemory,
     Vendor,
-}
-
-impl VirtIOConfig {
-    /// # Safety
-    ///
-    /// Caller must ensure that the given BAR (base address register) is valid
-    /// and is for the VirtIO device.
-    pub unsafe fn from_address(config_type: VirtIOPCIConfigType, config_addr: PhysAddr) -> Self {
-        match config_type {
-            VirtIOPCIConfigType::Common => Self::Common(
-                VirtIOPCICommonConfigRegisters::from_address(config_addr.as_u64() as usize),
-            ),
-            VirtIOPCIConfigType::Notify => Self::Notify,
-            VirtIOPCIConfigType::ISR => Self::ISR,
-            VirtIOPCIConfigType::Device => Self::Device,
-            VirtIOPCIConfigType::PCI => Self::PCI,
-            VirtIOPCIConfigType::SharedMemory => Self::SharedMemory,
-            VirtIOPCIConfigType::Vendor => Self::Vendor,
-        }
-    }
 }
 
 register_struct!(
@@ -310,3 +360,27 @@ register_struct!(
         0x3A => queue_reset: RegisterRW<u16>,
     }
 );
+
+register_struct!(
+    /// 4.1.4.5 ISR status capability
+    VirtIOPCIISRRegisters {
+        0x00 => isr: RegisterRW<VirtIOISRStatus>,
+    }
+);
+
+#[bitfield(u32)]
+/// 4.1.4.5 ISR status capability
+pub struct VirtIOISRStatus {
+    queue_interrupt: bool,
+    device_config_interrupt: bool,
+
+    #[bits(30)]
+    __reserved: u32,
+}
+
+/// 4.1.4.4 Notification structure layout
+#[derive(Debug, Clone, Copy)]
+pub struct VirtIONotifyConfig {
+    cap_offset: u32,
+    notify_off_multiplier: u32,
+}

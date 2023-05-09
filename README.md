@@ -55,12 +55,7 @@ make test
 - VirtIO
   - Get RNG (Entropy) device working
   - Figure out PCI interrupts (MSI-X?)
-- PCI enums:
-  - Have a wrapper object that does all the necessary inspection of bits (e.g. header_type to decide on body type 0/1, or vendor_id to decide on VirtIO device type) and returns an enum.
-  - VirtIO device can check for vendor_id, decide it is VirtIO, assert type 0 body, and then call another function to get a more specific device.
-  - Figure out printing. Currently it is top-down, which won't work. Make separate print functions?
-  - Leaf level VirtIO objects can pre-parse their capabilities and store pointers to important ones, like the common config (and error if there are multiple?)
-    - Alternatively, they could alloc a `Vec` per capability type.
+  - Ensure memory we map for VirtIO virtqueues is contiguous! I think we accidentally allocate contiguous memory, but we need to ensure our memory allocator has a specific API for it.
 - Consider moving `registers.rs` stuff into dedicated crate with unit tests
   - Also document `registers.rs` stuff
 - Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
