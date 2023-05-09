@@ -40,6 +40,18 @@ impl<T> RegisterRW<T> {
         let val = self.read();
         self.write(f(val));
     }
+
+    /// Similar to `modify`, but the callback instead takes a mutable reference
+    /// to the value read from the register. Then, the mutated value is stored back in the register.
+    ///
+    /// This is a nicer API in case all you are doing is calling mutable
+    /// functions on the value, because otherwise you would probably `clone()`
+    /// the value, mutate it, and then return the value anyway.
+    pub fn modify_mut(&self, f: impl FnOnce(&mut T)) {
+        let mut val = self.read();
+        f(&mut val);
+        self.write(val);
+    }
 }
 
 impl<T: core::fmt::Debug> core::fmt::Debug for RegisterRW<T> {
