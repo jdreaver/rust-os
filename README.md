@@ -52,7 +52,10 @@ make test
 
 ## TODO
 
-- Nuke custom PCI print functions. They are a pain to maintain. Just make Debug better.
+- Make PCI capabilities list a first class thing
+  - Don't print them when debug printing the type 0 header!
+  - Take inspiration from <https://docs.rs/pci-driver/latest/pci_driver/config/caps/index.html>
+    - I like the idea of iterating over them and incrementally adding structure
 - VirtIO
   - Get RNG (Entropy) device working
   - Figure out PCI interrupts (MSI-X?)

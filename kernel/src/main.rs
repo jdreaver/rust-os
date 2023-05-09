@@ -10,7 +10,6 @@ use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable};
 
-use rust_os::strings::IndentWriter;
 use rust_os::{
     acpi, allocator, boot_info, gdt, interrupts, memory, pci, serial, serial_println, virtio,
 };
@@ -107,8 +106,7 @@ fn run_tests(
 
     // Iterate over PCI devices
     pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
-        let w = &mut IndentWriter::new(serial::serial1_writer(), 2);
-        device.print(w).expect("failed to print PCI device");
+        serial_println!("Found PCI device: {:#x?}", device);
     });
 
     // Find VirtIO devices

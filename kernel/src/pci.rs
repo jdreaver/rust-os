@@ -1,12 +1,10 @@
 use core::fmt;
-use core::fmt::Write;
 
 use bitfield_struct::bitfield;
 use x86_64::PhysAddr;
 
 use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW};
-use crate::strings::IndentWriter;
 
 const MAX_PCI_BUS: u8 = 255;
 const MAX_PCI_BUS_DEVICE: u8 = 31;
@@ -63,18 +61,6 @@ impl PCIDeviceLocation {
         let device = u64::from(self.device_number);
         let function = u64::from(self.function_number);
         self.ecam_base_address + ((bus << 20) | (device << 15) | (function << 12))
-    }
-
-    pub fn print<W: Write>(&self, w: &mut IndentWriter<W>) -> fmt::Result {
-        writeln!(w, "Device Location:")?;
-        w.indent();
-        writeln!(w, "Address: {:#x}", self.device_base_address().as_u64())?;
-        writeln!(w, "Bus number: {}", self.bus_number)?;
-        writeln!(w, "Device number: {}", self.device_number)?;
-        writeln!(w, "Function number: {}", self.function_number)?;
-        w.unindent();
-
-        Ok(())
     }
 }
 
@@ -172,54 +158,6 @@ impl PCIDeviceConfig {
         };
         Ok(body)
     }
-    pub fn print<W: Write>(&self, w: &mut IndentWriter<W>) -> fmt::Result {
-        writeln!(w, "PCI device config:")?;
-        w.indent();
-
-        self.location.print(w)?;
-
-        writeln!(w, "Header:")?;
-        w.indent();
-
-        self.device_id.print(w)?;
-
-        let header_type = self.common_registers.header_type().read();
-        let layout = header_type
-            .layout()
-            .expect("couldn't construct header layout")
-            .as_str();
-        writeln!(w, "layout: {layout}")?;
-
-        let multifunction = header_type.multifunction();
-        writeln!(w, "multifunction: {multifunction}")?;
-
-        let command = self.common_registers.command().read();
-        let command_bits = u16::from(command);
-        writeln!(w, "command: {command_bits:#016b} ({command:?})")?;
-
-        let status = self.common_registers.status().read();
-        let status_bits = u16::from(status);
-        writeln!(w, "status: {status_bits:#016b} ({status:?})")?;
-
-        w.unindent();
-
-        // TODO: Move printing body to body types
-        let config = self
-            .config_type()
-            .expect("failed to read PCI device config");
-        match config {
-            PCIDeviceConfigTypes::GeneralDevice(config) => {
-                config.print(w)?;
-            }
-            PCIDeviceConfigTypes::PCIToPCIBridge => {
-                writeln!(w, "Config: PCI to PCI bridge")?;
-            }
-        };
-
-        w.unindent();
-
-        Ok(())
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -232,35 +170,6 @@ impl PCIConfigDeviceID {
         let address = location.device_base_address().as_u64() as usize;
         let registers = PCIConfigDeviceIDRegisters::from_address(address);
         Self { registers }
-    }
-
-    pub fn print<W: Write>(self, w: &mut IndentWriter<W>) -> fmt::Result {
-        let vendor_id = self.registers.vendor_id().read();
-        let vendor = lookup_vendor_id(vendor_id);
-        writeln!(w, "vendor: {vendor_id:#x} ({vendor})")?;
-
-        let device_id = self.registers.device_id().read();
-        let device = lookup_known_device_id(vendor_id, device_id);
-        let revision_id = self.registers.revision_id().read();
-        write!(w, "device_id: {device_id:#x}")?;
-        write!(w, ", revision_id: {revision_id:#x}")?;
-        writeln!(w, " ({device})")?;
-
-        let class = self.registers.class().read();
-        let subclass = self.registers.subclass().read();
-        let prog_if = self.registers.prog_if().read();
-
-        let device =
-            device_type(class, subclass, prog_if).expect("couldn't construct device class");
-        writeln!(w, "device:")?;
-        w.indent();
-        writeln!(w, "name: {device}")?;
-        writeln!(w, "class: {class:#x}")?;
-        writeln!(w, "subclass: {subclass:#x}")?;
-        writeln!(w, "prog_if: {prog_if:#x}")?;
-        w.unindent();
-
-        Ok(())
     }
 }
 
@@ -342,7 +251,7 @@ pub struct PCIDeviceConfigStatus {
 }
 
 /// 7.5.1.1.9 Header Type Register (Offset 0Eh)
-#[bitfield(u8)]
+#[bitfield(u8, debug = false)]
 pub struct PCIDeviceConfigHeaderType {
     #[bits(2)]
     raw_layout: u8,
@@ -362,6 +271,19 @@ impl PCIDeviceConfigHeaderType {
             // 0x02 => Ok(PCIDeviceConfigHeaderType::PCIToCardBusBridge),
             _ => Err("invalid PCI device header type"),
         }
+    }
+}
+
+impl fmt::Debug for PCIDeviceConfigHeaderType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let layout = self.layout();
+        let layout_str = layout.map_or("INVALID", |layout| layout.as_str());
+        let raw_layout = self.raw_layout();
+
+        f.debug_struct("PCIConfigHeaderType")
+            .field("layout", &format_args!("{raw_layout:#x} ({layout_str})"))
+            .field("multifunction", &self.multifunction())
+            .finish()
     }
 }
 
@@ -597,7 +519,7 @@ register_struct!(
     }
 );
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct PCIDeviceConfigType0 {
     common_config: PCIDeviceConfig,
     registers: PCIDeviceConfigType0Registers,
@@ -633,103 +555,54 @@ impl PCIDeviceConfigType0 {
         PCIDeviceCapabilityIterator::new(cap_ptr)
     }
 
-    fn bars(self) -> [u32; 6] {
-        [
-            self.registers.raw_bar0().read(),
-            self.registers.raw_bar1().read(),
-            self.registers.raw_bar2().read(),
-            self.registers.raw_bar3().read(),
-            self.registers.raw_bar4().read(),
-            self.registers.raw_bar5().read(),
-        ]
+    fn bar_addresses(self) -> BARAddresses<6> {
+        BARAddresses {
+            bars: [
+                self.registers.raw_bar0().read(),
+                self.registers.raw_bar1().read(),
+                self.registers.raw_bar2().read(),
+                self.registers.raw_bar3().read(),
+                self.registers.raw_bar4().read(),
+                self.registers.raw_bar5().read(),
+            ],
+        }
     }
 
     pub fn bar(&self, bar_idx: usize) -> BARAddress {
-        let bars = self.bars();
-        let bar_addresses = bar_addresses(bars);
+        let bar_addresses = self.bar_addresses().interpreted();
         let bar_address = bar_addresses
             .get(bar_idx)
             .expect("invalid PCI device BAR index");
         bar_address.unwrap_or_else(|| panic!("failed to get BAR address, perhaps you tried to index the second half of a 64 bit BAR?"))
     }
+}
 
-    fn print<W: Write>(self, w: &mut IndentWriter<'_, W>) -> fmt::Result {
-        writeln!(w, "Type 0 (General) Device Config:")?;
-        w.indent();
+impl fmt::Debug for PCIDeviceConfigType0 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let caps = PCIDeviceConfigType0Capabilities(self.iter_capabilities());
 
-        let bars = self.bars();
-
-        let bar_addresses = bar_addresses(bars);
-        for (i, bar_address) in bar_addresses.iter().enumerate() {
-            match bar_address {
-                Some(BARAddress::Mem32Bit {
-                    address,
-                    prefetchable,
-                }) => {
-                    let prefetch = if *prefetchable { " (prefetchable)" } else { "" };
-                    writeln!(w, "BAR{i}: 32-bit memory at 0x{address:x}{prefetch}")?;
-                }
-                Some(BARAddress::Mem64Bit {
-                    address,
-                    prefetchable,
-                }) => {
-                    let prefetch = if *prefetchable { " (prefetchable)" } else { "" };
-                    writeln!(w, "BAR{i}: 64-bit memory at 0x{address:x}{prefetch}")?;
-                }
-                Some(BARAddress::IO(address)) => {
-                    writeln!(w, "BAR{i}: I/O at 0x{address:x}")?;
-                }
-                None => {
-                    continue;
-                }
-            }
-        }
-
-        let cardbus_cis_pointer = self.registers.cardbus_cis_pointer().read();
-        writeln!(w, "cardbus_cis_pointer: 0x{cardbus_cis_pointer:08x}")?;
-
-        let subsystem_vendor_id = self.registers.subsystem_vendor_id().read();
-        writeln!(w, "subsystem_vendor_id: 0x{subsystem_vendor_id:04x}")?;
-
-        let subsystem_id = self.registers.subsystem_id().read();
-        writeln!(w, "subsystem_id: 0x{subsystem_id:04x}")?;
-
-        let exp_rom_base = self.registers.expansion_rom_base_address().read();
-        writeln!(w, "expansion_rom_base_address: 0x{exp_rom_base:08x}")?;
-
-        let cap_ptr = self.registers.capabilities_pointer().read();
-        writeln!(w, "capabilities_pointer: 0x{cap_ptr:02x}",)?;
-
-        let intpt_line = self.registers.interrupt_line().read();
-        writeln!(w, "interrupt_line: 0x{intpt_line:02x}")?;
-
-        let intpt_pin = self.registers.interrupt_pin().read();
-        writeln!(w, "interrupt_pin: 0x{intpt_pin:02x}")?;
-
-        let min_grant = self.registers.min_grant().read();
-        writeln!(w, "min_grant: 0x{min_grant:02x}")?;
-
-        let max_latency = self.registers.max_latency().read();
-        writeln!(w, "max_latency: 0x{max_latency:02x}")?;
-
-        writeln!(w, "Capability Headers:")?;
-        w.indent();
-        for (i, capability_header) in self.iter_capabilities().enumerate() {
-            let id = capability_header.registers.id().read();
-            let next = capability_header.registers.next().read();
-            writeln!(
-                w,
-                "Capability Header {i}: id: {id:#x}, next_offset: {next:#x}"
-            )?;
-        }
-        w.unindent();
-
-        w.unindent();
-        Ok(())
+        f.debug_struct("PCIDeviceConfigType0")
+            .field("BARs", &self.bar_addresses())
+            .field("registers", &self.registers)
+            // TODO: Don't print capabilities list as part of debugging this.
+            .field("capabilities", &caps)
+            .finish()
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+/// Used just to help implement Debug for PCIDeviceConfigType0.
+///
+/// TODO: This is a hack. Don't do this.
+struct PCIDeviceConfigType0Capabilities(PCIDeviceCapabilityIterator);
+
+impl fmt::Debug for PCIDeviceConfigType0Capabilities {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let iter = self.0.clone();
+        f.debug_list().entries(iter).finish()
+    }
+}
+
+#[derive(Copy, Clone)]
 pub enum BARAddress {
     /// 32-bit BAR address. Uses a single BAR register.
     Mem32Bit { address: u32, prefetchable: bool },
@@ -741,64 +614,108 @@ pub enum BARAddress {
     IO(u32),
 }
 
-/// Interprets the BAR addresses into `BARAddress`es. This is a bit non-trivial
-/// because adjacent BAR addresses can be part of the same 64 bit address, so we
-/// can't just look at them 1 by 1.
-fn bar_addresses<const N: usize>(bars: [u32; N]) -> [Option<BARAddress>; N] {
-    let mut addresses = [None; N];
+pub struct BARAddresses<const N: usize> {
+    pub bars: [u32; N],
+}
 
-    let mut i = 0;
-    while i < bars.len() {
-        let bar = bars[i];
-        if bar == 0 {
-            // This BAR is not implemented.
-            i += 1;
-            continue;
+impl<const N: usize> BARAddresses<N> {
+    /// Interprets the BAR addresses into `BARAddress`es. This is a bit non-trivial
+    /// because adjacent BAR addresses can be part of the same 64 bit address, so we
+    /// can't just look at them 1 by 1.
+    fn interpreted(&self) -> [Option<BARAddress>; N] {
+        let bars = self.bars;
+        let mut addresses = [None; N];
+
+        let mut i = 0;
+        while i < bars.len() {
+            let bar = bars[i];
+            if bar == 0 {
+                // This BAR is not implemented.
+                i += 1;
+                continue;
+            }
+
+            let next_bar = bars.get(i + 1).copied();
+
+            let bit_0 = bar & 0b1;
+
+            let bit_1_2 = (bar >> 1) & 0b11;
+            let bit_3 = (bar >> 3) & 0b1;
+            match (bit_0, bit_1_2) {
+                (0b0, 0b00) => {
+                    // 32-bit address
+                    let address = bar & 0xffff_fff0;
+                    let prefetchable = bit_3 == 0b1;
+                    addresses[i] = Some(BARAddress::Mem32Bit {
+                        address,
+                        prefetchable,
+                    });
+                    i += 1;
+                }
+                (0b0, 0b10) => {
+                    // 64-bit address. Use the next BAR as well for the upper 32 bits.
+                    let next_bar =
+                        next_bar.expect("got 64 bit address BAR, but there is no next BAR");
+                    let address = (u64::from(next_bar) << 32) | u64::from(bar) & 0xffff_fff0;
+                    let prefetchable = bit_3 == 0b1;
+                    addresses[i] = Some(BARAddress::Mem64Bit {
+                        address,
+                        prefetchable,
+                    });
+
+                    // This address is being used by the 64-bit BAR, so we shouldn't
+                    // try to interpret it on its own.
+                    addresses[i + 1] = None;
+                    i += 2;
+                }
+                (0b1, _) => {
+                    // I/O address
+                    let addr = bar & 0xffff_fffc;
+                    addresses[i] = Some(BARAddress::IO(addr));
+                    i += 1;
+                }
+                _ => panic!("invalid BAR address configuration bits"),
+            }
         }
 
-        let next_bar = bars.get(i + 1).copied();
-
-        let bit_0 = bar & 0b1;
-
-        let bit_1_2 = (bar >> 1) & 0b11;
-        let bit_3 = (bar >> 3) & 0b1;
-        match (bit_0, bit_1_2) {
-            (0b0, 0b00) => {
-                // 32-bit address
-                let address = bar & 0xffff_fff0;
-                let prefetchable = bit_3 == 0b1;
-                addresses[i] = Some(BARAddress::Mem32Bit {
-                    address,
-                    prefetchable,
-                });
-                i += 1;
-            }
-            (0b0, 0b10) => {
-                // 64-bit address. Use the next BAR as well for the upper 32 bits.
-                let next_bar = next_bar.expect("got 64 bit address BAR, but there is no next BAR");
-                let address = (u64::from(next_bar) << 32) | u64::from(bar) & 0xffff_fff0;
-                let prefetchable = bit_3 == 0b1;
-                addresses[i] = Some(BARAddress::Mem64Bit {
-                    address,
-                    prefetchable,
-                });
-
-                // This address is being used by the 64-bit BAR, so we shouldn't
-                // try to interpret it on its own.
-                addresses[i + 1] = None;
-                i += 2;
-            }
-            (0b1, _) => {
-                // I/O address
-                let addr = bar & 0xffff_fffc;
-                addresses[i] = Some(BARAddress::IO(addr));
-                i += 1;
-            }
-            _ => panic!("invalid BAR address configuration bits"),
-        }
+        addresses
     }
+}
 
-    addresses
+impl<const N: usize> fmt::Debug for BARAddresses<N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut bar_list = f.debug_list();
+        for (i, bar) in self.interpreted().iter().enumerate() {
+            let Some(bar) = bar else { continue; };
+
+            match bar {
+                BARAddress::Mem32Bit {
+                    address,
+                    prefetchable,
+                } => {
+                    let prefetch = if *prefetchable { " (prefetchable)" } else { "" };
+                    bar_list.entry(&format_args!(
+                        "BAR{i}: 32-bit memory at 0x{address:x}{prefetch}"
+                    ));
+                }
+                BARAddress::Mem64Bit {
+                    address,
+                    prefetchable,
+                } => {
+                    let prefetch = if *prefetchable { " (prefetchable)" } else { "" };
+                    bar_list.entry(&format_args!(
+                        "BAR{i}: 64-bit memory at 0x{address:x}{prefetch}"
+                    ));
+                }
+                BARAddress::IO(address) => {
+                    bar_list.entry(&format_args!("BAR{i} I/O at 0x{address:x}"));
+                }
+            }
+        }
+        bar_list.finish()?;
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -850,7 +767,7 @@ register_struct!(
     }
 );
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PCIDeviceCapabilityIterator {
     ptr: Option<PCIDeviceCapabilityHeader>,
 }

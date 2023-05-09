@@ -1,5 +1,3 @@
-use core::fmt::{self, Write};
-
 use bitfield_struct::bitfield;
 use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::{FrameAllocator, Mapper, PageTableFlags, PhysFrame, Size4KiB};
@@ -12,7 +10,6 @@ use crate::pci::{
 use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW};
 use crate::serial_println;
-use crate::strings::IndentWriter;
 
 /// Holds the configuration for a VirtIO device.
 #[derive(Debug, Clone, Copy)]
@@ -301,41 +298,6 @@ impl VirtIOPCICapabilityHeader {
         }
 
         config_addr
-    }
-
-    pub fn print<W: Write>(&self, w: &mut IndentWriter<W>) -> fmt::Result {
-        writeln!(w, "VirtIO PCI capability header:")?;
-
-        w.indent();
-
-        let cap_vndr = self.registers.cap_vndr().read();
-        writeln!(w, "cap_vndr: {cap_vndr:#x}")?;
-        let cap_next = self.registers.cap_next().read();
-        writeln!(w, "cap_next: {cap_next:#x}")?;
-        let cap_len = self.registers.cap_len().read();
-        writeln!(w, "cap_len: {cap_len:#x}")?;
-
-        let cfg_type = self.registers.cfg_type().read();
-        let config_type = self.config_type();
-        writeln!(w, "cfg_type: {cfg_type:#x} ({config_type:?})")?;
-
-        let bar = self.registers.bar().read();
-        writeln!(w, "bar_index: {bar:#x}")?;
-
-        let bar_address = self.bar_address();
-        writeln!(w, "bar address: {bar_address:#x?}")?;
-
-        let id = self.registers.id().read();
-        writeln!(w, "id: {id:#x}")?;
-
-        let offset = self.registers.offset().read();
-        writeln!(w, "offset: {offset:#x}")?;
-
-        let length = self.registers.length().read();
-        writeln!(w, "length: {length:#x}")?;
-        w.unindent();
-
-        Ok(())
     }
 }
 
