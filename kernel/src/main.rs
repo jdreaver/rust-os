@@ -113,8 +113,7 @@ fn run_tests(
     // Find VirtIO devices
     pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
         // Filter for VirtIO devices
-        let header = device.header();
-        if header.vendor_id() != 0x1af4 {
+        if device.vendor_id() != 0x1af4 {
             return;
         }
         virtio::print_virtio_device(serial::serial1_writer(), &device, mapper, frame_allocator);

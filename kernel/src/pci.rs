@@ -18,7 +18,7 @@ const MAX_PCI_BUS_DEVICE_FUNCTION: u8 = 7;
 /// we are enumerating all buses, so maybe it is fine?
 pub fn for_pci_devices_brute_force<F>(base_addr: PhysAddr, mut f: F)
 where
-    F: FnMut(PCIeDeviceConfig),
+    F: FnMut(PCIDeviceCommonConfig),
 {
     for bus in 0..=MAX_PCI_BUS {
         for slot in 0..=MAX_PCI_BUS_DEVICE {
@@ -29,9 +29,9 @@ where
                     device_number: slot,
                     function_number: function,
                 };
-                let device = unsafe { PCIeDeviceConfig::new(location) };
-                let Some(device) = device else { continue; };
-                f(device);
+                let config = unsafe { PCIDeviceCommonConfig::new(location) };
+                let Some(config) = config else { continue; };
+                f(config);
             }
         }
     }
@@ -78,19 +78,41 @@ impl PCIDeviceLocation {
     }
 }
 
-/// Interface into a PCI Express device's configuration space. See:
-/// - <https://wiki.osdev.org/PCI_Express#Configuration_Space>
-/// - Section 7.5 "7.5 PCI and PCIe Capabilities Required by the Base Spec for all Ports" of the PCI Express Base Specification
-/// - <https://wiki.osdev.org/PCI>, which is the legacy interface, but is still a good explanation.
-pub struct PCIeDeviceConfig {
-    location: PCIDeviceLocation,
+register_struct!(
+    /// See <https://wiki.osdev.org/PCI#Common_Header_Fields> and "7.5.1.1 Type
+    /// 0/1 Common Configuration Space" in spec
+    PCIDeviceCommonConfigRegisters {
+        0x00 => vendor_id: RegisterRO<u16>,
+        0x02 => device_id: RegisterRO<u16>,
+        0x04 => command: RegisterRW<PCIDeviceConfigCommand>,
+        0x06 => status: RegisterRW<PCIDeviceConfigStatus>,
+        0x08 => revision_id: RegisterRO<u8>,
+        0x09 => prog_if: RegisterRO<u8>,
+        0x0A => subclass: RegisterRO<u8>,
+        0x0B => class: RegisterRO<u8>,
+        0x0C => cache_line_size: RegisterRW<u8>,
+        0x0D => latency_timer: RegisterRW<u8>,
+        0x0E => header_type: RegisterRO<PCIDeviceConfigHeaderType>,
+        0x0F => bist: RegisterRW<u8>,
 
-    /// All PCI/PCIe devices have a common header field that lives at the base
-    /// of the device's configuration space.
-    header: PCIDeviceConfigHeader,
+        // Tons of padding for type-specific fields
+
+        0x34 => capabilities_pointer: RegisterRO<u8>,
+        0x3C => interrupt_line: RegisterRW<u8>,
+        0x3D => interrupt_pin: RegisterRO<u8>,
+    }
+);
+
+/// All PCI devices share some common configuration. See
+/// <https://wiki.osdev.org/PCI#Common_Header_Fields> and "7.5.1.1 Type 0/1
+/// Common Configuration Space" in spec
+#[derive(Debug, Clone, Copy)]
+pub struct PCIDeviceCommonConfig {
+    location: PCIDeviceLocation,
+    config: PCIDeviceCommonConfigRegisters,
 }
 
-impl PCIeDeviceConfig {
+impl PCIDeviceCommonConfig {
     /// Returns `Some` if a device exists at the given location.
     ///
     /// # Safety
@@ -98,18 +120,24 @@ impl PCIeDeviceConfig {
     /// Caller must ensure that `base_address` is a valid pointer to a PCI
     /// Express extended configuration mechanism memory region.
     unsafe fn new(location: PCIDeviceLocation) -> Option<Self> {
-        let address = location.device_base_address();
+        let address = location.device_base_address().as_u64() as usize;
+        #[allow(unused_unsafe)]
+        let config = unsafe { PCIDeviceCommonConfigRegisters::from_address(address) };
 
-        let header = PCIDeviceConfigHeader::new(address);
-        if !header.device_exists() {
+        // If the vendor ID is 0xFFFF, then there is no device at this location.
+        if config.vendor_id().read() == 0xFFFF {
             return None;
         }
 
-        Some(Self { location, header })
+        Some(Self { location, config })
+    }
+
+    pub fn vendor_id(self) -> u16 {
+        self.config.vendor_id().read()
     }
 
     pub fn body(&self) -> Result<PCIDeviceConfigBody, &str> {
-        let layout = self.header.header_type().layout()?;
+        let layout = self.config.header_type().read().layout()?;
         let body = match layout {
             PCIDeviceConfigHeaderLayout::GeneralDevice => {
                 PCIDeviceConfigBody::GeneralDevice(unsafe {
@@ -121,19 +149,62 @@ impl PCIeDeviceConfig {
         Ok(body)
     }
 
-    pub fn header(&self) -> PCIDeviceConfigHeader {
-        self.header
-    }
-
     pub fn print<W: Write>(&self, w: &mut W) -> fmt::Result {
         let w = &mut IndentWriter::new(w, 2);
 
-        writeln!(w, "PCIe device config:")?;
+        writeln!(w, "PCI device config:")?;
         w.indent();
 
         self.location.print(w)?;
-        self.header.print(w)?;
 
+        writeln!(w, "Header:")?;
+        w.indent();
+
+        let header_type = self.config.header_type().read();
+        let layout = header_type
+            .layout()
+            .expect("couldn't construct header layout")
+            .as_str();
+        writeln!(w, "layout: {layout}")?;
+
+        let multifunction = header_type.multifunction();
+        writeln!(w, "multifunction: {multifunction}")?;
+
+        let command = self.config.command().read();
+        let command_bits = u16::from(command);
+        writeln!(w, "command: {command_bits:#016b} ({command:?})")?;
+
+        let status = self.config.status().read();
+        let status_bits = u16::from(status);
+        writeln!(w, "status: {status_bits:#016b} ({status:?})")?;
+
+        let vendor_id = self.config.vendor_id().read();
+        let vendor = lookup_vendor_id(vendor_id);
+        write!(w, "vendor: {vendor_id:#x}")?;
+        writeln!(w, " ({})", vendor.unwrap_or("UNKNOWN"))?;
+
+        let device_id = self.config.device_id().read();
+        let device = lookup_known_device_id(vendor_id, device_id);
+        let revision_id = self.config.revision_id().read();
+        write!(w, "device_id: {device_id:#x}")?;
+        write!(w, ", revision_id: {revision_id:#x}")?;
+        writeln!(w, " ({device})")?;
+
+        let device = device_type(
+            self.config.class().read(),
+            self.config.subclass().read(),
+            self.config.prog_if().read(),
+        )
+        .expect("couldn't construct device class");
+        writeln!(w, "device:")?;
+        w.indent();
+        writeln!(w, "name: {device}")?;
+        writeln!(w, "class: {:#x}", self.config.class().read())?;
+        writeln!(w, "subclass: {:#x}", self.config.subclass().read(),)?;
+        writeln!(w, "prog_if: {:#x}", self.config.prog_if().read())?;
+        w.unindent();
+
+        // TODO: Move printing body to body types
         let body = self.body().expect("failed to read PCI device body");
         match body {
             PCIDeviceConfigBody::GeneralDevice(body) => {
@@ -147,17 +218,10 @@ impl PCIeDeviceConfig {
             }
         };
 
+        w.unindent();
+
         Ok(())
     }
-}
-
-#[derive(Clone, Copy)]
-pub enum PCIDeviceConfigBody {
-    GeneralDevice(PCIDeviceConfigBodyType0),
-    PCIToPCIBridge,
-    // N.B. PCIToCardBusBridge doesn't exist any longer in PCI Express. Let's
-    // just pretend it never existed.
-    // PCIToCardBusBridge,
 }
 
 /// Reports some known PCI vendor IDs. This is absolutely not exhaustive, but
@@ -172,104 +236,6 @@ fn lookup_vendor_id(vendor_id: u16) -> Option<&'static str> {
         0x1af4 => Some("virtio"), // This is actually Red Hat, Inc., but it means virtio
         0x1002 => Some("Advanced Micro Devices, Inc. [AMD/ATI]"),
         _ => Some("UNKNOWN"),
-    }
-}
-
-register_struct!(
-    /// See <https://wiki.osdev.org/PCI#Common_Header_Fields>
-    PCIDeviceConfigHeaderRegisters {
-        0x00 => vendor_id: RegisterRO<u16>,
-        0x02 => device_id: RegisterRO<u16>,
-        0x04 => command: RegisterRW<PCIDeviceConfigCommand>,
-        0x06 => status: RegisterRW<PCIDeviceConfigStatus>,
-        0x08 => revision_id: RegisterRO<u8>,
-        0x09 => prog_if: RegisterRO<u8>,
-        0x0A => subclass: RegisterRO<u8>,
-        0x0B => class: RegisterRO<u8>,
-        0x0C => cache_line_size: RegisterRW<u8>,
-        0x0D => latency_timer: RegisterRW<u8>,
-        0x0E => header_type: RegisterRO<PCIDeviceConfigHeaderType>,
-        0x0F => bist: RegisterRW<u8>,
-    }
-);
-
-#[derive(Debug, Clone, Copy)]
-pub struct PCIDeviceConfigHeader {
-    header: PCIDeviceConfigHeaderRegisters,
-}
-
-impl PCIDeviceConfigHeader {
-    unsafe fn new(address: PhysAddr) -> Self {
-        #[allow(unused_unsafe)]
-        let header =
-            unsafe { PCIDeviceConfigHeaderRegisters::from_address(address.as_u64() as usize) };
-        Self { header }
-    }
-
-    /// A device exists if the Vendor ID register is not 0xFFFF.
-    fn device_exists(self) -> bool {
-        self.header.vendor_id().read() != 0xFFFF
-    }
-
-    fn header_type(self) -> PCIDeviceConfigHeaderType {
-        self.header.header_type().read()
-    }
-
-    pub fn vendor_id(self) -> u16 {
-        self.header.vendor_id().read()
-    }
-
-    fn print<W: Write>(self, w: &mut IndentWriter<'_, W>) -> fmt::Result {
-        writeln!(w, "Header:")?;
-        w.indent();
-
-        let header_type = self.header.header_type().read();
-        let layout = header_type
-            .layout()
-            .expect("couldn't construct header layout")
-            .as_str();
-        writeln!(w, "layout: {layout}")?;
-
-        let multifunction = header_type.multifunction();
-        writeln!(w, "multifunction: {multifunction}")?;
-
-        let command = self.header.command().read();
-        let command_bits = u16::from(command);
-        writeln!(w, "command: {command_bits:#016b} ({command:?})")?;
-
-        let status = self.header.status().read();
-        let status_bits = u16::from(status);
-        writeln!(w, "status: {status_bits:#016b} ({status:?})")?;
-
-        let vendor_id = self.header.vendor_id().read();
-        let vendor = lookup_vendor_id(vendor_id);
-        write!(w, "vendor: {vendor_id:#x}")?;
-        writeln!(w, " ({})", vendor.unwrap_or("UNKNOWN"))?;
-
-        let device_id = self.header.device_id().read();
-        let device = lookup_known_device_id(vendor_id, device_id);
-        let revision_id = self.header.revision_id().read();
-        write!(w, "device_id: {device_id:#x}")?;
-        write!(w, ", revision_id: {revision_id:#x}")?;
-        writeln!(w, " ({device})")?;
-
-        let device = device_type(
-            self.header.class().read(),
-            self.header.subclass().read(),
-            self.header.prog_if().read(),
-        )
-        .expect("couldn't construct device class");
-        writeln!(w, "device:")?;
-        w.indent();
-        writeln!(w, "name: {device}")?;
-        writeln!(w, "class: {:#x}", self.header.class().read())?;
-        writeln!(w, "subclass: {:#x}", self.header.subclass().read(),)?;
-        writeln!(w, "prog_if: {:#x}", self.header.prog_if().read())?;
-        w.unindent();
-
-        w.unindent();
-
-        Ok(())
     }
 }
 
@@ -535,16 +501,20 @@ fn device_type(class: u8, subclass: u8, prog_if: u8) -> Result<&'static str, &'s
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum PCIDeviceConfigBody {
+    GeneralDevice(PCIDeviceConfigBodyType0),
+    PCIToPCIBridge,
+    // N.B. PCIToCardBusBridge doesn't exist any longer in PCI Express. Let's
+    // just pretend it never existed.
+    // PCIToCardBusBridge,
+}
+
 register_struct!(
     /// 7.5.1.2 Type 0 Configuration Space Header
     PCIDeviceConfigBodyType0Registers {
-        // TODO: It is neat that we can embed the header registers like this. It
-        // would be event neater if we could embed the wrapper object. I think
-        // it would work if the wrapper object accepted `from_address`
-        // initialization. Or, if we could add methods to the register object so
-        // we don't need a wrapper? Or, maybe we shouldn't do this, and instead
-        // we should have something just wrap both?
-        0x00 => header: PCIDeviceConfigHeaderRegisters,
+        // N.B. Base address is for the entire configuration block (that is, the
+        // base of the common configuration), not just for the type 0 registers.
         0x10 => raw_bar0: RegisterRW<u32>,
         0x14 => raw_bar1: RegisterRW<u32>,
         0x18 => raw_bar2: RegisterRW<u32>,

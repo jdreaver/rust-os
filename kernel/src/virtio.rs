@@ -5,7 +5,7 @@ use x86_64::structures::paging::{FrameAllocator, Mapper, PageTableFlags, PhysFra
 use x86_64::PhysAddr;
 
 use crate::pci::{
-    self, BARAddress, PCIDeviceCapabilityHeader, PCIDeviceConfigBodyType0, PCIeDeviceConfig,
+    self, BARAddress, PCIDeviceCapabilityHeader, PCIDeviceCommonConfig, PCIDeviceConfigBodyType0,
 };
 use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW};
@@ -14,20 +14,19 @@ use crate::strings::IndentWriter;
 /// Temporary function for debugging how we get VirtIO information.
 pub fn print_virtio_device<W: Write>(
     w: &mut W,
-    device: &PCIeDeviceConfig,
+    config: &PCIDeviceCommonConfig,
     mapper: &mut impl Mapper<Size4KiB>,
     frame_allocator: &mut impl FrameAllocator<Size4KiB>,
 ) {
     // TODO: Move everything from here down into a "VirtIODevice" type
 
-    let header = device.header();
     assert_eq!(
-        header.vendor_id(),
+        config.vendor_id(),
         0x1af4,
         "invalid vendor ID, not a VirtIO device"
     );
 
-    let pci::PCIDeviceConfigBody::GeneralDevice(body) = device
+    let pci::PCIDeviceConfigBody::GeneralDevice(body) = config
             .body()
             .expect("failed to read device body")
             else { return; };

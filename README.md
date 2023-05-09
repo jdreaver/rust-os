@@ -60,6 +60,7 @@ make test
   - VirtIO device can check for vendor_id, decide it is VirtIO, assert type 0 body, and then call another function to get a more specific device.
   - The more specific type wraps sub types. For example, type 0 device wraps header and type 0 body. VirtIO device wraps header, body, and VirtIO specific stuff
     - Wrapper objects should contain multiple `register_struct` structs. Don't try nesting them.
+    - Figure out printing. Currently it is top-down, which won't work.
   - Leaf level VirtIO objects can pre-parse their capabilities and store pointers to important ones, like the common config (and error if there are multiple?)
     - Alternatively, they could alloc a `Vec` per capability type.
 - Consider moving `registers.rs` stuff into dedicated crate with unit tests
