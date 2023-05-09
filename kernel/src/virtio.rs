@@ -21,7 +21,7 @@ pub fn print_virtio_device<W: Write>(
     // TODO: Move everything from here down into a "VirtIODevice" type
 
     assert_eq!(
-        config.vendor_id(),
+        config.registers().vendor_id().read(),
         0x1af4,
         "invalid vendor ID, not a VirtIO device"
     );

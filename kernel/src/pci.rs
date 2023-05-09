@@ -109,7 +109,7 @@ register_struct!(
 #[derive(Debug, Clone, Copy)]
 pub struct PCIDeviceCommonConfig {
     location: PCIDeviceLocation,
-    config: PCIDeviceCommonConfigRegisters,
+    registers: PCIDeviceCommonConfigRegisters,
 }
 
 impl PCIDeviceCommonConfig {
@@ -122,22 +122,25 @@ impl PCIDeviceCommonConfig {
     unsafe fn new(location: PCIDeviceLocation) -> Option<Self> {
         let address = location.device_base_address().as_u64() as usize;
         #[allow(unused_unsafe)]
-        let config = unsafe { PCIDeviceCommonConfigRegisters::from_address(address) };
+        let registers = unsafe { PCIDeviceCommonConfigRegisters::from_address(address) };
 
         // If the vendor ID is 0xFFFF, then there is no device at this location.
-        if config.vendor_id().read() == 0xFFFF {
+        if registers.vendor_id().read() == 0xFFFF {
             return None;
         }
 
-        Some(Self { location, config })
+        Some(Self {
+            location,
+            registers,
+        })
     }
 
-    pub fn vendor_id(self) -> u16 {
-        self.config.vendor_id().read()
+    pub fn registers(self) -> PCIDeviceCommonConfigRegisters {
+        self.registers
     }
 
     pub fn body(&self) -> Result<PCIDeviceConfigBody, &str> {
-        let layout = self.config.header_type().read().layout()?;
+        let layout = self.registers.header_type().read().layout()?;
         let body = match layout {
             PCIDeviceConfigHeaderLayout::GeneralDevice => {
                 PCIDeviceConfigBody::GeneralDevice(unsafe {
@@ -160,7 +163,7 @@ impl PCIDeviceCommonConfig {
         writeln!(w, "Header:")?;
         w.indent();
 
-        let header_type = self.config.header_type().read();
+        let header_type = self.registers.header_type().read();
         let layout = header_type
             .layout()
             .expect("couldn't construct header layout")
@@ -170,38 +173,38 @@ impl PCIDeviceCommonConfig {
         let multifunction = header_type.multifunction();
         writeln!(w, "multifunction: {multifunction}")?;
 
-        let command = self.config.command().read();
+        let command = self.registers.command().read();
         let command_bits = u16::from(command);
         writeln!(w, "command: {command_bits:#016b} ({command:?})")?;
 
-        let status = self.config.status().read();
+        let status = self.registers.status().read();
         let status_bits = u16::from(status);
         writeln!(w, "status: {status_bits:#016b} ({status:?})")?;
 
-        let vendor_id = self.config.vendor_id().read();
+        let vendor_id = self.registers.vendor_id().read();
         let vendor = lookup_vendor_id(vendor_id);
         write!(w, "vendor: {vendor_id:#x}")?;
         writeln!(w, " ({})", vendor.unwrap_or("UNKNOWN"))?;
 
-        let device_id = self.config.device_id().read();
+        let device_id = self.registers.device_id().read();
         let device = lookup_known_device_id(vendor_id, device_id);
-        let revision_id = self.config.revision_id().read();
+        let revision_id = self.registers.revision_id().read();
         write!(w, "device_id: {device_id:#x}")?;
         write!(w, ", revision_id: {revision_id:#x}")?;
         writeln!(w, " ({device})")?;
 
         let device = device_type(
-            self.config.class().read(),
-            self.config.subclass().read(),
-            self.config.prog_if().read(),
+            self.registers.class().read(),
+            self.registers.subclass().read(),
+            self.registers.prog_if().read(),
         )
         .expect("couldn't construct device class");
         writeln!(w, "device:")?;
         w.indent();
         writeln!(w, "name: {device}")?;
-        writeln!(w, "class: {:#x}", self.config.class().read())?;
-        writeln!(w, "subclass: {:#x}", self.config.subclass().read(),)?;
-        writeln!(w, "prog_if: {:#x}", self.config.prog_if().read())?;
+        writeln!(w, "class: {:#x}", self.registers.class().read())?;
+        writeln!(w, "subclass: {:#x}", self.registers.subclass().read(),)?;
+        writeln!(w, "prog_if: {:#x}", self.registers.prog_if().read())?;
         w.unindent();
 
         // TODO: Move printing body to body types

@@ -134,7 +134,7 @@ macro_rules! register_struct {
     ) => {
         $(#[$attr])*
         #[derive(Clone, Copy)]
-        struct $struct_name {
+        pub struct $struct_name {
             address: usize,
         }
 
@@ -161,7 +161,7 @@ macro_rules! register_struct {
     };
 
     (@register_method $offset:expr, $name:ident, $register_type:ident, $(< $type:ty >)? ) => {
-        fn $name(&self) -> $register_type $(< $type >)? {
+        pub fn $name(&self) -> $register_type $(< $type >)? {
             unsafe { $register_type::from_address(self.address + $offset) }
         }
     };
