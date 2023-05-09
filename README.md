@@ -67,6 +67,12 @@ make test
     the common PCI registers in a Type0 device struct, or allow VirtIO devices
     to include the common registers and the type 0 registers. Also, I think proc
     macros are more flexible.
+    - This would also allow us to group registers into dedicated structs. For
+      example, have a struct for grouping (device_id, vendor_id), and maybe
+      class, subclass, and prog_if. There really is no strict need to have all
+      registers in the same struct generated through one macro, except it makes
+      having a single `from_address` function and perhaps a `Debug`
+      implementation nicer.
 - Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
 - Filesystem support
   - Now that I have PCI working, attach a drive via QEMU and see what is looks like under PCI

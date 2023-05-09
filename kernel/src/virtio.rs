@@ -112,6 +112,66 @@ impl VirtIODevice {
             notify_config,
         })
     }
+
+    /// See "3 General Initialization And Device Operation"
+    pub fn initialize(self) {
+        let config = self.common_virtio_config;
+
+        // Reset the VirtIO device by writing 0 to the status register (see
+        // 4.1.4.3.1 Device Requirements: Common configuration structure layout)
+        let mut status = VirtIOConfigStatus::new();
+        config.device_status().write(status);
+
+        // Set the ACKNOWLEDGE status bit to indicate that the driver knows
+        // that the device is present.
+        status.set_acknowledge(true);
+        config.device_status().write(status);
+
+        // Set the DRIVER status bit to indicate that the driver is ready to
+        // drive the device.
+        status.set_driver(true);
+        config.device_status().write(status);
+
+        // Feature negotiation. There are up to 128 feature bits, and
+        // the feature registers are 32 bits wide, so we use the feature
+        // selection registers 4 times to select features.
+        //
+        // (TODO: Make this configurable depending on device).
+        for i in 0..4 {
+            // Select the feature bits to negotiate
+            config.device_feature_select().write(i);
+
+            // Read the device feature bits
+            let device_features = config.device_feature().read();
+            serial_println!("VirtIO device feature bits ({}): {:#b}", i, device_features);
+
+            // Write the features we want to enable (TODO: actually pick
+            // features, don't just write them all back)
+            let driver_features = device_features;
+            config.driver_feature_select().write(i);
+            config.driver_feature().write(driver_features);
+        }
+
+        // Set the FEATURES_OK status bit to indicate that the driver has
+        // written the feature bits.
+        status.set_features_ok(true);
+        config.device_status().write(status);
+
+        // Re-read the status to ensure that the FEATURES_OK bit is still set.
+        status = config.device_status().read();
+        assert!(status.features_ok(), "failed to set FEATURES_OK status bit");
+
+        // TODO: Device-specific setup
+
+        // Set the DRIVER_OK status bit to indicate that the driver
+        // finished configuring the device.
+        status.set_driver_ok(true);
+        config.device_status().write(status);
+    }
+
+    pub fn common_virtio_config(&self) -> VirtIOPCICommonConfigRegisters {
+        self.common_virtio_config
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -396,7 +456,6 @@ pub struct VirtIOConfigStatus {
     /// without a reset.
     failed: bool,
 }
-
 
 register_struct!(
     /// 4.1.4.5 ISR status capability
