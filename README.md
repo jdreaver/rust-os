@@ -59,8 +59,9 @@ make test
   - Have a wrapper object that does all the necessary inspection of bits (e.g. header_type to decide on body type 0/1, or vendor_id to decide on VirtIO device type) and returns an enum.
   - VirtIO device can check for vendor_id, decide it is VirtIO, assert type 0 body, and then call another function to get a more specific device.
   - The more specific type wraps sub types. For example, type 0 device wraps header and type 0 body. VirtIO device wraps header, body, and VirtIO specific stuff
+    - Instead of going from common config -> config -> VirtIO, consider having VirtIO accepting a common config (or even a location!) and trying to get at the type 0 config
     - Wrapper objects should contain multiple `register_struct` structs. Don't try nesting them.
-    - Figure out printing. Currently it is top-down, which won't work.
+    - Figure out printing. Currently it is top-down, which won't work. Make separate print functions?
   - Leaf level VirtIO objects can pre-parse their capabilities and store pointers to important ones, like the common config (and error if there are multiple?)
     - Alternatively, they could alloc a `Vec` per capability type.
 - Consider moving `registers.rs` stuff into dedicated crate with unit tests

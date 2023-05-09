@@ -5,7 +5,7 @@ use x86_64::structures::paging::{FrameAllocator, Mapper, PageTableFlags, PhysFra
 use x86_64::PhysAddr;
 
 use crate::pci::{
-    self, BARAddress, PCIDeviceCapabilityHeader, PCIDeviceCommonConfig, PCIDeviceConfigBodyType0,
+    self, BARAddress, PCIDeviceCapabilityHeader, PCIDeviceCommonConfig, PCIDeviceConfigType0,
 };
 use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW};
@@ -13,35 +13,33 @@ use crate::strings::IndentWriter;
 
 /// Temporary function for debugging how we get VirtIO information.
 pub fn print_virtio_device<W: Write>(
-    w: &mut W,
-    config: &PCIDeviceCommonConfig,
+    w: &mut IndentWriter<W>,
+    common_config: PCIDeviceCommonConfig,
     mapper: &mut impl Mapper<Size4KiB>,
     frame_allocator: &mut impl FrameAllocator<Size4KiB>,
 ) {
     // TODO: Move everything from here down into a "VirtIODevice" type
 
     assert_eq!(
-        config.registers().vendor_id().read(),
+        common_config.registers().vendor_id().read(),
         0x1af4,
         "invalid vendor ID, not a VirtIO device"
     );
 
-    let pci::PCIDeviceConfigBody::GeneralDevice(body) = config
-            .body()
+    let pci::PCIDeviceConfig::GeneralDevice(config) = common_config
+            .config()
             .expect("failed to read device body")
             else { return; };
 
-    let w = &mut IndentWriter::new(w, 2);
-
-    writeln!(w, "Found VirtIO device: {body:#x?}").expect("failed to write");
+    writeln!(w, "Found VirtIO device: {config:#x?}").expect("failed to write");
     w.indent();
 
-    for (i, capability) in body.iter_capabilities().enumerate() {
+    for (i, capability) in config.iter_capabilities().enumerate() {
         writeln!(w, "VirtIO Capability {i}:").expect("failed to write");
         w.indent();
 
         let virtio_cap =
-            unsafe { VirtIOPCICapabilityHeader::from_pci_capability(body, &capability) };
+            unsafe { VirtIOPCICapabilityHeader::from_pci_capability(config, &capability) };
         virtio_cap
             .print(w)
             .expect("failed to print VirtIO capability header");
@@ -90,7 +88,7 @@ pub fn print_virtio_device<W: Write>(
 #[derive(Debug, Clone, Copy)]
 pub struct VirtIOPCICapabilityHeader {
     /// The body of the PCID device for this VirtIO device.
-    device_config_body: PCIDeviceConfigBodyType0,
+    device_config_body: PCIDeviceConfigType0,
 
     registers: VirtIOPCICapabilityHeaderRegisters,
 }
@@ -100,7 +98,7 @@ impl VirtIOPCICapabilityHeader {
     ///
     /// Caller must ensure that the capability header is from a VirtIO device.
     pub unsafe fn from_pci_capability(
-        device_config_body: PCIDeviceConfigBodyType0,
+        device_config_body: PCIDeviceConfigType0,
         header: &PCIDeviceCapabilityHeader,
     ) -> Self {
         Self {

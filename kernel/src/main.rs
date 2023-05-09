@@ -6,12 +6,14 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use rust_os::{
-    acpi, allocator, boot_info, gdt, interrupts, memory, pci, serial, serial_println, virtio,
-};
 use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable};
+
+use rust_os::strings::IndentWriter;
+use rust_os::{
+    acpi, allocator, boot_info, gdt, interrupts, memory, pci, serial, serial_println, virtio,
+};
 
 static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
 
@@ -105,9 +107,8 @@ fn run_tests(
 
     // Iterate over PCI devices
     pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
-        device
-            .print(serial::serial1_writer())
-            .expect("failed to print PCI device");
+        let w = &mut IndentWriter::new(serial::serial1_writer(), 2);
+        device.print(w).expect("failed to print PCI device");
     });
 
     // Find VirtIO devices
@@ -116,7 +117,8 @@ fn run_tests(
         if device.registers().vendor_id().read() != 0x1af4 {
             return;
         }
-        virtio::print_virtio_device(serial::serial1_writer(), &device, mapper, frame_allocator);
+        let w = &mut IndentWriter::new(serial::serial1_writer(), 2);
+        virtio::print_virtio_device(w, device, mapper, frame_allocator);
     });
 
     // Print out some test addresses

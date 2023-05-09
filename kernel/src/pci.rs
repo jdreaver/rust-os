@@ -139,22 +139,17 @@ impl PCIDeviceCommonConfig {
         self.registers
     }
 
-    pub fn body(&self) -> Result<PCIDeviceConfigBody, &str> {
+    pub fn config(&self) -> Result<PCIDeviceConfig, &str> {
         let layout = self.registers.header_type().read().layout()?;
         let body = match layout {
-            PCIDeviceConfigHeaderLayout::GeneralDevice => {
-                PCIDeviceConfigBody::GeneralDevice(unsafe {
-                    PCIDeviceConfigBodyType0::from_config_base(self.location.device_base_address())
-                })
-            }
-            PCIDeviceConfigHeaderLayout::PCIToPCIBridge => PCIDeviceConfigBody::PCIToPCIBridge,
+            PCIDeviceConfigHeaderLayout::GeneralDevice => PCIDeviceConfig::GeneralDevice(unsafe {
+                PCIDeviceConfigType0::from_common_config(*self)
+            }),
+            PCIDeviceConfigHeaderLayout::PCIToPCIBridge => PCIDeviceConfig::PCIToPCIBridge,
         };
         Ok(body)
     }
-
-    pub fn print<W: Write>(&self, w: &mut W) -> fmt::Result {
-        let w = &mut IndentWriter::new(w, 2);
-
+    pub fn print<W: Write>(&self, w: &mut IndentWriter<W>) -> fmt::Result {
         writeln!(w, "PCI device config:")?;
         w.indent();
 
@@ -207,17 +202,16 @@ impl PCIDeviceCommonConfig {
         writeln!(w, "prog_if: {:#x}", self.registers.prog_if().read())?;
         w.unindent();
 
+        w.unindent();
+
         // TODO: Move printing body to body types
-        let body = self.body().expect("failed to read PCI device body");
-        match body {
-            PCIDeviceConfigBody::GeneralDevice(body) => {
-                writeln!(w, "General Device Body:")?;
-                w.indent();
-                body.print(w)?;
-                w.unindent();
+        let config = self.config().expect("failed to read PCI device config");
+        match config {
+            PCIDeviceConfig::GeneralDevice(config) => {
+                config.print(w)?;
             }
-            PCIDeviceConfigBody::PCIToPCIBridge => {
-                writeln!(w, "Body: PCI to PCI bridge")?;
+            PCIDeviceConfig::PCIToPCIBridge => {
+                writeln!(w, "Config: PCI to PCI bridge")?;
             }
         };
 
@@ -505,8 +499,8 @@ fn device_type(class: u8, subclass: u8, prog_if: u8) -> Result<&'static str, &'s
 }
 
 #[derive(Clone, Copy)]
-pub enum PCIDeviceConfigBody {
-    GeneralDevice(PCIDeviceConfigBodyType0),
+pub enum PCIDeviceConfig {
+    GeneralDevice(PCIDeviceConfigType0),
     PCIToPCIBridge,
     // N.B. PCIToCardBusBridge doesn't exist any longer in PCI Express. Let's
     // just pretend it never existed.
@@ -515,7 +509,7 @@ pub enum PCIDeviceConfigBody {
 
 register_struct!(
     /// 7.5.1.2 Type 0 Configuration Space Header
-    PCIDeviceConfigBodyType0Registers {
+    PCIDeviceConfigType0Registers {
         // N.B. Base address is for the entire configuration block (that is, the
         // base of the common configuration), not just for the type 0 registers.
         0x10 => raw_bar0: RegisterRW<u32>,
@@ -538,23 +532,24 @@ register_struct!(
 );
 
 #[derive(Debug, Clone, Copy)]
-pub struct PCIDeviceConfigBodyType0 {
-    registers: PCIDeviceConfigBodyType0Registers,
+pub struct PCIDeviceConfigType0 {
+    common_config: PCIDeviceCommonConfig,
+    registers: PCIDeviceConfigType0Registers,
 }
 
-impl PCIDeviceConfigBodyType0 {
-    unsafe fn from_config_base(config_base_address: PhysAddr) -> Self {
+impl PCIDeviceConfigType0 {
+    unsafe fn from_common_config(common_config: PCIDeviceCommonConfig) -> Self {
+        let address = common_config.location.device_base_address().as_u64() as usize;
         Self {
-            registers: PCIDeviceConfigBodyType0Registers::from_address(
-                config_base_address.as_u64() as usize,
-            ),
+            common_config,
+            registers: PCIDeviceConfigType0Registers::from_address(address),
         }
     }
 
     pub fn iter_capabilities(self) -> PCIDeviceCapabilityIterator {
         let cap_ptr = unsafe {
             PCIDeviceCapabilityHeader::new(
-                self.registers.address,
+                self.common_config.location.device_base_address().as_u64() as usize,
                 self.registers.capabilities_pointer().read(),
             )
         };
@@ -582,6 +577,9 @@ impl PCIDeviceConfigBodyType0 {
     }
 
     fn print<W: Write>(self, w: &mut IndentWriter<'_, W>) -> fmt::Result {
+        writeln!(w, "Type 0 (General) Device Config:")?;
+        w.indent();
+
         let bars = self.bars();
 
         let bar_addresses = bar_addresses(bars);
@@ -649,6 +647,7 @@ impl PCIDeviceConfigBodyType0 {
         }
         w.unindent();
 
+        w.unindent();
         Ok(())
     }
 }
