@@ -1,6 +1,7 @@
 // Inspiration taken from
 // https://docs.rs/pci-driver/latest/pci_driver/#pci_struct-and-pci_bit_field
 
+use core::fmt::Debug;
 use core::marker::PhantomData;
 
 /// Register mapped to some underlying memory address.
@@ -54,12 +55,9 @@ impl<T> RegisterRW<T> {
     }
 }
 
-impl<T: core::fmt::Debug> core::fmt::Debug for RegisterRW<T> {
+impl<T: Debug> Debug for RegisterRW<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("RegisterRW")
-            .field("ptr", &self.ptr)
-            .field("value", &self.read())
-            .finish()
+        debug_fmt_register("RegisterRW", Some(self.read()), self.ptr, f)
     }
 }
 
@@ -88,12 +86,9 @@ impl<T> RegisterRO<T> {
     }
 }
 
-impl<T: core::fmt::Debug> core::fmt::Debug for RegisterRO<T> {
+impl<T: Debug> Debug for RegisterRO<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("RegisterRO")
-            .field("ptr", &self.ptr)
-            .field("value", &self.read())
-            .finish()
+        debug_fmt_register("RegisterRO", Some(self.read()), self.ptr, f)
     }
 }
 
@@ -124,13 +119,30 @@ impl<T> RegisterWO<T> {
     }
 }
 
-impl<T: core::fmt::Debug> core::fmt::Debug for RegisterWO<T> {
+impl<T: Debug> Debug for RegisterWO<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("RegisterWO")
-            .field("ptr", &self.ptr)
-            .field("value", &"UNKNOWN (write only)")
-            .finish()
+        debug_fmt_register("RegisterWO", None, self.ptr, f)
     }
+}
+
+/// Common `Debug.fmt()` implementation for all register types.
+fn debug_fmt_register<T: Debug>(
+    struct_name: &str,
+    value: Option<T>,
+    ptr: *const T,
+    f: &mut core::fmt::Formatter<'_>,
+) -> core::fmt::Result {
+    // We don't print these as structs because they take up way too much space
+    // when using {:#?}.
+    f.write_str(struct_name)?;
+    f.write_str("(")?;
+    match value {
+        Some(value) => value.fmt(f)?,
+        None => f.write_str("UNKNOWN (write only)")?,
+    }
+    f.write_str(" [")?;
+    ptr.fmt(f)?;
+    f.write_str("])")
 }
 
 /// TODO: Document this better once it is stabilized.
