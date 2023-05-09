@@ -114,7 +114,7 @@ fn run_tests(
     // Find VirtIO devices
     pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
         // Filter for VirtIO devices
-        if device.registers().vendor_id().read() != 0x1af4 {
+        if device.common_registers().vendor_id().read() != 0x1af4 {
             return;
         }
         let w = &mut IndentWriter::new(serial::serial1_writer(), 2);

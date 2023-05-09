@@ -5,7 +5,7 @@ use x86_64::structures::paging::{FrameAllocator, Mapper, PageTableFlags, PhysFra
 use x86_64::PhysAddr;
 
 use crate::pci::{
-    self, BARAddress, PCIDeviceCapabilityHeader, PCIDeviceCommonConfig, PCIDeviceConfigType0,
+    self, BARAddress, PCIDeviceCapabilityHeader, PCIDeviceConfig, PCIDeviceConfigType0,
 };
 use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW};
@@ -14,32 +14,32 @@ use crate::strings::IndentWriter;
 /// Temporary function for debugging how we get VirtIO information.
 pub fn print_virtio_device<W: Write>(
     w: &mut IndentWriter<W>,
-    common_config: PCIDeviceCommonConfig,
+    config: PCIDeviceConfig,
     mapper: &mut impl Mapper<Size4KiB>,
     frame_allocator: &mut impl FrameAllocator<Size4KiB>,
 ) {
     // TODO: Move everything from here down into a "VirtIODevice" type
 
     assert_eq!(
-        common_config.registers().vendor_id().read(),
+        config.common_registers().vendor_id().read(),
         0x1af4,
         "invalid vendor ID, not a VirtIO device"
     );
 
-    let pci::PCIDeviceConfig::GeneralDevice(config) = common_config
-            .config()
+    let pci::PCIDeviceConfigTypes::GeneralDevice(general_config) = config
+            .config_type()
             .expect("failed to read device body")
             else { return; };
 
     writeln!(w, "Found VirtIO device: {config:#x?}").expect("failed to write");
     w.indent();
 
-    for (i, capability) in config.iter_capabilities().enumerate() {
+    for (i, capability) in general_config.iter_capabilities().enumerate() {
         writeln!(w, "VirtIO Capability {i}:").expect("failed to write");
         w.indent();
 
         let virtio_cap =
-            unsafe { VirtIOPCICapabilityHeader::from_pci_capability(config, &capability) };
+            unsafe { VirtIOPCICapabilityHeader::from_pci_capability(general_config, &capability) };
         virtio_cap
             .print(w)
             .expect("failed to print VirtIO capability header");

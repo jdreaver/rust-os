@@ -18,7 +18,7 @@ const MAX_PCI_BUS_DEVICE_FUNCTION: u8 = 7;
 /// we are enumerating all buses, so maybe it is fine?
 pub fn for_pci_devices_brute_force<F>(base_addr: PhysAddr, mut f: F)
 where
-    F: FnMut(PCIDeviceCommonConfig),
+    F: FnMut(PCIDeviceConfig),
 {
     for bus in 0..=MAX_PCI_BUS {
         for slot in 0..=MAX_PCI_BUS_DEVICE {
@@ -29,7 +29,7 @@ where
                     device_number: slot,
                     function_number: function,
                 };
-                let config = unsafe { PCIDeviceCommonConfig::new(location) };
+                let config = unsafe { PCIDeviceConfig::new(location) };
                 let Some(config) = config else { continue; };
                 f(config);
             }
@@ -103,16 +103,17 @@ register_struct!(
     }
 );
 
-/// All PCI devices share some common configuration. See
-/// <https://wiki.osdev.org/PCI#Common_Header_Fields> and "7.5.1.1 Type 0/1
-/// Common Configuration Space" in spec
 #[derive(Debug, Clone, Copy)]
-pub struct PCIDeviceCommonConfig {
+pub struct PCIDeviceConfig {
     location: PCIDeviceLocation,
-    registers: PCIDeviceCommonConfigRegisters,
+
+    /// All PCI devices share some common configuration. See
+    /// <https://wiki.osdev.org/PCI#Common_Header_Fields> and "7.5.1.1 Type 0/1
+    /// Common Configuration Space" in spec
+    common_registers: PCIDeviceCommonConfigRegisters,
 }
 
-impl PCIDeviceCommonConfig {
+impl PCIDeviceConfig {
     /// Returns `Some` if a device exists at the given location.
     ///
     /// # Safety
@@ -122,30 +123,32 @@ impl PCIDeviceCommonConfig {
     unsafe fn new(location: PCIDeviceLocation) -> Option<Self> {
         let address = location.device_base_address().as_u64() as usize;
         #[allow(unused_unsafe)]
-        let registers = unsafe { PCIDeviceCommonConfigRegisters::from_address(address) };
+        let common_registers = unsafe { PCIDeviceCommonConfigRegisters::from_address(address) };
 
         // If the vendor ID is 0xFFFF, then there is no device at this location.
-        if registers.vendor_id().read() == 0xFFFF {
+        if common_registers.vendor_id().read() == 0xFFFF {
             return None;
         }
 
         Some(Self {
             location,
-            registers,
+            common_registers,
         })
     }
 
-    pub fn registers(self) -> PCIDeviceCommonConfigRegisters {
-        self.registers
+    pub fn common_registers(self) -> PCIDeviceCommonConfigRegisters {
+        self.common_registers
     }
 
-    pub fn config(&self) -> Result<PCIDeviceConfig, &str> {
-        let layout = self.registers.header_type().read().layout()?;
+    pub fn config_type(&self) -> Result<PCIDeviceConfigTypes, &str> {
+        let layout = self.common_registers.header_type().read().layout()?;
         let body = match layout {
-            PCIDeviceConfigHeaderLayout::GeneralDevice => PCIDeviceConfig::GeneralDevice(unsafe {
-                PCIDeviceConfigType0::from_common_config(*self)
-            }),
-            PCIDeviceConfigHeaderLayout::PCIToPCIBridge => PCIDeviceConfig::PCIToPCIBridge,
+            PCIDeviceConfigHeaderLayout::GeneralDevice => {
+                PCIDeviceConfigTypes::GeneralDevice(unsafe {
+                    PCIDeviceConfigType0::from_common_config(*self)
+                })
+            }
+            PCIDeviceConfigHeaderLayout::PCIToPCIBridge => PCIDeviceConfigTypes::PCIToPCIBridge,
         };
         Ok(body)
     }
@@ -158,7 +161,7 @@ impl PCIDeviceCommonConfig {
         writeln!(w, "Header:")?;
         w.indent();
 
-        let header_type = self.registers.header_type().read();
+        let header_type = self.common_registers.header_type().read();
         let layout = header_type
             .layout()
             .expect("couldn't construct header layout")
@@ -168,49 +171,55 @@ impl PCIDeviceCommonConfig {
         let multifunction = header_type.multifunction();
         writeln!(w, "multifunction: {multifunction}")?;
 
-        let command = self.registers.command().read();
+        let command = self.common_registers.command().read();
         let command_bits = u16::from(command);
         writeln!(w, "command: {command_bits:#016b} ({command:?})")?;
 
-        let status = self.registers.status().read();
+        let status = self.common_registers.status().read();
         let status_bits = u16::from(status);
         writeln!(w, "status: {status_bits:#016b} ({status:?})")?;
 
-        let vendor_id = self.registers.vendor_id().read();
+        let vendor_id = self.common_registers.vendor_id().read();
         let vendor = lookup_vendor_id(vendor_id);
         write!(w, "vendor: {vendor_id:#x}")?;
         writeln!(w, " ({})", vendor.unwrap_or("UNKNOWN"))?;
 
-        let device_id = self.registers.device_id().read();
+        let device_id = self.common_registers.device_id().read();
         let device = lookup_known_device_id(vendor_id, device_id);
-        let revision_id = self.registers.revision_id().read();
+        let revision_id = self.common_registers.revision_id().read();
         write!(w, "device_id: {device_id:#x}")?;
         write!(w, ", revision_id: {revision_id:#x}")?;
         writeln!(w, " ({device})")?;
 
         let device = device_type(
-            self.registers.class().read(),
-            self.registers.subclass().read(),
-            self.registers.prog_if().read(),
+            self.common_registers.class().read(),
+            self.common_registers.subclass().read(),
+            self.common_registers.prog_if().read(),
         )
         .expect("couldn't construct device class");
         writeln!(w, "device:")?;
         w.indent();
         writeln!(w, "name: {device}")?;
-        writeln!(w, "class: {:#x}", self.registers.class().read())?;
-        writeln!(w, "subclass: {:#x}", self.registers.subclass().read(),)?;
-        writeln!(w, "prog_if: {:#x}", self.registers.prog_if().read())?;
+        writeln!(w, "class: {:#x}", self.common_registers.class().read())?;
+        writeln!(
+            w,
+            "subclass: {:#x}",
+            self.common_registers.subclass().read(),
+        )?;
+        writeln!(w, "prog_if: {:#x}", self.common_registers.prog_if().read())?;
         w.unindent();
 
         w.unindent();
 
         // TODO: Move printing body to body types
-        let config = self.config().expect("failed to read PCI device config");
+        let config = self
+            .config_type()
+            .expect("failed to read PCI device config");
         match config {
-            PCIDeviceConfig::GeneralDevice(config) => {
+            PCIDeviceConfigTypes::GeneralDevice(config) => {
                 config.print(w)?;
             }
-            PCIDeviceConfig::PCIToPCIBridge => {
+            PCIDeviceConfigTypes::PCIToPCIBridge => {
                 writeln!(w, "Config: PCI to PCI bridge")?;
             }
         };
@@ -499,7 +508,7 @@ fn device_type(class: u8, subclass: u8, prog_if: u8) -> Result<&'static str, &'s
 }
 
 #[derive(Clone, Copy)]
-pub enum PCIDeviceConfig {
+pub enum PCIDeviceConfigTypes {
     GeneralDevice(PCIDeviceConfigType0),
     PCIToPCIBridge,
     // N.B. PCIToCardBusBridge doesn't exist any longer in PCI Express. Let's
@@ -533,15 +542,13 @@ register_struct!(
 
 #[derive(Debug, Clone, Copy)]
 pub struct PCIDeviceConfigType0 {
-    common_config: PCIDeviceCommonConfig,
     registers: PCIDeviceConfigType0Registers,
 }
 
 impl PCIDeviceConfigType0 {
-    unsafe fn from_common_config(common_config: PCIDeviceCommonConfig) -> Self {
+    unsafe fn from_common_config(common_config: PCIDeviceConfig) -> Self {
         let address = common_config.location.device_base_address().as_u64() as usize;
         Self {
-            common_config,
             registers: PCIDeviceConfigType0Registers::from_address(address),
         }
     }
@@ -549,7 +556,7 @@ impl PCIDeviceConfigType0 {
     pub fn iter_capabilities(self) -> PCIDeviceCapabilityIterator {
         let cap_ptr = unsafe {
             PCIDeviceCapabilityHeader::new(
-                self.common_config.location.device_base_address().as_u64() as usize,
+                self.registers.address,
                 self.registers.capabilities_pointer().read(),
             )
         };
