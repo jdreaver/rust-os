@@ -87,9 +87,9 @@ register_struct!(
         0x04 => command: RegisterRW<PCIDeviceConfigCommand>,
         0x06 => status: RegisterRW<PCIDeviceConfigStatus>,
         0x08 => revision_id: RegisterRO<u8>,
-        0x09 => prog_if: RegisterRO<u8>,
-        0x0A => subclass: RegisterRO<u8>,
-        0x0B => class: RegisterRO<u8>,
+
+        // N.B. class, subclass, and prog_if are in a separate struct.
+
         0x0C => cache_line_size: RegisterRW<u8>,
         0x0D => latency_timer: RegisterRW<u8>,
         0x0E => header_type: RegisterRO<PCIDeviceConfigHeaderType>,
@@ -103,6 +103,16 @@ register_struct!(
     }
 );
 
+register_struct!(
+    /// See <https://wiki.osdev.org/PCI#Common_Header_Fields> and "7.5.1.1 Type
+    /// 0/1 Common Configuration Space" in spec
+    PCIConfigDeviceClassRegisters {
+        0x09 => prog_if: RegisterRO<u8>,
+        0x0A => subclass: RegisterRO<u8>,
+        0x0B => class: RegisterRO<u8>,
+    }
+);
+
 #[derive(Debug, Clone, Copy)]
 pub struct PCIDeviceConfig {
     location: PCIDeviceLocation,
@@ -111,6 +121,8 @@ pub struct PCIDeviceConfig {
     /// <https://wiki.osdev.org/PCI#Common_Header_Fields> and "7.5.1.1 Type 0/1
     /// Common Configuration Space" in spec
     common_registers: PCIDeviceCommonConfigRegisters,
+
+    class: PCIConfigDeviceClass,
 }
 
 impl PCIDeviceConfig {
@@ -130,9 +142,12 @@ impl PCIDeviceConfig {
             return None;
         }
 
+        let class = unsafe { PCIConfigDeviceClass::new(location) };
+
         Some(Self {
             location,
             common_registers,
+            class,
         })
     }
 
@@ -191,23 +206,7 @@ impl PCIDeviceConfig {
         write!(w, ", revision_id: {revision_id:#x}")?;
         writeln!(w, " ({device})")?;
 
-        let device = device_type(
-            self.common_registers.class().read(),
-            self.common_registers.subclass().read(),
-            self.common_registers.prog_if().read(),
-        )
-        .expect("couldn't construct device class");
-        writeln!(w, "device:")?;
-        w.indent();
-        writeln!(w, "name: {device}")?;
-        writeln!(w, "class: {:#x}", self.common_registers.class().read())?;
-        writeln!(
-            w,
-            "subclass: {:#x}",
-            self.common_registers.subclass().read(),
-        )?;
-        writeln!(w, "prog_if: {:#x}", self.common_registers.prog_if().read())?;
-        w.unindent();
+        self.class.print(w)?;
 
         w.unindent();
 
@@ -227,6 +226,53 @@ impl PCIDeviceConfig {
         w.unindent();
 
         Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+struct PCIConfigDeviceClass {
+    registers: PCIConfigDeviceClassRegisters,
+}
+
+impl PCIConfigDeviceClass {
+    unsafe fn new(location: PCIDeviceLocation) -> Self {
+        let address = location.device_base_address().as_u64() as usize;
+        let registers = PCIConfigDeviceClassRegisters::from_address(address);
+        Self { registers }
+    }
+
+    pub fn print<W: Write>(self, w: &mut IndentWriter<W>) -> fmt::Result {
+        let class = self.registers.class().read();
+        let subclass = self.registers.subclass().read();
+        let prog_if = self.registers.prog_if().read();
+
+        let device =
+            device_type(class, subclass, prog_if).expect("couldn't construct device class");
+        writeln!(w, "device:")?;
+        w.indent();
+        writeln!(w, "name: {device}")?;
+        writeln!(w, "class: {class:#x}")?;
+        writeln!(w, "subclass: {subclass:#x}")?;
+        writeln!(w, "prog_if: {prog_if:#x}")?;
+        w.unindent();
+
+        Ok(())
+    }
+}
+
+impl fmt::Debug for PCIConfigDeviceClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let known_device_type = device_type(
+            self.registers.class().read(),
+            self.registers.subclass().read(),
+            self.registers.prog_if().read(),
+        )
+        .unwrap_or("UNKNOWN");
+
+        f.debug_struct("PCIConfigDeviceClass")
+            .field("registers", &self.registers)
+            .field("device_type", &known_device_type)
+            .finish()
     }
 }
 

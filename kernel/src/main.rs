@@ -117,7 +117,10 @@ fn run_tests(
         serial_println!("Found VirtIO device: {:#x?}", virtio_device);
 
         virtio_device.initialize();
-        serial_println!("VirtIO device initialized: {:#x?}", virtio_device.common_virtio_config());
+        serial_println!(
+            "VirtIO device initialized: {:#x?}",
+            virtio_device.common_virtio_config()
+        );
     });
 
     // Print out some test addresses
