@@ -60,6 +60,7 @@ make test
   - Get RNG (Entropy) device working
   - Figure out PCI interrupts (MSI-X?)
   - Ensure memory we map for VirtIO virtqueues is contiguous! I think we accidentally allocate contiguous memory, but we need to ensure our memory allocator has a specific API for it.
+    - <https://not-matthias.github.io/posts/rust-kernel-adventures/>
 - `registers.rs` and macros
   - Consider moving `registers.rs` stuff into dedicated crate with unit tests
   - Also document `registers.rs` stuff

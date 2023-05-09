@@ -98,12 +98,15 @@ impl NaiveFreeMemoryBlockAllocator {
             region_offset_bytes: 0,
         }
     }
-}
 
-unsafe impl<S: PageSize> FrameAllocator<S> for NaiveFreeMemoryBlockAllocator {
-    // TODO: This logic is hairy. This should be unit tested.
-    fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
-        let page_size: u64 = S::SIZE;
+    /// Allocates a series of frames contiguous in physical memory. Returns the
+    /// start address of the allocated memory.
+    fn allocate_contiguous_memory(
+        &mut self,
+        num_bytes: u64,
+        alignment: Option<u64>,
+    ) -> Option<PhysAddr> {
+        // TODO: This logic is hairy. This should be unit tested.
 
         // Find the next memory region with enough space for our page.
         loop {
@@ -113,28 +116,38 @@ unsafe impl<S: PageSize> FrameAllocator<S> for NaiveFreeMemoryBlockAllocator {
                 return None;
             }
 
-            // Construct the next page
+            // Construct figure out if we have enough space in the current region.
             let memory_region = self.usable_memory_regions[self.current_memory_region];
-            let frame_address = memory_region.start_address + self.region_offset_bytes;
-            // Pages must be aligned to their size.
-            //
-            // NOTE: This align_up call can waste a ton of space. For example,
-            // if you just previously allocated a 4 KiB page that was on a 2 MiB
-            // boundary, but now you are allocating a new 2 MiB page, align_up
-            // will consume 2 MiB - 4 KiB of wasted space. This is a naive
-            // allocator so that is okay for now.
-            let frame_address = frame_address.align_up(page_size);
 
-            // Make sure we have enough space in the current region. If not, go to the next one.
-            if frame_address - memory_region.start_address >= memory_region.len {
+            let start_address = memory_region.start_address + self.region_offset_bytes;
+            // If we have an alignment requirement (e.g. pages must be aligned
+            // to their size) we need to apply it.
+            //
+            // NOTE: This align_up call can waste a ton of space with this naive
+            // memory allocation scheme. For example, if you just previously
+            // allocated a 4 KiB page that was on a 2 MiB boundary, but now you
+            // are allocating a new 2 MiB page, align_up will consume 2 MiB - 4
+            // KiB of wasted space. This is a naive allocator so that is okay
+            // for now.
+            let start_address =
+                alignment.map_or(start_address, |alignment| start_address.align_up(alignment));
+
+            if start_address - memory_region.start_address >= memory_region.len {
                 self.current_memory_region += 1;
                 self.region_offset_bytes = 0;
             } else {
-                let frame: PhysFrame<S> = PhysFrame::from_start_address(frame_address)
-                    .expect("frame address is invalid, even though we just aligned it!");
-                self.region_offset_bytes += page_size;
-                return Some(frame);
+                self.region_offset_bytes += num_bytes;
+                return Some(start_address);
             }
         }
+    }
+}
+
+unsafe impl<S: PageSize> FrameAllocator<S> for NaiveFreeMemoryBlockAllocator {
+    fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
+        let page_size: u64 = S::SIZE;
+        let frame_address = self.allocate_contiguous_memory(page_size, Some(page_size))?;
+        let frame: PhysFrame<S> = PhysFrame::containing_address(frame_address);
+        Some(frame)
     }
 }
