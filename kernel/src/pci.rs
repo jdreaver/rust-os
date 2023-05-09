@@ -82,13 +82,12 @@ register_struct!(
     /// See <https://wiki.osdev.org/PCI#Common_Header_Fields> and "7.5.1.1 Type
     /// 0/1 Common Configuration Space" in spec
     PCIDeviceCommonConfigRegisters {
-        0x00 => vendor_id: RegisterRO<u16>,
-        0x02 => device_id: RegisterRO<u16>,
+        // N.B. vendor_id and device_id are in a separate struct.
+
         0x04 => command: RegisterRW<PCIDeviceConfigCommand>,
         0x06 => status: RegisterRW<PCIDeviceConfigStatus>,
-        0x08 => revision_id: RegisterRO<u8>,
 
-        // N.B. class, subclass, and prog_if are in a separate struct.
+        // N.B. revision_id, class, subclass, and prog_if are in a separate struct.
 
         0x0C => cache_line_size: RegisterRW<u8>,
         0x0D => latency_timer: RegisterRW<u8>,
@@ -106,7 +105,11 @@ register_struct!(
 register_struct!(
     /// See <https://wiki.osdev.org/PCI#Common_Header_Fields> and "7.5.1.1 Type
     /// 0/1 Common Configuration Space" in spec
-    PCIConfigDeviceClassRegisters {
+    PCIConfigDeviceIDRegisters {
+        0x00 => vendor_id: RegisterRO<u16>,
+        0x02 => device_id: RegisterRO<u16>,
+
+        0x08 => revision_id: RegisterRO<u8>,
         0x09 => prog_if: RegisterRO<u8>,
         0x0A => subclass: RegisterRO<u8>,
         0x0B => class: RegisterRO<u8>,
@@ -120,9 +123,8 @@ pub struct PCIDeviceConfig {
     /// All PCI devices share some common configuration. See
     /// <https://wiki.osdev.org/PCI#Common_Header_Fields> and "7.5.1.1 Type 0/1
     /// Common Configuration Space" in spec
+    device_id: PCIConfigDeviceID,
     common_registers: PCIDeviceCommonConfigRegisters,
-
-    class: PCIConfigDeviceClass,
 }
 
 impl PCIDeviceConfig {
@@ -135,20 +137,23 @@ impl PCIDeviceConfig {
     unsafe fn new(location: PCIDeviceLocation) -> Option<Self> {
         let address = location.device_base_address().as_u64() as usize;
         #[allow(unused_unsafe)]
-        let common_registers = unsafe { PCIDeviceCommonConfigRegisters::from_address(address) };
-
         // If the vendor ID is 0xFFFF, then there is no device at this location.
-        if common_registers.vendor_id().read() == 0xFFFF {
+        let device_id = unsafe { PCIConfigDeviceID::new(location) };
+        if device_id.registers.vendor_id().read() == 0xFFFF {
             return None;
         }
 
-        let class = unsafe { PCIConfigDeviceClass::new(location) };
+        let common_registers = unsafe { PCIDeviceCommonConfigRegisters::from_address(address) };
 
         Some(Self {
             location,
+            device_id,
             common_registers,
-            class,
         })
+    }
+
+    pub fn device_id_registers(self) -> PCIConfigDeviceIDRegisters {
+        self.device_id.registers
     }
 
     pub fn common_registers(self) -> PCIDeviceCommonConfigRegisters {
@@ -176,6 +181,8 @@ impl PCIDeviceConfig {
         writeln!(w, "Header:")?;
         w.indent();
 
+        self.device_id.print(w)?;
+
         let header_type = self.common_registers.header_type().read();
         let layout = header_type
             .layout()
@@ -193,20 +200,6 @@ impl PCIDeviceConfig {
         let status = self.common_registers.status().read();
         let status_bits = u16::from(status);
         writeln!(w, "status: {status_bits:#016b} ({status:?})")?;
-
-        let vendor_id = self.common_registers.vendor_id().read();
-        let vendor = lookup_vendor_id(vendor_id);
-        write!(w, "vendor: {vendor_id:#x}")?;
-        writeln!(w, " ({})", vendor.unwrap_or("UNKNOWN"))?;
-
-        let device_id = self.common_registers.device_id().read();
-        let device = lookup_known_device_id(vendor_id, device_id);
-        let revision_id = self.common_registers.revision_id().read();
-        write!(w, "device_id: {device_id:#x}")?;
-        write!(w, ", revision_id: {revision_id:#x}")?;
-        writeln!(w, " ({device})")?;
-
-        self.class.print(w)?;
 
         w.unindent();
 
@@ -230,18 +223,29 @@ impl PCIDeviceConfig {
 }
 
 #[derive(Clone, Copy)]
-struct PCIConfigDeviceClass {
-    registers: PCIConfigDeviceClassRegisters,
+struct PCIConfigDeviceID {
+    registers: PCIConfigDeviceIDRegisters,
 }
 
-impl PCIConfigDeviceClass {
+impl PCIConfigDeviceID {
     unsafe fn new(location: PCIDeviceLocation) -> Self {
         let address = location.device_base_address().as_u64() as usize;
-        let registers = PCIConfigDeviceClassRegisters::from_address(address);
+        let registers = PCIConfigDeviceIDRegisters::from_address(address);
         Self { registers }
     }
 
     pub fn print<W: Write>(self, w: &mut IndentWriter<W>) -> fmt::Result {
+        let vendor_id = self.registers.vendor_id().read();
+        let vendor = lookup_vendor_id(vendor_id);
+        writeln!(w, "vendor: {vendor_id:#x} ({vendor})")?;
+
+        let device_id = self.registers.device_id().read();
+        let device = lookup_known_device_id(vendor_id, device_id);
+        let revision_id = self.registers.revision_id().read();
+        write!(w, "device_id: {device_id:#x}")?;
+        write!(w, ", revision_id: {revision_id:#x}")?;
+        writeln!(w, " ({device})")?;
+
         let class = self.registers.class().read();
         let subclass = self.registers.subclass().read();
         let prog_if = self.registers.prog_if().read();
@@ -260,8 +264,13 @@ impl PCIConfigDeviceClass {
     }
 }
 
-impl fmt::Debug for PCIConfigDeviceClass {
+impl fmt::Debug for PCIConfigDeviceID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let vendor_id = self.registers.vendor_id().read();
+        let device_id = self.registers.device_id().read();
+        let vendor = lookup_vendor_id(vendor_id);
+        let device = lookup_known_device_id(vendor_id, device_id);
+
         let known_device_type = device_type(
             self.registers.class().read(),
             self.registers.subclass().read(),
@@ -270,8 +279,10 @@ impl fmt::Debug for PCIConfigDeviceClass {
         .unwrap_or("UNKNOWN");
 
         f.debug_struct("PCIConfigDeviceClass")
-            .field("registers", &self.registers)
+            .field("vendor", &vendor)
+            .field("device", &device)
             .field("device_type", &known_device_type)
+            .field("registers", &self.registers)
             .finish()
     }
 }
@@ -280,14 +291,14 @@ impl fmt::Debug for PCIConfigDeviceClass {
 /// known vendor IDs are useful for debugging.
 ///
 /// Great resource for vendor IDs: <https://www.pcilookup.com>
-fn lookup_vendor_id(vendor_id: u16) -> Option<&'static str> {
+fn lookup_vendor_id(vendor_id: u16) -> &'static str {
     match vendor_id {
         // If the vendor ID is 0xffff, then the device doesn't exist
-        0xFFFF => None,
-        0x8086 | 0x8087 => Some("Intel Corp."),
-        0x1af4 => Some("virtio"), // This is actually Red Hat, Inc., but it means virtio
-        0x1002 => Some("Advanced Micro Devices, Inc. [AMD/ATI]"),
-        _ => Some("UNKNOWN"),
+        0xFFFF => "INVALID (0xFFFF)",
+        0x8086 | 0x8087 => "Intel Corp.",
+        0x1af4 => "virtio", // This is actually Red Hat, Inc., but it means virtio
+        0x1002 => "Advanced Micro Devices, Inc. [AMD/ATI]",
+        _ => "UNKNOWN",
     }
 }
 

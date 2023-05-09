@@ -36,7 +36,7 @@ impl VirtIODevice {
         frame_allocator: &mut impl FrameAllocator<Size4KiB>,
     ) -> Option<Self> {
         // Check that this is a VirtIO device.
-        let vendor_id = pci_config.common_registers().vendor_id().read();
+        let vendor_id = pci_config.device_id_registers().vendor_id().read();
         if vendor_id != 0x1af4 {
             return None;
         };

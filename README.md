@@ -52,6 +52,7 @@ make test
 
 ## TODO
 
+- Nuke custom PCI print functions. They are a pain to maintain. Just make Debug better.
 - VirtIO
   - Get RNG (Entropy) device working
   - Figure out PCI interrupts (MSI-X?)
