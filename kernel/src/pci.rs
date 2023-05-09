@@ -23,7 +23,13 @@ where
     for bus in 0..=MAX_PCI_BUS {
         for slot in 0..=MAX_PCI_BUS_DEVICE {
             for function in 0..=MAX_PCI_BUS_DEVICE_FUNCTION {
-                let device = unsafe { PCIeDeviceConfig::new(base_addr, bus, slot, function) };
+                let location = PCIDeviceLocation {
+                    ecam_base_address: base_addr,
+                    bus_number: bus,
+                    device_number: slot,
+                    function_number: function,
+                };
+                let device = unsafe { PCIeDeviceConfig::new(location) };
                 let Some(device) = device else { continue; };
                 f(device);
             }
@@ -31,14 +37,15 @@ where
     }
 }
 
-/// Interface into a PCI Express device's configuration space. See:
-/// - <https://wiki.osdev.org/PCI_Express#Configuration_Space>
-/// - Section 7.5 "7.5 PCI and PCIe Capabilities Required by the Base Spec for all Ports" of the PCI Express Base Specification
-/// - <https://wiki.osdev.org/PCI>, which is the legacy interface, but is still a good explanation.
-pub struct PCIeDeviceConfig {
+/// Location within the PCI Express Enhanced Configuration Mechanism memory
+/// region. See "7.2.2 PCI Express Enhanced Configuration Access Mechanism
+/// (ECAM)" of the PCI Express Base Specification, as well as
+/// <https://wiki.osdev.org/PCI_Express>.
+#[derive(Debug, Clone, Copy)]
+pub struct PCIDeviceLocation {
     /// Physical address where the PCI Express extended configuration mechanism
     /// memory region starts for this device.
-    physical_address: PhysAddr,
+    ecam_base_address: PhysAddr,
 
     /// Which PCIe bus this device is on.
     bus_number: u8,
@@ -48,6 +55,35 @@ pub struct PCIeDeviceConfig {
 
     /// Function number of the device if the device is a multifunction device.
     function_number: u8,
+}
+
+impl PCIDeviceLocation {
+    pub fn device_base_address(&self) -> PhysAddr {
+        let bus = u64::from(self.bus_number);
+        let device = u64::from(self.device_number);
+        let function = u64::from(self.function_number);
+        self.ecam_base_address + ((bus << 20) | (device << 15) | (function << 12))
+    }
+
+    pub fn print<W: Write>(&self, w: &mut IndentWriter<W>) -> fmt::Result {
+        writeln!(w, "Device Location:")?;
+        w.indent();
+        writeln!(w, "Address: {:#x}", self.device_base_address().as_u64())?;
+        writeln!(w, "Bus number: {}", self.bus_number)?;
+        writeln!(w, "Device number: {}", self.device_number)?;
+        writeln!(w, "Function number: {}", self.function_number)?;
+        w.unindent();
+
+        Ok(())
+    }
+}
+
+/// Interface into a PCI Express device's configuration space. See:
+/// - <https://wiki.osdev.org/PCI_Express#Configuration_Space>
+/// - Section 7.5 "7.5 PCI and PCIe Capabilities Required by the Base Spec for all Ports" of the PCI Express Base Specification
+/// - <https://wiki.osdev.org/PCI>, which is the legacy interface, but is still a good explanation.
+pub struct PCIeDeviceConfig {
+    location: PCIDeviceLocation,
 
     /// All PCI/PCIe devices have a common header field that lives at the base
     /// of the device's configuration space.
@@ -61,31 +97,15 @@ impl PCIeDeviceConfig {
     ///
     /// Caller must ensure that `base_address` is a valid pointer to a PCI
     /// Express extended configuration mechanism memory region.
-    unsafe fn new(
-        enhanced_config_region_address: PhysAddr,
-        bus_number: u8,
-        device_number: u8,
-        function_number: u8,
-    ) -> Option<Self> {
-        let bus = u64::from(bus_number);
-        let device = u64::from(device_number);
-        let function = u64::from(function_number);
-        let physical_address =
-            enhanced_config_region_address + ((bus << 20) | (device << 15) | (function << 12));
+    unsafe fn new(location: PCIDeviceLocation) -> Option<Self> {
+        let address = location.device_base_address();
 
-        let header = PCIDeviceConfigHeader::new(physical_address);
-
+        let header = PCIDeviceConfigHeader::new(address);
         if !header.device_exists() {
             return None;
         }
 
-        Some(Self {
-            physical_address,
-            bus_number,
-            device_number,
-            function_number,
-            header,
-        })
+        Some(Self { location, header })
     }
 
     pub fn body(&self) -> Result<PCIDeviceConfigBody, &str> {
@@ -93,7 +113,7 @@ impl PCIeDeviceConfig {
         let body = match layout {
             PCIDeviceConfigHeaderLayout::GeneralDevice => {
                 PCIDeviceConfigBody::GeneralDevice(unsafe {
-                    PCIDeviceConfigBodyType0::from_config_base(self.physical_address)
+                    PCIDeviceConfigBodyType0::from_config_base(self.location.device_base_address())
                 })
             }
             PCIDeviceConfigHeaderLayout::PCIToPCIBridge => PCIDeviceConfigBody::PCIToPCIBridge,
@@ -109,17 +129,10 @@ impl PCIeDeviceConfig {
         let w = &mut IndentWriter::new(w, 2);
 
         writeln!(w, "PCIe device config:")?;
-
         w.indent();
-        writeln!(w, "Address: {:#x}", self.physical_address.as_u64())?;
-        writeln!(w, "Bus number: {}", self.bus_number)?;
-        writeln!(w, "Device number: {}", self.device_number)?;
-        writeln!(w, "Function number: {}", self.function_number)?;
-        writeln!(w, "Header:")?;
 
-        w.indent();
+        self.location.print(w)?;
         self.header.print(w)?;
-        w.unindent();
 
         let body = self.body().expect("failed to read PCI device body");
         match body {
@@ -207,8 +220,10 @@ impl PCIDeviceConfigHeader {
     }
 
     fn print<W: Write>(self, w: &mut IndentWriter<'_, W>) -> fmt::Result {
-        let header_type = self.header.header_type().read();
+        writeln!(w, "Header:")?;
+        w.indent();
 
+        let header_type = self.header.header_type().read();
         let layout = header_type
             .layout()
             .expect("couldn't construct header layout")
@@ -250,6 +265,8 @@ impl PCIDeviceConfigHeader {
         writeln!(w, "class: {:#x}", self.header.class().read())?;
         writeln!(w, "subclass: {:#x}", self.header.subclass().read(),)?;
         writeln!(w, "prog_if: {:#x}", self.header.prog_if().read())?;
+        w.unindent();
+
         w.unindent();
 
         Ok(())
