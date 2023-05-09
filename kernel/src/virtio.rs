@@ -346,7 +346,7 @@ register_struct!(
         0x12 => driver_feature: RegisterRW<u32>,
         0x10 => msix_config: RegisterRW<u16>,
         0x12 => num_queues: RegisterRO<u16>,
-        0x14 => device_status: RegisterRW<u8>,
+        0x14 => device_status: RegisterRW<VirtIOConfigStatus>,
         0x15 => config_generation: RegisterRO<u8>,
         0x16 => queue_select: RegisterRW<u16>,
         0x18 => queue_size: RegisterRW<u16>,
@@ -360,6 +360,43 @@ register_struct!(
         0x3A => queue_reset: RegisterRW<u16>,
     }
 );
+
+#[bitfield(u8)]
+/// 2.1 Device Status Field
+pub struct VirtIOConfigStatus {
+    /// ACKNOWLEDGE (1) Indicates that the guest OS has found the device and
+    /// recognized it as a valid virtio device.
+    acknowledge: bool,
+
+    /// DRIVER (2) Indicates that the guest OS knows how to drive the device.
+    driver: bool,
+
+    /// DRIVER_OK (4) Indicates that the guest OS knows how to drive the device.
+    driver_ok: bool,
+
+    /// FEATURES_OK (8) Indicates that the features negotiated by the driver are
+    /// acceptable to the device. This bit is optional since not all devices
+    /// support feature negotiation, and some devices may accept any subset of
+    /// the features offered by the driver.
+    features_ok: bool,
+
+    __reserved: bool,
+    __reserved: bool,
+
+    /// DEVICE_NEEDS_RESET (64) Indicates that the device has experienced an
+    /// error from which it can’t recover. The device has stopped working. The
+    /// driver should not send any further requests to the device, and should
+    /// reset the device at the earliest convenience.
+    device_needs_reset: bool,
+
+    /// FAILED (128) Indicates that something went wrong in the guest, and it
+    /// has given up on the device. This could be an internal error, or the
+    /// driver didn’t like the device for some reason, or even a fatal error
+    /// during device operation. The device should not be used any further
+    /// without a reset.
+    failed: bool,
+}
+
 
 register_struct!(
     /// 4.1.4.5 ISR status capability

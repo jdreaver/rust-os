@@ -56,8 +56,17 @@ make test
   - Get RNG (Entropy) device working
   - Figure out PCI interrupts (MSI-X?)
   - Ensure memory we map for VirtIO virtqueues is contiguous! I think we accidentally allocate contiguous memory, but we need to ensure our memory allocator has a specific API for it.
-- Consider moving `registers.rs` stuff into dedicated crate with unit tests
+- `registers.rs` and macros
+  - Consider moving `registers.rs` stuff into dedicated crate with unit tests
   - Also document `registers.rs` stuff
+  - Consider using a proc macro to annotate fields on structs instead of
+    code-generating the entire struct. This might get rid of the need for my PCI
+    wrapper types because I can inline helper functions into the actual struct,
+    and I can also include other information in the struct. Perhaps we can also
+    handle the "embedding" case, where e.g. we want to easily be able to include
+    the common PCI registers in a Type0 device struct, or allow VirtIO devices
+    to include the common registers and the type 0 registers. Also, I think proc
+    macros are more flexible.
 - Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
 - Filesystem support
   - Now that I have PCI working, attach a drive via QEMU and see what is looks like under PCI
