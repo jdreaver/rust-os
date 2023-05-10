@@ -1,3 +1,4 @@
+use core::alloc::Allocator;
 use core::fmt;
 
 use bitfield_struct::bitfield;
@@ -15,7 +16,7 @@ use crate::serial_println;
 
 /// Holds the configuration for a VirtIO device.
 #[derive(Debug, Clone, Copy)]
-pub struct VirtIODevice {
+pub struct VirtIODeviceConfig {
     /// Common PCI configuration registers.
     pci_config: PCIDeviceConfig,
 
@@ -28,7 +29,7 @@ pub struct VirtIODevice {
     notify_config: VirtIONotifyConfig,
 }
 
-impl VirtIODevice {
+impl VirtIODeviceConfig {
     pub fn from_pci_config(
         pci_config: PCIDeviceConfig,
         mapper: &mut impl Mapper<Size4KiB>,
@@ -113,7 +114,7 @@ impl VirtIODevice {
     }
 
     /// See "3 General Initialization And Device Operation"
-    pub fn initialize(self) {
+    pub fn initialize(self, physical_allocator: &impl Allocator) {
         let config = self.common_virtio_config;
 
         // Reset the VirtIO device by writing 0 to the status register (see
@@ -142,7 +143,11 @@ impl VirtIODevice {
 
             // Read the device feature bits
             let device_features = config.device_feature().read();
-            serial_println!("VirtIO device feature bits ({}): {:#034b}", i, device_features);
+            serial_println!(
+                "VirtIO device feature bits ({}): {:#034b}",
+                i,
+                device_features
+            );
 
             // Write the features we want to enable (TODO: actually pick
             // features, don't just write them all back)
@@ -159,6 +164,8 @@ impl VirtIODevice {
         // Re-read the status to ensure that the FEATURES_OK bit is still set.
         status = config.device_status().read();
         assert!(status.features_ok(), "failed to set FEATURES_OK status bit");
+
+        // Initialize virtqueues
 
         // TODO: Device-specific setup
 
@@ -453,4 +460,97 @@ pub struct VirtIOISRStatus {
 pub struct VirtIONotifyConfig {
     cap_offset: u32,
     notify_off_multiplier: u32,
+}
+
+/// See 2.7.5 The Virtqueue Descriptor Table
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct VirtqDescriptor {
+    /// Physical address for the buffer.
+    addr: u64,
+
+    /// Length of the buffer, in bytes.
+    len: u32,
+
+    flags: VirtqDescriptorFlags,
+
+    /// Next field if flags & NEXT
+    next: u16,
+}
+
+#[bitfield(u16)]
+pub struct VirtqDescriptorFlags {
+    /// This marks a buffer as continuing via the next field.
+    next: bool,
+
+    /// This marks a buffer as device write-only (otherwise device read-only).
+    device_write: bool,
+
+    /// This means the buffer contains a list of buffer descriptors.
+    indirect: bool,
+
+    #[bits(13)]
+    __padding: u16,
+}
+
+/// See 2.7.6 The Virtqueue Available Ring
+///
+/// The driver uses the available ring to offer buffers to the device: each ring
+/// entry refers to the head of a descriptor chain. It is only written by the
+/// driver and read by the device.
+///
+/// Since the ring size is dynamic, we only have the header in a struct.
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct VirtqAvailRingHeader {
+    flags: VirtqAvailRingFlags,
+
+    /// idx field indicates where the driver would put the next descriptor entry
+    /// in the ring (modulo the queue size). This starts at 0, and increases.
+    idx: u16,
+    // le16 ring[ /* Queue Size */ ];
+    // le16 used_event; /* Only if VIRTIO_F_EVENT_IDX */
+}
+
+#[bitfield(u16)]
+pub struct VirtqAvailRingFlags {
+    /// See 2.7.7 Used Buffer Notification Suppression
+    no_interrupt: bool,
+
+    #[bits(15)]
+    __reserved: u16,
+}
+
+/// 2.7.8 The Virtqueue Used Ring
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct VirtqUsedRingHeader {
+    flags: VirtqUsedRingFlags,
+
+    /// idx field indicates where the driver would put the next descriptor entry
+    /// in the ring (modulo the queue size). This starts at 0, and increases.
+    idx: u16,
+    // struct virtq_used_elem ring[ /* Queue Size */];
+    // le16 avail_event; /* Only if VIRTIO_F_EVENT_IDX */
+}
+
+#[bitfield(u16)]
+pub struct VirtqUsedRingFlags {
+    /// See 2.7.10 Available Buffer Notification Suppression
+    no_notify: bool,
+
+    #[bits(15)]
+    __reserved: u16,
+}
+
+/// 2.7.8 The Virtqueue Used Ring
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct VirtqUsedElem {
+    /// Index of start of used descriptor chain.
+    id: u32,
+
+    /// The number of bytes written into the device writable portion of the
+    /// buffer described by the descriptor chain.
+    len: u32,
 }
