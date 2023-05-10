@@ -1,5 +1,6 @@
-use core::alloc::Allocator;
+use core::alloc::{Allocator, Layout};
 use core::fmt;
+use core::mem;
 
 use bitfield_struct::bitfield;
 use x86_64::structures::paging::mapper::MapToError;
@@ -166,6 +167,19 @@ impl VirtIODeviceConfig {
         assert!(status.features_ok(), "failed to set FEATURES_OK status bit");
 
         // Initialize virtqueues
+        for i in 0..config.num_queues().read() {
+            config.queue_select().write(i);
+
+            let queue_size = config.queue_size().read() as usize;
+
+            let desc_table_size = queue_size * mem::size_of::<VirtqDescriptor>();
+            let layout = Layout::from_size_align(
+                desc_table_size,
+                VIRTQ_DESC_ALIGN,
+            ).expect("failed to create layout for descriptor table");
+            let desc_address = physical_allocator.allocate_zeroed(layout).expect("failed to allocate descriptor table");
+            config.queue_desc().write(desc_address.addr().get() as u64);
+        }
 
         // TODO: Device-specific setup
 
@@ -461,6 +475,11 @@ pub struct VirtIONotifyConfig {
     cap_offset: u32,
     notify_off_multiplier: u32,
 }
+
+// See 2.7 Split Virtqueues for alignment
+const VIRTQ_DESC_ALIGN: usize = 16;
+const VIRTQ_AVAIL_ALIGN: usize = 2;
+const VIRTQ_USED_ALIGN: usize = 4;
 
 /// See 2.7.5 The Virtqueue Descriptor Table
 #[derive(Debug, Clone, Copy)]
