@@ -140,7 +140,7 @@ impl VirtIODevice {
 
             // Read the device feature bits
             let device_features = config.device_feature().read();
-            serial_println!("VirtIO device feature bits ({}): {:#b}", i, device_features);
+            serial_println!("VirtIO device feature bits ({}): {:#034b}", i, device_features);
 
             // Write the features we want to enable (TODO: actually pick
             // features, don't just write them all back)
