@@ -211,11 +211,11 @@ impl VirtIODeviceConfig {
             virtqueues.push(VirtQueue {
                 index: i,
                 size: queue_size,
+                device_notify_config: self.notify_config,
                 notify_offset: config.queue_notify_off().read(),
                 desc_table_address: desc_address,
                 next_desc_index: 0,
                 avail_ring_address: avail_address,
-                next_avail_index: 0,
                 used_ring_address: used_address,
             });
         }
@@ -298,17 +298,17 @@ impl VirtIOPCICapabilityHeader {
                 VirtIOPCICommonConfigRegisters::from_address(config_addr.as_u64() as usize)
             }),
             VirtIOPCIConfigType::Notify => VirtIOConfig::Notify({
+                let config_addr = self.compute_and_map_config_address(mapper, frame_allocator);
+
                 // Per 4.1.4.4 Notification structure layout, the notify
                 // configuration is in the capabilities struct and the notify
                 // offset multiplier is right after the capabilities struct.
-                let cap_offset = self.registers.offset().read();
-
-                // Assumes the capabilities registers sum to 16 bytes total!
-                let notify_off_ptr = (self.registers.address + 16) as *const u32;
+                let notify_off_ptr =
+                    (self.registers.address + VIRTIO_CAPABILITY_HEADER_SIZE) as *const u32;
                 let notify_off_multiplier = unsafe { *notify_off_ptr };
 
                 VirtIONotifyConfig {
-                    cap_offset,
+                    config_addr,
                     notify_off_multiplier,
                 }
             }),
@@ -377,6 +377,10 @@ impl VirtIOPCICapabilityHeader {
         config_addr
     }
 }
+
+/// Ensure this matches the size of the VirtIO capability header! (See
+/// `VirtIOPCICapabilityHeaderRegisters`.)
+const VIRTIO_CAPABILITY_HEADER_SIZE: usize = 16;
 
 register_struct!(
     /// See 4.1.4 Virtio Structure PCI Capabilities in spec
@@ -516,8 +520,19 @@ pub struct VirtIOISRStatus {
 /// 4.1.4.4 Notification structure layout
 #[derive(Debug, Clone, Copy)]
 pub struct VirtIONotifyConfig {
-    cap_offset: u32,
+    /// Physical address for the configuration area for the Notify capability
+    /// (BAR + offset has already been applied).
+    config_addr: PhysAddr,
+
     notify_off_multiplier: u32,
+}
+
+impl VirtIONotifyConfig {
+    /// 4.1.4.4 Notification structure layout
+    fn queue_notify_address(&self, queue_notify_offset: u16) -> PhysAddr {
+        let offset = u64::from(queue_notify_offset) * u64::from(self.notify_off_multiplier);
+        self.config_addr + offset
+    }
 }
 
 #[derive(Debug)]
@@ -545,6 +560,10 @@ pub struct VirtQueue {
     /// The queue's size, in number of descriptors.
     size: u16,
 
+    /// Device's notification config, inlined here to compute the notification
+    /// address. See "4.1.4.4 Notification structure layout".
+    device_notify_config: VirtIONotifyConfig,
+
     /// The queue's notification offset. See "4.1.4.4 Notification structure
     /// layout".
     notify_offset: u16,
@@ -558,21 +577,24 @@ pub struct VirtQueue {
     /// The physical address for the queue's available ring.
     avail_ring_address: u64,
 
-    /// Next open slot in the available ring.
-    next_avail_index: u16,
-
     /// The physical address for the queue's used ring.
     used_ring_address: u64,
 }
 
 impl VirtQueue {
     /// See "2.7.13 Supplying Buffers to The Device"
-    pub fn add_buffer(&mut self, buffer_addr: u64, buffer_len: u32) {
-        let desc_index = self.add_descriptor(buffer_addr, buffer_len);
+    pub fn add_buffer(&mut self, buffer_addr: u64, buffer_len: u32, flags: VirtqDescriptorFlags) {
+        let desc_index = self.add_descriptor(buffer_addr, buffer_len, flags);
         self.add_avail_ring_entry(desc_index);
+        self.notify_device();
     }
 
-    fn add_descriptor(&mut self, buffer_addr: u64, buffer_len: u32) -> u16 {
+    fn add_descriptor(
+        &mut self,
+        buffer_addr: u64,
+        buffer_len: u32,
+        flags: VirtqDescriptorFlags,
+    ) -> u16 {
         // 2.7.13.1 Placing Buffers Into The Descriptor Table
         let desc_index = self.next_desc_index;
         self.next_desc_index = (self.next_desc_index + 1) % self.size;
@@ -580,7 +602,7 @@ impl VirtQueue {
         let descriptor = VirtqDescriptor {
             addr: buffer_addr,
             len: buffer_len,
-            flags: VirtqDescriptorFlags::new(),
+            flags,
             next: 0,
         };
 
@@ -597,8 +619,10 @@ impl VirtQueue {
 
     fn add_avail_ring_entry(&mut self, desc_index: u16) {
         // 2.7.13.2 Updating The Available Ring
-        let avail_index = self.next_avail_index;
-        self.next_avail_index = (self.next_avail_index + 1) % self.size;
+        let avail_idx_addr =
+            self.avail_ring_address as usize + mem::size_of::<VirtqAvailRingFlags>();
+        let avail_idx_ptr = avail_idx_addr as *mut u16;
+        let avail_index = unsafe { avail_idx_ptr.read_volatile() };
 
         let avail_addr = self.avail_ring_address as usize
             + mem::size_of::<VirtqAvailRingHeader>()
@@ -609,11 +633,9 @@ impl VirtQueue {
         }
 
         // 2.7.13.3 Updating idx
-        let avail_idx_addr =
-            self.avail_ring_address as usize + mem::size_of::<VirtqAvailRingFlags>();
-        let avail_idx_ptr = avail_idx_addr as *mut u16;
+        let next_avail_index = avail_index.wrapping_add(1);
         unsafe {
-            avail_idx_ptr.write_volatile(avail_index);
+            avail_idx_ptr.write_volatile(next_avail_index);
         }
     }
 
@@ -621,17 +643,40 @@ impl VirtQueue {
         self.index
     }
 
+    pub fn notify_device(&self) {
+        // 4.1.5.2 Available Buffer Notifications: When
+        // VIRTIO_F_NOTIFICATION_DATA has not been negotiated, the driver sends
+        // an available buffer notification to the device by writing the 16-bit
+        // virtqueue index of this virtqueue to the Queue Notify address.
+        let notify_addr = self
+            .device_notify_config
+            .queue_notify_address(self.notify_offset);
+        let notify_ptr = notify_addr.as_u64() as *mut u16;
+        unsafe {
+            notify_ptr.write_volatile(self.index);
+        }
+    }
+
     pub fn used_ring_index(&self) -> u16 {
         let used_idx_addr = self.used_ring_address as usize + mem::size_of::<VirtqUsedRingFlags>();
         unsafe { (used_idx_addr as *const u16).read_volatile() }
     }
 
-    pub fn get_used_ring_entry(&self, index: u16) -> VirtqUsedElem {
+    pub fn get_used_ring_entry(&self, index: u16) -> (VirtqUsedElem, VirtqDescriptor) {
+        // Load the used element
         let used_addr = self.used_ring_address as usize
             + mem::size_of::<VirtqUsedRingHeader>()
             + (index as usize * mem::size_of::<VirtqUsedElem>());
         let used_ptr = used_addr as *const VirtqUsedElem;
-        unsafe { used_ptr.read_volatile() }
+        let used_elem = unsafe { used_ptr.read_volatile() };
+
+        // Load the associated descriptor
+        let descriptor_addr = self.desc_table_address as usize
+            + (used_elem.id as usize * mem::size_of::<VirtqDescriptor>());
+        let desciptor_ptr = descriptor_addr as *mut VirtqDescriptor;
+        let descriptor = unsafe { desciptor_ptr.read_volatile() };
+
+        (used_elem, descriptor)
     }
 }
 
@@ -645,27 +690,27 @@ const VIRTQ_USED_ALIGN: usize = 4;
 #[repr(C)]
 pub struct VirtqDescriptor {
     /// Physical address for the buffer.
-    addr: u64,
+    pub addr: u64,
 
     /// Length of the buffer, in bytes.
-    len: u32,
+    pub len: u32,
 
-    flags: VirtqDescriptorFlags,
+    pub flags: VirtqDescriptorFlags,
 
     /// Next field if flags & NEXT
-    next: u16,
+    pub next: u16,
 }
 
 #[bitfield(u16)]
 pub struct VirtqDescriptorFlags {
     /// This marks a buffer as continuing via the next field.
-    next: bool,
+    pub next: bool,
 
     /// This marks a buffer as device write-only (otherwise device read-only).
-    device_write: bool,
+    pub device_write: bool,
 
     /// This means the buffer contains a list of buffer descriptors.
-    indirect: bool,
+    pub indirect: bool,
 
     #[bits(13)]
     __padding: u16,
@@ -726,9 +771,9 @@ pub struct VirtqUsedRingFlags {
 #[repr(C)]
 pub struct VirtqUsedElem {
     /// Index of start of used descriptor chain.
-    id: u32,
+    pub id: u32,
 
     /// The number of bytes written into the device writable portion of the
     /// buffer described by the descriptor chain.
-    len: u32,
+    pub len: u32,
 }

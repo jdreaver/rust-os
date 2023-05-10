@@ -65,7 +65,7 @@ make test
     - Instead of structs for avail and used ring headers, make registers
       - Then, use static slices for avail and used rings as well
     - Ensure abstractions use volatile read/write
-  - Get RNG (Entropy) device working
+  - Rename avail -> driver and used -> device
   - Figure out PCI interrupts (MSI-X?)
   - Ensure it is crystal clear that memory allocator needs to be contiguous
 - `registers.rs` and macros

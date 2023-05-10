@@ -125,27 +125,44 @@ fn run_tests(
         {
             // RNG device only has a single virtq
             let queue_index = 0;
+            let buffer_size = 16;
 
-            let buf = memory::allocate_zeroed_buffer(frame_allocator, 512, 16)
+            let buf = memory::allocate_zeroed_buffer(frame_allocator, buffer_size, 16)
                 .expect("failed to allocate buffer for entropy virtq");
             let virtq = initialized_device.get_virtqueue_mut(queue_index).unwrap();
-            virtq.add_buffer(buf, 512);
+            let flags = virtio::VirtqDescriptorFlags::new().with_device_write(true);
+            virtq.add_buffer(buf, buffer_size as u32, flags);
 
             serial_println!("Added buffer to virtq: {:#x?}", virtq);
             serial_println!("Waiting for response...");
 
-            // Dummy loop to waste time to wait for response
-            let mut i = 0;
-            while virtq.used_ring_index() == 0 {
-                i += 1;
-                if i > 1_000_000_000 {
-                    panic!("timed out")
-                }
-            }
+            // Dummy loop to waste time to wait for response, but apparently it
+            // isn't needed? Neat.
+            //
+            // let mut i = 0;
+            // while virtq.used_ring_index() == 0 {
+            //     i += 1;
+            //     if i > 1_000 {
+            //         panic!("timed out")
+            //     }
+            // }
 
             let used_index = virtq.used_ring_index() - 1;
-            let used_entry = virtq.get_used_ring_entry(used_index);
-            serial_println!("Got used entry: {:#x?}", used_entry);
+            let (used_entry, descriptor) = virtq.get_used_ring_entry(used_index);
+            serial_println!("Got used entry: {:#x?}", (used_entry, descriptor));
+
+            // The used entry should be using the exact same buffer we just
+            // created, but let's pretend we didn't know that.
+            let buffer = unsafe {
+                core::slice::from_raw_parts(
+                    descriptor.addr as *const u8,
+                    // NOTE: Using the length from the used entry, not the buffer
+                    // length, b/c the RNG device might not have written the whole
+                    // thing!
+                    used_entry.len as usize,
+                )
+            };
+            serial_println!("RNG buffer: {:x?}", buffer);
         }
     });
 
