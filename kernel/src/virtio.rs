@@ -189,15 +189,11 @@ impl VirtIODeviceConfig {
             };
             config.queue_driver().write(avail_ring.physical_address);
 
-            let used_table_size = mem::size_of::<VirtqUsedRingHeader>()
-                + queue_size as usize * mem::size_of::<VirtqUsedElem>();
-            let used_address = memory::allocate_zeroed_buffer(
-                physical_allocator,
-                used_table_size,
-                VIRTQ_USED_ALIGN,
-            )
-            .expect("failed to allocate device ring buffer");
-            config.queue_device().write(used_address);
+            let used_ring = unsafe {
+                VirtqUsedRing::allocate(queue_size, physical_allocator)
+                    .expect("failed to allocate driver ring buffer")
+            };
+            config.queue_device().write(used_ring.physical_address);
 
             // Enable the queue
             config.queue_enable().write(1);
@@ -208,7 +204,7 @@ impl VirtIODeviceConfig {
                 notify_offset: config.queue_notify_off().read(),
                 descriptors,
                 avail_ring,
-                used_ring_address: used_address,
+                used_ring,
             });
         }
 
@@ -525,6 +521,27 @@ impl VirtIONotifyConfig {
         let offset = u64::from(queue_notify_offset) * u64::from(self.notify_off_multiplier);
         self.config_addr + offset
     }
+
+    /// 4.1.5.2 Available Buffer Notifications: When VIRTIO_F_NOTIFICATION_DATA
+    /// has not been negotiated, the driver sends an available buffer
+    /// notification to the device by writing the 16-bit virtqueue index of this
+    /// virtqueue to the Queue Notify address.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `queue_notify_offset` and `queue_index` are
+    /// valid.
+    unsafe fn notify_device(&self, queue_notify_offset: u16, queue_index: u16) {
+        // 4.1.5.2 Available Buffer Notifications: When
+        // VIRTIO_F_NOTIFICATION_DATA has not been negotiated, the driver sends
+        // an available buffer notification to the device by writing the 16-bit
+        // virtqueue index of this virtqueue to the Queue Notify address.
+        let notify_addr = self.queue_notify_address(queue_notify_offset);
+        let notify_ptr = notify_addr.as_u64() as *mut u16;
+        unsafe {
+            notify_ptr.write_volatile(queue_index);
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -559,9 +576,7 @@ pub struct VirtQueue {
 
     descriptors: VirtqDescriptorTable,
     avail_ring: VirtqAvailRing,
-
-    /// The physical address for the queue's used ring.
-    used_ring_address: u64,
+    used_ring: VirtqUsedRing,
 }
 
 impl VirtQueue {
@@ -571,39 +586,23 @@ impl VirtQueue {
             .descriptors
             .add_descriptor(buffer_addr, buffer_len, flags);
         self.avail_ring.add_entry(desc_index);
-        self.notify_device();
+        unsafe {
+            self.device_notify_config
+                .notify_device(self.notify_offset, self.index);
+        };
     }
 
     pub fn index(&self) -> u16 {
         self.index
     }
 
-    pub fn notify_device(&self) {
-        // 4.1.5.2 Available Buffer Notifications: When
-        // VIRTIO_F_NOTIFICATION_DATA has not been negotiated, the driver sends
-        // an available buffer notification to the device by writing the 16-bit
-        // virtqueue index of this virtqueue to the Queue Notify address.
-        let notify_addr = self
-            .device_notify_config
-            .queue_notify_address(self.notify_offset);
-        let notify_ptr = notify_addr.as_u64() as *mut u16;
-        unsafe {
-            notify_ptr.write_volatile(self.index);
-        }
-    }
-
     pub fn used_ring_index(&self) -> u16 {
-        let used_idx_addr = self.used_ring_address as usize + mem::size_of::<VirtqUsedRingFlags>();
-        unsafe { (used_idx_addr as *const u16).read_volatile() }
+        self.used_ring.idx.read()
     }
 
     pub fn get_used_ring_entry(&self, index: u16) -> (VirtqUsedElem, VirtqDescriptor) {
         // Load the used element
-        let used_addr = self.used_ring_address as usize
-            + mem::size_of::<VirtqUsedRingHeader>()
-            + (index as usize * mem::size_of::<VirtqUsedElem>());
-        let used_ptr = used_addr as *const VirtqUsedElem;
-        let used_elem = unsafe { used_ptr.read_volatile() };
+        let used_elem = self.used_ring.get_used_elem(index);
 
         // Load the associated descriptor
         let descriptor = self.descriptors.get_descriptor(used_elem.id as u16);
@@ -831,17 +830,35 @@ pub struct VirtqAvailRingFlags {
     __reserved: u16,
 }
 
-/// 2.7.8 The Virtqueue Used Ring
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct VirtqUsedRingHeader {
-    flags: VirtqUsedRingFlags,
+/// Wrapper around the virtq used (device -> drive) ring. See 2.7.8 The
+/// Virtqueue Used Ring.
+///
+/// The used ring is where the device returns buffers once it is done with them:
+/// it is only written to by the device, and read by the driver.
+///
+/// The struct in the spec is:
+///
+/// ```ignore
+/// struct virtq_used {
+///         le16 flags;
+///         le16 idx;
+///         struct virtq_used_elem ring[];
+///         le16 avail_event; /* Only if VIRTIO_F_EVENT_IDX */
+/// };
+/// ```
+pub struct VirtqUsedRing {
+    physical_address: u64,
 
-    /// idx field indicates where the driver would put the next descriptor entry
+    flags: RegisterRW<VirtqUsedRingFlags>,
+
+    /// idx field indicates where the device would put the next descriptor entry
     /// in the ring (modulo the queue size). This starts at 0, and increases.
-    idx: u16,
-    // struct virtq_used_elem ring[ /* Queue Size */];
-    // le16 avail_event; /* Only if VIRTIO_F_EVENT_IDX */
+    idx: RegisterRW<u16>,
+
+    ring: &'static mut [VirtqUsedElem],
+
+    /// Only if VIRTIO_F_EVENT_IDX
+    avail_event: RegisterRW<u16>,
 }
 
 #[bitfield(u16)]
@@ -863,4 +880,64 @@ pub struct VirtqUsedElem {
     /// The number of bytes written into the device writable portion of the
     /// buffer described by the descriptor chain.
     pub len: u32,
+}
+
+impl VirtqUsedRing {
+    unsafe fn allocate(
+        queue_size: u16,
+        physical_allocator: &impl Allocator,
+    ) -> Result<Self, AllocZeroedBufferError> {
+        let queue_size = queue_size as usize;
+
+        // Compute sizes before we do allocations.
+        let flags_offset = 0;
+        let idx_offset = mem::size_of::<VirtqUsedRingFlags>();
+        let ring_offset = idx_offset + mem::size_of::<u16>();
+        let ring_len = queue_size * mem::size_of::<VirtqUsedElem>();
+        let avail_event_offset = ring_offset + ring_len;
+        let struct_size = avail_event_offset + mem::size_of::<u16>();
+
+        // Check that this matches the spec. See 2.7 Split Virtqueues
+        assert_eq!(
+            struct_size,
+            6 + 8 * queue_size,
+            "VirtqUsedRing size doesn't match the spec"
+        );
+
+        let physical_address =
+            memory::allocate_zeroed_buffer(physical_allocator, struct_size, VIRTQ_USED_ALIGN)?;
+
+        let flags = RegisterRW::from_address(physical_address as usize + flags_offset);
+        let idx = RegisterRW::from_address(physical_address as usize + idx_offset);
+        let ring_address = physical_address as usize + ring_offset;
+        let ring = core::slice::from_raw_parts_mut(ring_address as *mut VirtqUsedElem, ring_len);
+        let avail_event = RegisterRW::from_address(physical_address as usize + avail_event_offset);
+
+        Ok(Self {
+            physical_address,
+            flags,
+            idx,
+            ring,
+            avail_event,
+        })
+    }
+
+    fn get_used_elem(&self, idx: u16) -> VirtqUsedElem {
+        *self
+            .ring
+            .get(idx as usize)
+            .expect("virt queue used elem idx out of bounds")
+    }
+}
+
+impl fmt::Debug for VirtqUsedRing {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VirtqUsedRing")
+            .field("physical_address", &self.physical_address)
+            .field("flags", &self.flags)
+            .field("idx", &self.idx)
+            .field("ring", &format_args!("&[{}]", self.ring.len()))
+            .field("avail_event", &self.avail_event)
+            .finish()
+    }
 }

@@ -61,11 +61,6 @@ make test
     - I like the idea of iterating over them and incrementally adding structure
 - In `vesa_framebuffer`, try to initialize a `mut` static slice for the framebuffer (making sure to have padding due to pitch)
 - VirtIO
-  - Make better abstractions for VirtQueue
-    - Make descriptor table a static slice
-    - Instead of structs for avail and used ring headers, make registers
-      - Then, use static slices for avail and used rings as well
-    - Ensure abstractions use volatile read/write
   - Rename avail -> driver and used -> device
   - Figure out PCI interrupts (MSI-X?)
   - Ensure it is crystal clear that memory allocator needs to be contiguous
@@ -86,6 +81,7 @@ make test
       registers in the same struct generated through one macro, except it makes
       having a single `from_address` function and perhaps a `Debug`
       implementation nicer.
+    - Find a way to use this macro for the virtq stuff, where the rings have dynamic size and then a struct member after that.
 - Make `LockedNaiveFreeMemoryBlockAllocator` a global static instead of passing
   it around. The tricky part is all the things that want `&mut impl FrameAllocator`
 - Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
