@@ -52,6 +52,7 @@ make test
 
 ## TODO
 
+- Move creating the `OffsetPageTable` from `memory.rs` to `boot_info.rs`
 - Make PCI capabilities list a first class thing
   - Don't print them when debug printing the type 0 header!
   - Take inspiration from <https://docs.rs/pci-driver/latest/pci_driver/config/caps/index.html>
@@ -78,6 +79,8 @@ make test
       registers in the same struct generated through one macro, except it makes
       having a single `from_address` function and perhaps a `Debug`
       implementation nicer.
+- Make `LockedNaiveFreeMemoryBlockAllocator` a global static instead of passing
+  it around. The tricky part is all the things that want `&mut impl FrameAllocator`
 - Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
 - Filesystem support
   - Now that I have PCI working, attach a drive via QEMU and see what is looks like under PCI

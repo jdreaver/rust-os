@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![feature(allocator_api)]
 
 extern crate alloc;
 
@@ -27,9 +28,9 @@ extern "C" fn _start() -> ! {
     interrupts::init_idt();
 
     let mut mapper = unsafe { memory::init(boot_info_data.higher_half_direct_map_offset) };
-    let mut frame_allocator = boot_info::allocator_from_limine_memory_map();
-    heap::init(&mut mapper, &mut frame_allocator)
-        .expect("failed to initialize allocator");
+    let frame_allocator = boot_info::allocator_from_limine_memory_map();
+    let mut frame_allocator = memory::LockedNaiveFreeMemoryBlockAllocator::new(frame_allocator);
+    heap::init(&mut mapper, &mut frame_allocator).expect("failed to initialize allocator");
 
     run_tests(boot_info_data, &mut mapper, &mut frame_allocator);
 
@@ -51,7 +52,7 @@ fn hlt_loop() -> ! {
 fn run_tests(
     boot_info_data: &boot_info::BootInfo,
     mapper: &mut OffsetPageTable,
-    frame_allocator: &mut memory::NaiveFreeMemoryBlockAllocator,
+    frame_allocator: &mut memory::LockedNaiveFreeMemoryBlockAllocator,
 ) {
     serial_println!("limine boot info:\n{:#x?}", boot_info_data);
     boot_info::print_limine_memory_map();
@@ -145,9 +146,9 @@ fn run_tests(
     use x86_64::structures::paging::{Size2MiB, Size4KiB};
 
     let alloc_4kib =
-        <memory::NaiveFreeMemoryBlockAllocator as FrameAllocator<Size4KiB>>::allocate_frame;
+        <memory::LockedNaiveFreeMemoryBlockAllocator as FrameAllocator<Size4KiB>>::allocate_frame;
     let alloc_2mib =
-        <memory::NaiveFreeMemoryBlockAllocator as FrameAllocator<Size2MiB>>::allocate_frame;
+        <memory::LockedNaiveFreeMemoryBlockAllocator as FrameAllocator<Size2MiB>>::allocate_frame;
 
     serial_println!("next 4KiB page: {:?}", alloc_4kib(frame_allocator));
     serial_println!("next 2MiB page: {:?}", alloc_2mib(frame_allocator));
@@ -178,6 +179,10 @@ fn run_tests(
     }
     serial_println!("vec at {:p}: {:?}", vec.as_slice(), vec);
     assert_eq!(vec.into_iter().sum::<u32>(), 45);
+
+    // Create a Box value with the `Allocator` API
+    let my_box = Box::new_in(42, &*frame_allocator);
+    serial_println!("Allocator alloc'ed my_box {:?} at {:p}", my_box, my_box);
 
     // Trigger a page fault, which should trigger a double fault if we don't
     // have a page fault handler.

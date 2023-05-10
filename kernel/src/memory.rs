@@ -1,3 +1,7 @@
+use core::alloc::{AllocError, Allocator, Layout};
+use core::ptr::NonNull;
+
+use spin::Mutex;
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, PageSize, PageTable, PhysFrame};
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -149,5 +153,57 @@ unsafe impl<S: PageSize> FrameAllocator<S> for NaiveFreeMemoryBlockAllocator {
         let frame_address = self.allocate_contiguous_memory(page_size, Some(page_size))?;
         let frame: PhysFrame<S> = PhysFrame::containing_address(frame_address);
         Some(frame)
+    }
+}
+
+/// `NaiveFreeMemoryBlockAllocator` behind a `Mutex`
+pub struct LockedNaiveFreeMemoryBlockAllocator {
+    mutex: Mutex<NaiveFreeMemoryBlockAllocator>,
+}
+
+impl LockedNaiveFreeMemoryBlockAllocator {
+    pub fn new(alloc: NaiveFreeMemoryBlockAllocator) -> Self {
+        Self {
+            mutex: Mutex::new(alloc),
+        }
+    }
+}
+
+/// We implement the `Allocator` trait for `LockedNaiveFreeMemoryBlockAllocator`
+/// so that we can use it for custom allocations for physically contiguous
+/// memory.
+///
+/// TODO: In the future, we should make this a global static instead of needing
+/// to pass it around. The problem is, `Allocator` is fine with non-mutable
+/// references, but `FrameAllocator` requires a mutable reference, and we want
+/// to use the same allocator for both.
+unsafe impl Allocator for LockedNaiveFreeMemoryBlockAllocator {
+    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+        let size = layout.size() as u64;
+        let alignment = layout.align() as u64;
+        let start_address = {
+            self.mutex
+                .lock()
+                .allocate_contiguous_memory(size, Some(alignment))
+                .ok_or(AllocError)?
+        };
+
+        let slice = unsafe {
+            core::slice::from_raw_parts_mut(start_address.as_u64() as *mut u8, layout.size())
+        };
+
+        let ptr: NonNull<[u8]> = unsafe { NonNull::new_unchecked(slice) };
+
+        Ok(ptr)
+    }
+
+    unsafe fn deallocate(&self, _ptr: NonNull<u8>, _layout: Layout) {
+        // NaiveFreeMemoryBlockAllocator doesn't support deallocation.
+    }
+}
+
+unsafe impl<S: PageSize> FrameAllocator<S> for LockedNaiveFreeMemoryBlockAllocator {
+    fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
+        self.mutex.lock().allocate_frame()
     }
 }

@@ -13,7 +13,7 @@ linked_list_allocator = "0.9"
 paste = "1.0" # To be able to create new identifiers in macros
 pc-keyboard = "0.5"
 pic8259 = "0.10"
-spin = "0.5"
+spin = "0.9"
 uart_16550 = "0.2"
 uefi = "0.20"
 vesa_framebuffer = { path = "../crates/vesa_framebuffer" }
