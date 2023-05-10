@@ -210,20 +210,20 @@ unsafe impl<S: PageSize> FrameAllocator<S> for LockedNaiveFreeMemoryBlockAllocat
 
 /// Error type used in `allocate_zeroed_buffer`.
 #[derive(Debug, Clone)]
-pub(crate) enum AllocZeroedBufferError {
+pub enum AllocZeroedBufferError {
     LayoutError(LayoutError),
     AllocError(AllocError),
 }
 
 /// Useful utility wrapper around `Allocator.allocate_zeroed`.
-pub(crate) fn allocate_zeroed_buffer(
-    physical_allocator: &impl Allocator,
+pub fn allocate_zeroed_buffer(
+    allocator: &impl Allocator,
     size: usize,
     alignment: usize,
 ) -> Result<u64, AllocZeroedBufferError> {
     let layout =
         Layout::from_size_align(size, alignment).map_err(AllocZeroedBufferError::LayoutError)?;
-    let address = physical_allocator
+    let address = allocator
         .allocate_zeroed(layout)
         .map_err(AllocZeroedBufferError::AllocError)?;
     Ok(address.addr().get() as u64)

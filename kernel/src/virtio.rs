@@ -38,7 +38,7 @@ impl VirtIODeviceConfig {
         frame_allocator: &mut impl FrameAllocator<Size4KiB>,
     ) -> Option<Self> {
         // Check that this is a VirtIO device.
-        let vendor_id = pci_config.device_id_registers().vendor_id().read();
+        let vendor_id = pci_config.device_id().registers().vendor_id().read();
         if vendor_id != 0x1af4 {
             return None;
         };
@@ -205,12 +205,17 @@ impl VirtIODeviceConfig {
             .expect("failed to allocate device ring buffer");
             config.queue_device().write(used_address);
 
+            // Enable the queue
+            config.queue_enable().write(1);
+
             virtqueues.push(VirtQueue {
                 index: i,
                 size: queue_size,
                 notify_offset: config.queue_notify_off().read(),
                 desc_table_address: desc_address,
+                next_desc_index: 0,
                 avail_ring_address: avail_address,
+                next_avail_index: 0,
                 used_ring_address: used_address,
             });
         }
@@ -521,6 +526,16 @@ pub struct VirtIOInitializedDevice {
     virtqueues: Vec<VirtQueue>,
 }
 
+impl VirtIOInitializedDevice {
+    pub fn config(&self) -> &VirtIODeviceConfig {
+        &self.config
+    }
+
+    pub fn get_virtqueue_mut(&mut self, index: u16) -> Option<&mut VirtQueue> {
+        self.virtqueues.get_mut(index as usize)
+    }
+}
+
 /// Wrapper around allocated virt queues for a an initialized VirtIO device.
 #[derive(Debug, Clone, Copy)]
 pub struct VirtQueue {
@@ -537,11 +552,87 @@ pub struct VirtQueue {
     /// The physical address for the queue's descriptor table.
     desc_table_address: u64,
 
+    /// Index in to the next open descriptor slot.
+    next_desc_index: u16,
+
     /// The physical address for the queue's available ring.
     avail_ring_address: u64,
 
+    /// Next open slot in the available ring.
+    next_avail_index: u16,
+
     /// The physical address for the queue's used ring.
     used_ring_address: u64,
+}
+
+impl VirtQueue {
+    /// See "2.7.13 Supplying Buffers to The Device"
+    pub fn add_buffer(&mut self, buffer_addr: u64, buffer_len: u32) {
+        let desc_index = self.add_descriptor(buffer_addr, buffer_len);
+        self.add_avail_ring_entry(desc_index);
+    }
+
+    fn add_descriptor(&mut self, buffer_addr: u64, buffer_len: u32) -> u16 {
+        // 2.7.13.1 Placing Buffers Into The Descriptor Table
+        let desc_index = self.next_desc_index;
+        self.next_desc_index = (self.next_desc_index + 1) % self.size;
+
+        let descriptor = VirtqDescriptor {
+            addr: buffer_addr,
+            len: buffer_len,
+            flags: VirtqDescriptorFlags::new(),
+            next: 0,
+        };
+
+        // TODO: Very janky. Make an abstraction here.
+        let descriptor_addr = self.desc_table_address as usize
+            + (desc_index as usize * mem::size_of::<VirtqDescriptor>());
+        let desciptor_ptr = descriptor_addr as *mut VirtqDescriptor;
+        unsafe {
+            desciptor_ptr.write_volatile(descriptor);
+        }
+
+        desc_index
+    }
+
+    fn add_avail_ring_entry(&mut self, desc_index: u16) {
+        // 2.7.13.2 Updating The Available Ring
+        let avail_index = self.next_avail_index;
+        self.next_avail_index = (self.next_avail_index + 1) % self.size;
+
+        let avail_addr = self.avail_ring_address as usize
+            + mem::size_of::<VirtqAvailRingHeader>()
+            + (avail_index as usize * mem::size_of::<u16>());
+        let avail_ptr = avail_addr as *mut u16;
+        unsafe {
+            avail_ptr.write_volatile(desc_index);
+        }
+
+        // 2.7.13.3 Updating idx
+        let avail_idx_addr =
+            self.avail_ring_address as usize + mem::size_of::<VirtqAvailRingFlags>();
+        let avail_idx_ptr = avail_idx_addr as *mut u16;
+        unsafe {
+            avail_idx_ptr.write_volatile(avail_index);
+        }
+    }
+
+    pub fn index(&self) -> u16 {
+        self.index
+    }
+
+    pub fn used_ring_index(&self) -> u16 {
+        let used_idx_addr = self.used_ring_address as usize + mem::size_of::<VirtqUsedRingFlags>();
+        unsafe { (used_idx_addr as *const u16).read_volatile() }
+    }
+
+    pub fn get_used_ring_entry(&self, index: u16) -> VirtqUsedElem {
+        let used_addr = self.used_ring_address as usize
+            + mem::size_of::<VirtqUsedRingHeader>()
+            + (index as usize * mem::size_of::<VirtqUsedElem>());
+        let used_ptr = used_addr as *const VirtqUsedElem;
+        unsafe { used_ptr.read_volatile() }
+    }
 }
 
 // See 2.7 Split Virtqueues for alignment

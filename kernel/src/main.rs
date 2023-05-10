@@ -115,8 +115,38 @@ fn run_tests(
         let Some(virtio_device) = virtio::VirtIODeviceConfig::from_pci_config(device, mapper, frame_allocator) else { return; };
         serial_println!("Found VirtIO device, initializing");
 
-        let initialized_device = virtio_device.initialize(frame_allocator);
-        serial_println!("VirtIO device initialized: {:#x?}", initialized_device,);
+        let mut initialized_device = virtio_device.initialize(frame_allocator);
+        serial_println!("VirtIO device initialized: {:#x?}", initialized_device);
+
+        // Test out the RNG device
+        let device_id = device.device_id();
+        if device_id.known_vendor_id() == "virtio"
+            && device_id.known_device_id() == "entropy source"
+        {
+            // RNG device only has a single virtq
+            let queue_index = 0;
+
+            let buf = memory::allocate_zeroed_buffer(frame_allocator, 512, 16)
+                .expect("failed to allocate buffer for entropy virtq");
+            let virtq = initialized_device.get_virtqueue_mut(queue_index).unwrap();
+            virtq.add_buffer(buf, 512);
+
+            serial_println!("Added buffer to virtq: {:#x?}", virtq);
+            serial_println!("Waiting for response...");
+
+            // Dummy loop to waste time to wait for response
+            let mut i = 0;
+            while virtq.used_ring_index() == 0 {
+                i += 1;
+                if i > 1_000_000_000 {
+                    panic!("timed out")
+                }
+            }
+
+            let used_index = virtq.used_ring_index() - 1;
+            let used_entry = virtq.get_used_ring_entry(used_index);
+            serial_println!("Got used entry: {:#x?}", used_entry);
+        }
     });
 
     // Print out some test addresses

@@ -138,8 +138,8 @@ impl PCIDeviceConfig {
         })
     }
 
-    pub fn device_id_registers(self) -> PCIConfigDeviceIDRegisters {
-        self.device_id.registers
+    pub fn device_id(self) -> PCIConfigDeviceID {
+        self.device_id
     }
 
     pub fn common_registers(self) -> PCIDeviceCommonConfigRegisters {
@@ -161,7 +161,7 @@ impl PCIDeviceConfig {
 }
 
 #[derive(Clone, Copy)]
-struct PCIConfigDeviceID {
+pub struct PCIConfigDeviceID {
     registers: PCIConfigDeviceIDRegisters,
 }
 
@@ -171,14 +171,27 @@ impl PCIConfigDeviceID {
         let registers = PCIConfigDeviceIDRegisters::from_address(address);
         Self { registers }
     }
+
+    pub fn registers(&self) -> PCIConfigDeviceIDRegisters {
+        self.registers
+    }
+
+    pub fn known_vendor_id(&self) -> &'static str {
+        let vendor_id = self.registers.vendor_id().read();
+        lookup_vendor_id(vendor_id)
+    }
+
+    pub fn known_device_id(&self) -> &'static str {
+        let vendor_id = self.registers.vendor_id().read();
+        let device_id = self.registers.device_id().read();
+        lookup_known_device_id(vendor_id, device_id)
+    }
 }
 
 impl fmt::Debug for PCIConfigDeviceID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let vendor_id = self.registers.vendor_id().read();
-        let device_id = self.registers.device_id().read();
-        let vendor = lookup_vendor_id(vendor_id);
-        let device = lookup_known_device_id(vendor_id, device_id);
+        let vendor = self.known_vendor_id();
+        let device = self.known_device_id();
 
         let known_device_type = device_type(
             self.registers.class().read(),

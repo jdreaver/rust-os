@@ -60,10 +60,14 @@ make test
   - Take inspiration from <https://docs.rs/pci-driver/latest/pci_driver/config/caps/index.html>
     - I like the idea of iterating over them and incrementally adding structure
 - VirtIO
+  - Make better abstractions for VirtQueue
+    - Make descriptor table a static slice
+    - Instead of structs for avail and used ring headers, make registers
+      - Then, use static slices for avail and used rings as well
+    - Ensure abstractions use volatile read/write
   - Get RNG (Entropy) device working
   - Figure out PCI interrupts (MSI-X?)
-  - Ensure memory we map for VirtIO virtqueues is contiguous! I think we accidentally allocate contiguous memory, but we need to ensure our memory allocator has a specific API for it.
-    - <https://not-matthias.github.io/posts/rust-kernel-adventures/>
+  - Ensure it is crystal clear that memory allocator needs to be contiguous
 - `registers.rs` and macros
   - Consider moving `registers.rs` stuff into dedicated crate with unit tests
   - Also document `registers.rs` stuff
