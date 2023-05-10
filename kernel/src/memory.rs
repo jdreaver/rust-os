@@ -1,4 +1,4 @@
-use core::alloc::{AllocError, Allocator, Layout};
+use core::alloc::{AllocError, Allocator, Layout, LayoutError};
 use core::ptr::NonNull;
 
 use spin::Mutex;
@@ -206,4 +206,25 @@ unsafe impl<S: PageSize> FrameAllocator<S> for LockedNaiveFreeMemoryBlockAllocat
     fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
         self.mutex.lock().allocate_frame()
     }
+}
+
+/// Error type used in `allocate_zeroed_buffer`.
+#[derive(Debug, Clone)]
+pub(crate) enum AllocZeroedBufferError {
+    LayoutError(LayoutError),
+    AllocError(AllocError),
+}
+
+/// Useful utility wrapper around `Allocator.allocate_zeroed`.
+pub(crate) fn allocate_zeroed_buffer(
+    physical_allocator: &impl Allocator,
+    size: usize,
+    alignment: usize,
+) -> Result<u64, AllocZeroedBufferError> {
+    let layout =
+        Layout::from_size_align(size, alignment).map_err(AllocZeroedBufferError::LayoutError)?;
+    let address = physical_allocator
+        .allocate_zeroed(layout)
+        .map_err(AllocZeroedBufferError::AllocError)?;
+    Ok(address.addr().get() as u64)
 }

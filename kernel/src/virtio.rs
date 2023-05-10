@@ -1,4 +1,5 @@
-use core::alloc::{Allocator, Layout};
+use alloc::vec::Vec;
+use core::alloc::Allocator;
 use core::fmt;
 use core::mem;
 
@@ -11,9 +12,9 @@ use crate::pci::{
     self, BARAddress, PCIDeviceCapabilityHeader, PCIDeviceConfig, PCIDeviceConfigType0,
     PCIDeviceConfigTypes,
 };
-use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW};
 use crate::serial_println;
+use crate::{memory, register_struct};
 
 /// Holds the configuration for a VirtIO device.
 #[derive(Debug, Clone, Copy)]
@@ -116,7 +117,7 @@ impl VirtIODeviceConfig {
 
     /// See "3 General Initialization And Device Operation" and "4.1.5
     /// PCI-specific Initialization And Device Operation"
-    pub fn initialize(self, physical_allocator: &impl Allocator) {
+    pub fn initialize(self, physical_allocator: &impl Allocator) -> VirtIOInitializedDevice {
         let config = self.common_virtio_config;
 
         // Reset the VirtIO device by writing 0 to the status register (see
@@ -168,40 +169,50 @@ impl VirtIODeviceConfig {
         assert!(status.features_ok(), "failed to set FEATURES_OK status bit");
 
         // Initialize virtqueues
-        for i in 0..config.num_queues().read() {
+        let num_queues = config.num_queues().read();
+        let mut virtqueues = Vec::with_capacity(num_queues as usize);
+        for i in 0..num_queues {
             config.queue_select().write(i);
 
-            let queue_size = config.queue_size().read() as usize;
+            let queue_size = config.queue_size().read();
 
-            let desc_table_size = queue_size * mem::size_of::<VirtqDescriptor>();
-            let layout = Layout::from_size_align(desc_table_size, VIRTQ_DESC_ALIGN)
-                .expect("failed to create layout for descriptor table");
-            let desc_address = physical_allocator
-                .allocate_zeroed(layout)
-                .expect("failed to allocate descriptor table");
-            config.queue_desc().write(desc_address.addr().get() as u64);
+            let desc_table_size = queue_size as usize * mem::size_of::<VirtqDescriptor>();
+            let desc_address = memory::allocate_zeroed_buffer(
+                physical_allocator,
+                desc_table_size,
+                VIRTQ_DESC_ALIGN,
+            )
+            .expect("failed to allocate descriptor table");
+            config.queue_desc().write(desc_address);
 
-            let avail_table_size =
-                mem::size_of::<VirtqAvailRingHeader>() + queue_size * mem::size_of::<u16>();
-            let layout = Layout::from_size_align(avail_table_size, VIRTQ_AVAIL_ALIGN)
-                .expect("failed to create layout for available table");
-            let avail_address = physical_allocator
-                .allocate_zeroed(layout)
-                .expect("failed to allocate driver ring buffer");
-            config
-                .queue_driver()
-                .write(avail_address.addr().get() as u64);
+            let avail_table_size = mem::size_of::<VirtqAvailRingHeader>()
+                + queue_size as usize * mem::size_of::<u16>();
+            let avail_address = memory::allocate_zeroed_buffer(
+                physical_allocator,
+                avail_table_size,
+                VIRTQ_AVAIL_ALIGN,
+            )
+            .expect("failed to allocate driver ring buffer");
+            config.queue_driver().write(avail_address);
 
-            let used_table_size =
-                mem::size_of::<VirtqUsedRingHeader>() + queue_size * mem::size_of::<VirtqUsedElem>();
-            let layout = Layout::from_size_align(used_table_size, VIRTQ_USED_ALIGN)
-                .expect("failed to create layout for available table");
-            let used_address = physical_allocator
-                .allocate_zeroed(layout)
-                .expect("failed to allocate device ring buffer");
-            config
-                .queue_device()
-                .write(used_address.addr().get() as u64);
+            let used_table_size = mem::size_of::<VirtqUsedRingHeader>()
+                + queue_size as usize * mem::size_of::<VirtqUsedElem>();
+            let used_address = memory::allocate_zeroed_buffer(
+                physical_allocator,
+                used_table_size,
+                VIRTQ_USED_ALIGN,
+            )
+            .expect("failed to allocate device ring buffer");
+            config.queue_device().write(used_address);
+
+            virtqueues.push(VirtQueue {
+                index: i,
+                size: queue_size,
+                notify_offset: config.queue_notify_off().read(),
+                desc_table_address: desc_address,
+                avail_ring_address: avail_address,
+                used_ring_address: used_address,
+            });
         }
 
         // TODO: Device-specific setup
@@ -210,6 +221,11 @@ impl VirtIODeviceConfig {
         // finished configuring the device.
         status.set_driver_ok(true);
         config.device_status().write(status);
+
+        VirtIOInitializedDevice {
+            config: self,
+            virtqueues,
+        }
     }
 
     pub fn common_virtio_config(&self) -> VirtIOPCICommonConfigRegisters {
@@ -497,6 +513,35 @@ pub struct VirtIOISRStatus {
 pub struct VirtIONotifyConfig {
     cap_offset: u32,
     notify_off_multiplier: u32,
+}
+
+#[derive(Debug)]
+pub struct VirtIOInitializedDevice {
+    config: VirtIODeviceConfig,
+    virtqueues: Vec<VirtQueue>,
+}
+
+/// Wrapper around allocated virt queues for a an initialized VirtIO device.
+#[derive(Debug, Clone, Copy)]
+pub struct VirtQueue {
+    /// The queue's index in the device's virtqueue array.
+    index: u16,
+
+    /// The queue's size, in number of descriptors.
+    size: u16,
+
+    /// The queue's notification offset. See "4.1.4.4 Notification structure
+    /// layout".
+    notify_offset: u16,
+
+    /// The physical address for the queue's descriptor table.
+    desc_table_address: u64,
+
+    /// The physical address for the queue's available ring.
+    avail_ring_address: u64,
+
+    /// The physical address for the queue's used ring.
+    used_ring_address: u64,
 }
 
 // See 2.7 Split Virtqueues for alignment

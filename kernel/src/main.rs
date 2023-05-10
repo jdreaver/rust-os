@@ -113,13 +113,10 @@ fn run_tests(
     // Find VirtIO devices
     pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
         let Some(virtio_device) = virtio::VirtIODeviceConfig::from_pci_config(device, mapper, frame_allocator) else { return; };
-        serial_println!("Found VirtIO device: {:#x?}", virtio_device);
+        serial_println!("Found VirtIO device, initializing");
 
-        virtio_device.initialize(frame_allocator);
-        serial_println!(
-            "VirtIO device initialized: {:#x?}",
-            virtio_device.common_virtio_config()
-        );
+        let initialized_device = virtio_device.initialize(frame_allocator);
+        serial_println!("VirtIO device initialized: {:#x?}", initialized_device,);
     });
 
     // Print out some test addresses

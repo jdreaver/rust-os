@@ -54,6 +54,7 @@ make test
 
 - Move creating the `OffsetPageTable` from `memory.rs` to `boot_info.rs`
 - Split up `pci.rs` and `virtio.rs`. They are too large.
+  - Don't make everything `pub`. Use private stuff or `pub(crate)` judiciously.
 - Make PCI capabilities list a first class thing
   - Don't print them when debug printing the type 0 header!
   - Take inspiration from <https://docs.rs/pci-driver/latest/pci_driver/config/caps/index.html>
