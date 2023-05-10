@@ -1,3 +1,5 @@
+use core::fmt;
+
 use bitfield_struct::bitfield;
 use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::{FrameAllocator, Mapper, PageTableFlags, PhysFrame, Size4KiB};
@@ -171,12 +173,22 @@ impl VirtIODevice {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct VirtIOPCICapabilityHeader {
     /// The body of the PCID device for this VirtIO device.
     device_config_body: PCIDeviceConfigType0,
 
     registers: VirtIOPCICapabilityHeaderRegisters,
+}
+
+impl fmt::Debug for VirtIOPCICapabilityHeader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VirtIOPCICapabilityHeader")
+            .field("bar_address", &self.bar_address())
+            .field("config_type", &self.config_type())
+            .field("registers", &self.registers)
+            .finish_non_exhaustive()
+    }
 }
 
 impl VirtIOPCICapabilityHeader {

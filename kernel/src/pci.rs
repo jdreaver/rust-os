@@ -602,7 +602,7 @@ impl fmt::Debug for PCIDeviceConfigType0Capabilities {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum BARAddress {
     /// 32-bit BAR address. Uses a single BAR register.
     Mem32Bit { address: u32, prefetchable: bool },
