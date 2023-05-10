@@ -177,14 +177,11 @@ impl VirtIODeviceConfig {
 
             let queue_size = config.queue_size().read();
 
-            let desc_table_size = queue_size as usize * mem::size_of::<VirtqDescriptor>();
-            let desc_address = memory::allocate_zeroed_buffer(
-                physical_allocator,
-                desc_table_size,
-                VIRTQ_DESC_ALIGN,
-            )
-            .expect("failed to allocate descriptor table");
-            config.queue_desc().write(desc_address);
+            let descriptors = unsafe {
+                VirtqDescriptorTable::allocate(queue_size, physical_allocator)
+                    .expect("failed to allocate driver ring buffer")
+            };
+            config.queue_desc().write(descriptors.physical_address);
 
             let avail_ring = unsafe {
                 VirtqAvailRing::allocate(queue_size, physical_allocator)
@@ -207,11 +204,9 @@ impl VirtIODeviceConfig {
 
             virtqueues.push(VirtQueue {
                 index: i,
-                size: queue_size,
                 device_notify_config: self.notify_config,
                 notify_offset: config.queue_notify_off().read(),
-                desc_table_address: desc_address,
-                next_desc_index: 0,
+                descriptors,
                 avail_ring,
                 used_ring_address: used_address,
             });
@@ -554,9 +549,6 @@ pub struct VirtQueue {
     /// The queue's index in the device's virtqueue array.
     index: u16,
 
-    /// The queue's size, in number of descriptors.
-    size: u16,
-
     /// Device's notification config, inlined here to compute the notification
     /// address. See "4.1.4.4 Notification structure layout".
     device_notify_config: VirtIONotifyConfig,
@@ -565,12 +557,7 @@ pub struct VirtQueue {
     /// layout".
     notify_offset: u16,
 
-    /// The physical address for the queue's descriptor table.
-    desc_table_address: u64,
-
-    /// Index in to the next open descriptor slot.
-    next_desc_index: u16,
-
+    descriptors: VirtqDescriptorTable,
     avail_ring: VirtqAvailRing,
 
     /// The physical address for the queue's used ring.
@@ -580,37 +567,11 @@ pub struct VirtQueue {
 impl VirtQueue {
     /// See "2.7.13 Supplying Buffers to The Device"
     pub fn add_buffer(&mut self, buffer_addr: u64, buffer_len: u32, flags: VirtqDescriptorFlags) {
-        let desc_index = self.add_descriptor(buffer_addr, buffer_len, flags);
+        let desc_index = self
+            .descriptors
+            .add_descriptor(buffer_addr, buffer_len, flags);
         self.avail_ring.add_entry(desc_index);
         self.notify_device();
-    }
-
-    fn add_descriptor(
-        &mut self,
-        buffer_addr: u64,
-        buffer_len: u32,
-        flags: VirtqDescriptorFlags,
-    ) -> u16 {
-        // 2.7.13.1 Placing Buffers Into The Descriptor Table
-        let desc_index = self.next_desc_index;
-        self.next_desc_index = (self.next_desc_index + 1) % self.size;
-
-        let descriptor = VirtqDescriptor {
-            addr: buffer_addr,
-            len: buffer_len,
-            flags,
-            next: 0,
-        };
-
-        // TODO: Very janky. Make an abstraction here.
-        let descriptor_addr = self.desc_table_address as usize
-            + (desc_index as usize * mem::size_of::<VirtqDescriptor>());
-        let desciptor_ptr = descriptor_addr as *mut VirtqDescriptor;
-        unsafe {
-            desciptor_ptr.write_volatile(descriptor);
-        }
-
-        desc_index
     }
 
     pub fn index(&self) -> u16 {
@@ -645,10 +606,7 @@ impl VirtQueue {
         let used_elem = unsafe { used_ptr.read_volatile() };
 
         // Load the associated descriptor
-        let descriptor_addr = self.desc_table_address as usize
-            + (used_elem.id as usize * mem::size_of::<VirtqDescriptor>());
-        let desciptor_ptr = descriptor_addr as *mut VirtqDescriptor;
-        let descriptor = unsafe { desciptor_ptr.read_volatile() };
+        let descriptor = self.descriptors.get_descriptor(used_elem.id as u16);
 
         (used_elem, descriptor)
     }
@@ -660,17 +618,97 @@ const VIRTQ_AVAIL_ALIGN: usize = 2;
 const VIRTQ_USED_ALIGN: usize = 4;
 
 /// See 2.7.5 The Virtqueue Descriptor Table
+pub struct VirtqDescriptorTable {
+    /// The physical address for the queue's descriptor table.
+    physical_address: u64,
+
+    /// Index into the next open descriptor slot.
+    next_index: u16,
+
+    /// Array of descriptors.
+    descriptors: &'static mut [VirtqDescriptor],
+}
+
+impl VirtqDescriptorTable {
+    unsafe fn allocate(
+        queue_size: u16,
+        physical_allocator: &impl Allocator,
+    ) -> Result<Self, AllocZeroedBufferError> {
+        let queue_size = queue_size as usize;
+
+        let mem_size = mem::size_of::<VirtqDescriptor>() * queue_size;
+
+        // Check that this matches the spec. See 2.7 Split Virtqueues
+        assert_eq!(
+            mem_size,
+            16 * queue_size,
+            "Descriptor table size doesn't match the spec"
+        );
+
+        let physical_address =
+            memory::allocate_zeroed_buffer(physical_allocator, mem_size, VIRTQ_DESC_ALIGN)?;
+
+        let descriptors =
+            core::slice::from_raw_parts_mut(physical_address as *mut VirtqDescriptor, mem_size);
+
+        Ok(Self {
+            physical_address,
+            next_index: 0,
+            descriptors,
+        })
+    }
+
+    fn add_descriptor(
+        &mut self,
+        buffer_addr: u64,
+        buffer_len: u32,
+        flags: VirtqDescriptorFlags,
+    ) -> u16 {
+        // 2.7.13.1 Placing Buffers Into The Descriptor Table
+        let desc_index = self.next_index;
+        self.next_index = (self.next_index + 1) % self.descriptors.len() as u16;
+
+        let descriptor = VirtqDescriptor {
+            addr: buffer_addr,
+            len: buffer_len,
+            flags,
+            next: 0,
+        };
+
+        self.descriptors[desc_index as usize] = descriptor;
+
+        desc_index
+    }
+
+    fn get_descriptor(&self, index: u16) -> VirtqDescriptor {
+        *self
+            .descriptors
+            .get(index as usize)
+            .expect("Invalid descriptor index")
+    }
+}
+
+impl fmt::Debug for VirtqDescriptorTable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VirtqDescriptorTable")
+            .field("physical_address", &self.physical_address)
+            .field("next_index", &self.next_index)
+            .field(
+                "descriptors",
+                &format_args!("&[{}]", self.descriptors.len()),
+            )
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct VirtqDescriptor {
     /// Physical address for the buffer.
     pub addr: u64,
-
     /// Length of the buffer, in bytes.
     pub len: u32,
-
     pub flags: VirtqDescriptorFlags,
-
     /// Next field if flags & NEXT
     pub next: u16,
 }
@@ -737,7 +775,7 @@ impl VirtqAvailRing {
         let used_event_offset = ring_offset + ring_len;
         let struct_size = used_event_offset + mem::size_of::<u16>();
 
-        // Check that this matches the spec
+        // Check that this matches the spec. See 2.7 Split Virtqueues
         assert_eq!(
             struct_size,
             6 + 2 * queue_size,
