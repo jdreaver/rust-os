@@ -114,7 +114,8 @@ impl VirtIODeviceConfig {
         })
     }
 
-    /// See "3 General Initialization And Device Operation"
+    /// See "3 General Initialization And Device Operation" and "4.1.5
+    /// PCI-specific Initialization And Device Operation"
     pub fn initialize(self, physical_allocator: &impl Allocator) {
         let config = self.common_virtio_config;
 
@@ -173,12 +174,34 @@ impl VirtIODeviceConfig {
             let queue_size = config.queue_size().read() as usize;
 
             let desc_table_size = queue_size * mem::size_of::<VirtqDescriptor>();
-            let layout = Layout::from_size_align(
-                desc_table_size,
-                VIRTQ_DESC_ALIGN,
-            ).expect("failed to create layout for descriptor table");
-            let desc_address = physical_allocator.allocate_zeroed(layout).expect("failed to allocate descriptor table");
+            let layout = Layout::from_size_align(desc_table_size, VIRTQ_DESC_ALIGN)
+                .expect("failed to create layout for descriptor table");
+            let desc_address = physical_allocator
+                .allocate_zeroed(layout)
+                .expect("failed to allocate descriptor table");
             config.queue_desc().write(desc_address.addr().get() as u64);
+
+            let avail_table_size =
+                mem::size_of::<VirtqAvailRingHeader>() + queue_size * mem::size_of::<u16>();
+            let layout = Layout::from_size_align(avail_table_size, VIRTQ_AVAIL_ALIGN)
+                .expect("failed to create layout for available table");
+            let avail_address = physical_allocator
+                .allocate_zeroed(layout)
+                .expect("failed to allocate driver ring buffer");
+            config
+                .queue_driver()
+                .write(avail_address.addr().get() as u64);
+
+            let used_table_size =
+                mem::size_of::<VirtqUsedRingHeader>() + queue_size * mem::size_of::<VirtqUsedElem>();
+            let layout = Layout::from_size_align(used_table_size, VIRTQ_USED_ALIGN)
+                .expect("failed to create layout for available table");
+            let used_address = physical_allocator
+                .allocate_zeroed(layout)
+                .expect("failed to allocate device ring buffer");
+            config
+                .queue_device()
+                .write(used_address.addr().get() as u64);
         }
 
         // TODO: Device-specific setup
