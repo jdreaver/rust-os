@@ -59,6 +59,7 @@ make test
   - Don't print them when debug printing the type 0 header!
   - Take inspiration from <https://docs.rs/pci-driver/latest/pci_driver/config/caps/index.html>
     - I like the idea of iterating over them and incrementally adding structure
+- In `vesa_framebuffer`, try to initialize a `mut` static slice for the framebuffer (making sure to have padding due to pitch)
 - VirtIO
   - Make better abstractions for VirtQueue
     - Make descriptor table a static slice

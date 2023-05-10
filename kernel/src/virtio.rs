@@ -8,6 +8,7 @@ use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::{FrameAllocator, Mapper, PageTableFlags, PhysFrame, Size4KiB};
 use x86_64::PhysAddr;
 
+use crate::memory::AllocZeroedBufferError;
 use crate::pci::{
     self, BARAddress, PCIDeviceCapabilityHeader, PCIDeviceConfig, PCIDeviceConfigType0,
     PCIDeviceConfigTypes,
@@ -185,15 +186,11 @@ impl VirtIODeviceConfig {
             .expect("failed to allocate descriptor table");
             config.queue_desc().write(desc_address);
 
-            let avail_table_size = mem::size_of::<VirtqAvailRingHeader>()
-                + queue_size as usize * mem::size_of::<u16>();
-            let avail_address = memory::allocate_zeroed_buffer(
-                physical_allocator,
-                avail_table_size,
-                VIRTQ_AVAIL_ALIGN,
-            )
-            .expect("failed to allocate driver ring buffer");
-            config.queue_driver().write(avail_address);
+            let avail_ring = unsafe {
+                VirtqAvailRing::allocate(queue_size, physical_allocator)
+                    .expect("failed to allocate driver ring buffer")
+            };
+            config.queue_driver().write(avail_ring.physical_address);
 
             let used_table_size = mem::size_of::<VirtqUsedRingHeader>()
                 + queue_size as usize * mem::size_of::<VirtqUsedElem>();
@@ -215,7 +212,7 @@ impl VirtIODeviceConfig {
                 notify_offset: config.queue_notify_off().read(),
                 desc_table_address: desc_address,
                 next_desc_index: 0,
-                avail_ring_address: avail_address,
+                avail_ring,
                 used_ring_address: used_address,
             });
         }
@@ -552,7 +549,7 @@ impl VirtIOInitializedDevice {
 }
 
 /// Wrapper around allocated virt queues for a an initialized VirtIO device.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct VirtQueue {
     /// The queue's index in the device's virtqueue array.
     index: u16,
@@ -574,8 +571,7 @@ pub struct VirtQueue {
     /// Index in to the next open descriptor slot.
     next_desc_index: u16,
 
-    /// The physical address for the queue's available ring.
-    avail_ring_address: u64,
+    avail_ring: VirtqAvailRing,
 
     /// The physical address for the queue's used ring.
     used_ring_address: u64,
@@ -585,7 +581,7 @@ impl VirtQueue {
     /// See "2.7.13 Supplying Buffers to The Device"
     pub fn add_buffer(&mut self, buffer_addr: u64, buffer_len: u32, flags: VirtqDescriptorFlags) {
         let desc_index = self.add_descriptor(buffer_addr, buffer_len, flags);
-        self.add_avail_ring_entry(desc_index);
+        self.avail_ring.add_entry(desc_index);
         self.notify_device();
     }
 
@@ -615,28 +611,6 @@ impl VirtQueue {
         }
 
         desc_index
-    }
-
-    fn add_avail_ring_entry(&mut self, desc_index: u16) {
-        // 2.7.13.2 Updating The Available Ring
-        let avail_idx_addr =
-            self.avail_ring_address as usize + mem::size_of::<VirtqAvailRingFlags>();
-        let avail_idx_ptr = avail_idx_addr as *mut u16;
-        let avail_index = unsafe { avail_idx_ptr.read_volatile() };
-
-        let avail_addr = self.avail_ring_address as usize
-            + mem::size_of::<VirtqAvailRingHeader>()
-            + (avail_index as usize * mem::size_of::<u16>());
-        let avail_ptr = avail_addr as *mut u16;
-        unsafe {
-            avail_ptr.write_volatile(desc_index);
-        }
-
-        // 2.7.13.3 Updating idx
-        let next_avail_index = avail_index.wrapping_add(1);
-        unsafe {
-            avail_idx_ptr.write_volatile(next_avail_index);
-        }
     }
 
     pub fn index(&self) -> u16 {
@@ -716,23 +690,98 @@ pub struct VirtqDescriptorFlags {
     __padding: u16,
 }
 
-/// See 2.7.6 The Virtqueue Available Ring
+/// Wrapper around the virtq avail (driver -> device) ring. See 2.7.6 The
+/// Virtqueue Available Ring
 ///
 /// The driver uses the available ring to offer buffers to the device: each ring
 /// entry refers to the head of a descriptor chain. It is only written by the
 /// driver and read by the device.
 ///
-/// Since the ring size is dynamic, we only have the header in a struct.
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct VirtqAvailRingHeader {
-    flags: VirtqAvailRingFlags,
+/// The struct in the spec is:
+///
+/// ```ignore
+///     struct virtq_avail {
+///             le16 flags;
+///             le16 idx;
+///             le16 ring[];
+///             le16 used_event; /* Only if VIRTIO_F_EVENT_IDX: */
+///     };
+/// ```
+pub struct VirtqAvailRing {
+    physical_address: u64,
+
+    flags: RegisterRW<VirtqAvailRingFlags>,
 
     /// idx field indicates where the driver would put the next descriptor entry
     /// in the ring (modulo the queue size). This starts at 0, and increases.
-    idx: u16,
-    // le16 ring[ /* Queue Size */ ];
-    // le16 used_event; /* Only if VIRTIO_F_EVENT_IDX */
+    idx: RegisterRW<u16>,
+
+    ring: &'static mut [u16],
+
+    /// Only if VIRTIO_F_EVENT_IDX
+    used_event: RegisterRW<u16>,
+}
+
+impl VirtqAvailRing {
+    unsafe fn allocate(
+        queue_size: u16,
+        physical_allocator: &impl Allocator,
+    ) -> Result<Self, AllocZeroedBufferError> {
+        let queue_size = queue_size as usize;
+
+        // Compute sizes before we do allocations.
+        let flags_offset = 0;
+        let idx_offset = mem::size_of::<VirtqAvailRingFlags>();
+        let ring_offset = idx_offset + mem::size_of::<u16>();
+        let ring_len = queue_size * mem::size_of::<u16>();
+        let used_event_offset = ring_offset + ring_len;
+        let struct_size = used_event_offset + mem::size_of::<u16>();
+
+        // Check that this matches the spec
+        assert_eq!(
+            struct_size,
+            6 + 2 * queue_size,
+            "VirtqAvailRing size doesn't match the spec"
+        );
+
+        let physical_address =
+            memory::allocate_zeroed_buffer(physical_allocator, struct_size, VIRTQ_AVAIL_ALIGN)?;
+
+        let flags = RegisterRW::from_address(physical_address as usize + flags_offset);
+        let idx = RegisterRW::from_address(physical_address as usize + idx_offset);
+        let ring_address = physical_address as usize + ring_offset;
+        let ring = core::slice::from_raw_parts_mut(ring_address as *mut u16, ring_len);
+        let used_event = RegisterRW::from_address(physical_address as usize + used_event_offset);
+
+        Ok(Self {
+            physical_address,
+            flags,
+            idx,
+            ring,
+            used_event,
+        })
+    }
+
+    fn add_entry(&mut self, desc_index: u16) {
+        // 2.7.13.2 Updating The Available Ring
+        let idx = self.idx.read();
+        self.ring[idx as usize] = desc_index;
+
+        // 2.7.13.3 Updating idx
+        self.idx.modify(|idx| idx.wrapping_add(1));
+    }
+}
+
+impl fmt::Debug for VirtqAvailRing {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VirtqAvailRing")
+            .field("physical_address", &self.physical_address)
+            .field("flags", &self.flags)
+            .field("idx", &self.idx)
+            .field("ring", &format_args!("&[{}]", self.ring.len()))
+            .field("used_event", &self.used_event)
+            .finish()
+    }
 }
 
 #[bitfield(u16)]
