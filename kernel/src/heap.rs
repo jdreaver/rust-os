@@ -15,7 +15,7 @@ pub const HEAP_SIZE: usize = 100 * 1024; // 100 KiB
 
 /// Maps pages for a kernel heap defined by `HEAP_START` and `HEAP_SIZE` and
 /// initializes `ALLOCATOR` with this heap.
-pub fn init_heap(
+pub fn init(
     // N.B. Can't make Mapper generic over page size because we will always need
     // a way to allocate page tables, which are 4 KiB. See
     // https://github.com/rust-osdev/x86_64/issues/390

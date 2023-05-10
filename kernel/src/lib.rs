@@ -23,9 +23,9 @@
 extern crate alloc;
 
 pub mod acpi;
-pub mod allocator;
 pub mod boot_info;
 pub mod gdt;
+pub mod heap;
 pub mod interrupts;
 pub mod memory;
 pub mod pci;

@@ -11,7 +11,7 @@ use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable};
 
 use rust_os::{
-    acpi, allocator, boot_info, gdt, interrupts, memory, pci, serial, serial_println, virtio,
+    acpi, boot_info, gdt, heap, interrupts, memory, pci, serial, serial_println, virtio,
 };
 
 static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
@@ -28,7 +28,7 @@ extern "C" fn _start() -> ! {
 
     let mut mapper = unsafe { memory::init(boot_info_data.higher_half_direct_map_offset) };
     let mut frame_allocator = boot_info::allocator_from_limine_memory_map();
-    allocator::init_heap(&mut mapper, &mut frame_allocator)
+    heap::init(&mut mapper, &mut frame_allocator)
         .expect("failed to initialize allocator");
 
     run_tests(boot_info_data, &mut mapper, &mut frame_allocator);
