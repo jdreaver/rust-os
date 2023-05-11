@@ -157,3 +157,10 @@ post](https://lokathor.github.io/volatile/) that explains this. There is also a
 good [forum
 thread](https://users.rust-lang.org/t/how-to-make-an-access-volatile-without-std-library/85533/)
 explaining the dangers of this.
+
+### Stephen Marz marz.utk.edu posts
+
+- <https://marz.utk.edu/my-courses/cosc562/qemu/>
+- <https://marz.utk.edu/my-courses/cosc562/pcie/>
+- <https://marz.utk.edu/my-courses/cosc562/virtio/rng/>
+- <https://marz.utk.edu/my-courses/cosc562/virtio/block/>
