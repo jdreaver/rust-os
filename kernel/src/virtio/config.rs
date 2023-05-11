@@ -286,7 +286,7 @@ register_struct!(
 
         0x08 => offset: RegisterRO<u32>,
         // Length of the entire capability structure, in bytes.
-        0x12 => length: RegisterRO<u32>,
+        0x0C => length: RegisterRO<u32>,
     }
 );
 
@@ -333,7 +333,7 @@ register_struct!(
         0x00 => device_feature_select: RegisterRW<u32>,
         0x04 => device_feature: RegisterRO<u32>,
         0x08 => driver_feature_select: RegisterRW<u32>,
-        0x12 => driver_feature: RegisterRW<u32>,
+        0x0C => driver_feature: RegisterRW<u32>,
         0x10 => msix_config: RegisterRW<u16>,
         0x12 => num_queues: RegisterRO<u16>,
         0x14 => device_status: RegisterRW<VirtIOConfigStatus>,

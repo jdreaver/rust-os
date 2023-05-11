@@ -81,6 +81,9 @@ make test
       having a single `from_address` function and perhaps a `Debug`
       implementation nicer.
     - Find a way to use this macro for the virtq stuff, where the rings have dynamic size and then a struct member after that.
+  - I really messed up my pointer math on some structs and now I'm scared. It
+    would be _really_ nice to be able to rely on `#[repr(C)]` alignment rules,
+    especially for VirtIO where they use C structs in the spec.
 - Make `LockedNaiveFreeMemoryBlockAllocator` a global static instead of passing
   it around. The tricky part is all the things that want `&mut impl FrameAllocator`
 - Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
