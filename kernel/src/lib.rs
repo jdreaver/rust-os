@@ -35,4 +35,16 @@ pub mod pci;
 pub mod registers;
 pub mod serial;
 pub mod strings;
+pub mod tests;
 pub mod virtio;
+
+pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
+    serial_println!("PANIC: {}", info);
+    hlt_loop()
+}
+
+pub fn hlt_loop() -> ! {
+    loop {
+        x86_64::instructions::hlt();
+    }
+}

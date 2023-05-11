@@ -112,6 +112,10 @@ impl VirtIODeviceConfig {
         })
     }
 
+    pub(crate) fn pci_config(&self) -> PCIDeviceConfig {
+        self.pci_config
+    }
+
     pub fn common_virtio_config(&self) -> VirtIOPCICommonConfigRegisters {
         self.common_virtio_config
     }
