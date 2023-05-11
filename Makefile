@@ -35,7 +35,7 @@ QEMU_ARGS += -vga virtio # More modern, better performance than default -vga std
 QEMU_ARGS += -M q35,accel=kvm # Use the q35 chipset. accel=kvm enables hardware acceleration, makes things way faster.
 QEMU_ARGS += -m 2G # More memory
 QEMU_ARGS += -serial stdio # Add serial output to terminal
-QEMU_ARGS += -device virtio-rng-pci # RNG is the simplest virtio device. Good for testing.
+QEMU_ARGS += -device virtio-rng-pci-non-transitional # RNG is the simplest virtio device. Good for testing.
 
 .PHONY: run
 run: $(HDD)
