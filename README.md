@@ -54,7 +54,9 @@ make test
 
 - Move creating the `OffsetPageTable` from `memory.rs` to `boot_info.rs`
 - Split up `pci.rs` and `virtio.rs`. They are too large.
-  - Don't make everything `pub`. Use private stuff or `pub(crate)` judiciously.
+- Don't make everything `pub` so I can find dead code better. Use private stuff or `pub(crate)` or `pub(self)` judiciously.
+  - Move most of `main.rs` into the crate
+  - Get rid of `pub use`
 - Make PCI capabilities list a first class thing
   - Don't print them when debug printing the type 0 header!
   - Take inspiration from <https://docs.rs/pci-driver/latest/pci_driver/config/caps/index.html>
@@ -75,6 +77,7 @@ make test
     the common PCI registers in a Type0 device struct, or allow VirtIO devices
     to include the common registers and the type 0 registers. Also, I think proc
     macros are more flexible.
+    - Easier to set pub, private, pub(crate), etc
     - This would also allow us to group registers into dedicated structs. For
       example, have a struct for grouping (device_id, vendor_id), and maybe
       class, subclass, and prog_if. There really is no strict need to have all

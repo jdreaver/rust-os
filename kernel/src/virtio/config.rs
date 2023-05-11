@@ -1,21 +1,17 @@
-use alloc::vec::Vec;
-use core::alloc::Allocator;
 use core::fmt;
-use core::mem;
 
 use bitfield_struct::bitfield;
 use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::{FrameAllocator, Mapper, PageTableFlags, PhysFrame, Size4KiB};
 use x86_64::PhysAddr;
 
-use crate::memory::AllocZeroedBufferError;
 use crate::pci::{
     self, BARAddress, PCIDeviceCapabilityHeader, PCIDeviceConfig, PCIDeviceConfigType0,
     PCIDeviceConfigTypes,
 };
-use crate::registers::{RegisterRO, RegisterRW, VolatileArrayRW};
+use crate::register_struct;
+use crate::registers::{RegisterRO, RegisterRW};
 use crate::serial_println;
-use crate::{memory, register_struct};
 
 /// Holds the configuration for a VirtIO device.
 #[derive(Debug, Clone, Copy)]
@@ -116,113 +112,12 @@ impl VirtIODeviceConfig {
         })
     }
 
-    /// See "3 General Initialization And Device Operation" and "4.1.5
-    /// PCI-specific Initialization And Device Operation"
-    pub fn initialize(self, physical_allocator: &impl Allocator) -> VirtIOInitializedDevice {
-        let config = self.common_virtio_config;
-
-        // Reset the VirtIO device by writing 0 to the status register (see
-        // 4.1.4.3.1 Device Requirements: Common configuration structure layout)
-        let mut status = VirtIOConfigStatus::new();
-        config.device_status().write(status);
-
-        // Set the ACKNOWLEDGE status bit to indicate that the driver knows
-        // that the device is present.
-        status.set_acknowledge(true);
-        config.device_status().write(status);
-
-        // Set the DRIVER status bit to indicate that the driver is ready to
-        // drive the device.
-        status.set_driver(true);
-        config.device_status().write(status);
-
-        // Feature negotiation. There are up to 128 feature bits, and
-        // the feature registers are 32 bits wide, so we use the feature
-        // selection registers 4 times to select features.
-        //
-        // (TODO: Make this configurable depending on device).
-        for i in 0..4 {
-            // Select the feature bits to negotiate
-            config.device_feature_select().write(i);
-
-            // Read the device feature bits
-            let device_features = config.device_feature().read();
-            serial_println!(
-                "VirtIO device feature bits ({}): {:#034b}",
-                i,
-                device_features
-            );
-
-            // Write the features we want to enable (TODO: actually pick
-            // features, don't just write them all back)
-            let driver_features = device_features;
-            config.driver_feature_select().write(i);
-            config.driver_feature().write(driver_features);
-        }
-
-        // Set the FEATURES_OK status bit to indicate that the driver has
-        // written the feature bits.
-        status.set_features_ok(true);
-        config.device_status().write(status);
-
-        // Re-read the status to ensure that the FEATURES_OK bit is still set.
-        status = config.device_status().read();
-        assert!(status.features_ok(), "failed to set FEATURES_OK status bit");
-
-        // Initialize virtqueues
-        let num_queues = config.num_queues().read();
-        let mut virtqueues = Vec::with_capacity(num_queues as usize);
-        for i in 0..num_queues {
-            config.queue_select().write(i);
-
-            let queue_size = config.queue_size().read();
-
-            let descriptors = unsafe {
-                VirtqDescriptorTable::allocate(queue_size, physical_allocator)
-                    .expect("failed to allocate driver ring buffer")
-            };
-            config.queue_desc().write(descriptors.physical_address);
-
-            let avail_ring = unsafe {
-                VirtqAvailRing::allocate(queue_size, physical_allocator)
-                    .expect("failed to allocate driver ring buffer")
-            };
-            config.queue_driver().write(avail_ring.physical_address);
-
-            let used_ring = unsafe {
-                VirtqUsedRing::allocate(queue_size, physical_allocator)
-                    .expect("failed to allocate driver ring buffer")
-            };
-            config.queue_device().write(used_ring.physical_address);
-
-            // Enable the queue
-            config.queue_enable().write(1);
-
-            virtqueues.push(VirtQueue {
-                index: i,
-                device_notify_config: self.notify_config,
-                notify_offset: config.queue_notify_off().read(),
-                descriptors,
-                avail_ring,
-                used_ring,
-            });
-        }
-
-        // TODO: Device-specific setup
-
-        // Set the DRIVER_OK status bit to indicate that the driver
-        // finished configuring the device.
-        status.set_driver_ok(true);
-        config.device_status().write(status);
-
-        VirtIOInitializedDevice {
-            config: self,
-            virtqueues,
-        }
-    }
-
     pub fn common_virtio_config(&self) -> VirtIOPCICommonConfigRegisters {
         self.common_virtio_config
+    }
+
+    pub(crate) fn notify_config(&self) -> VirtIONotifyConfig {
+        self.notify_config
     }
 }
 
@@ -457,19 +352,19 @@ register_struct!(
 pub struct VirtIOConfigStatus {
     /// ACKNOWLEDGE (1) Indicates that the guest OS has found the device and
     /// recognized it as a valid virtio device.
-    acknowledge: bool,
+    pub(crate) acknowledge: bool,
 
     /// DRIVER (2) Indicates that the guest OS knows how to drive the device.
-    driver: bool,
+    pub(crate) driver: bool,
 
     /// DRIVER_OK (4) Indicates that the guest OS knows how to drive the device.
-    driver_ok: bool,
+    pub(crate) driver_ok: bool,
 
     /// FEATURES_OK (8) Indicates that the features negotiated by the driver are
     /// acceptable to the device. This bit is optional since not all devices
     /// support feature negotiation, and some devices may accept any subset of
     /// the features offered by the driver.
-    features_ok: bool,
+    pub(crate) features_ok: bool,
 
     __reserved: bool,
     __reserved: bool,
@@ -478,14 +373,14 @@ pub struct VirtIOConfigStatus {
     /// error from which it can’t recover. The device has stopped working. The
     /// driver should not send any further requests to the device, and should
     /// reset the device at the earliest convenience.
-    device_needs_reset: bool,
+    pub(crate) device_needs_reset: bool,
 
     /// FAILED (128) Indicates that something went wrong in the guest, and it
     /// has given up on the device. This could be an internal error, or the
     /// driver didn’t like the device for some reason, or even a fatal error
     /// during device operation. The device should not be used any further
     /// without a reset.
-    failed: bool,
+    pub(crate) failed: bool,
 }
 
 register_struct!(
@@ -531,7 +426,7 @@ impl VirtIONotifyConfig {
     ///
     /// Caller must ensure that `queue_notify_offset` and `queue_index` are
     /// valid.
-    unsafe fn notify_device(&self, queue_notify_offset: u16, queue_index: u16) {
+    pub(crate) unsafe fn notify_device(&self, queue_notify_offset: u16, queue_index: u16) {
         // 4.1.5.2 Available Buffer Notifications: When
         // VIRTIO_F_NOTIFICATION_DATA has not been negotiated, the driver sends
         // an available buffer notification to the device by writing the 16-bit
@@ -541,393 +436,5 @@ impl VirtIONotifyConfig {
         unsafe {
             notify_ptr.write_volatile(queue_index);
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct VirtIOInitializedDevice {
-    config: VirtIODeviceConfig,
-    virtqueues: Vec<VirtQueue>,
-}
-
-impl VirtIOInitializedDevice {
-    pub fn config(&self) -> &VirtIODeviceConfig {
-        &self.config
-    }
-
-    pub fn get_virtqueue_mut(&mut self, index: u16) -> Option<&mut VirtQueue> {
-        self.virtqueues.get_mut(index as usize)
-    }
-}
-
-/// Wrapper around allocated virt queues for a an initialized VirtIO device.
-#[derive(Debug)]
-pub struct VirtQueue {
-    /// The queue's index in the device's virtqueue array.
-    index: u16,
-
-    /// Device's notification config, inlined here to compute the notification
-    /// address. See "4.1.4.4 Notification structure layout".
-    device_notify_config: VirtIONotifyConfig,
-
-    /// The queue's notification offset. See "4.1.4.4 Notification structure
-    /// layout".
-    notify_offset: u16,
-
-    descriptors: VirtqDescriptorTable,
-    avail_ring: VirtqAvailRing,
-    used_ring: VirtqUsedRing,
-}
-
-impl VirtQueue {
-    /// See "2.7.13 Supplying Buffers to The Device"
-    pub fn add_buffer(&mut self, buffer_addr: u64, buffer_len: u32, flags: VirtqDescriptorFlags) {
-        let desc_index = self
-            .descriptors
-            .add_descriptor(buffer_addr, buffer_len, flags);
-        self.avail_ring.add_entry(desc_index);
-        unsafe {
-            self.device_notify_config
-                .notify_device(self.notify_offset, self.index);
-        };
-    }
-
-    pub fn index(&self) -> u16 {
-        self.index
-    }
-
-    pub fn used_ring_index(&self) -> u16 {
-        self.used_ring.idx.read()
-    }
-
-    pub fn get_used_ring_entry(&self, index: u16) -> (VirtqUsedElem, VirtqDescriptor) {
-        // Load the used element
-        let used_elem = self.used_ring.get_used_elem(index);
-
-        // Load the associated descriptor
-        let descriptor = self.descriptors.get_descriptor(used_elem.id as u16);
-
-        (used_elem, descriptor)
-    }
-}
-
-// See 2.7 Split Virtqueues for alignment
-const VIRTQ_DESC_ALIGN: usize = 16;
-const VIRTQ_AVAIL_ALIGN: usize = 2;
-const VIRTQ_USED_ALIGN: usize = 4;
-
-/// See 2.7.5 The Virtqueue Descriptor Table
-pub struct VirtqDescriptorTable {
-    /// The physical address for the queue's descriptor table.
-    physical_address: u64,
-
-    /// Index into the next open descriptor slot.
-    next_index: u16,
-
-    /// Array of descriptors.
-    descriptors: VolatileArrayRW<VirtqDescriptor>,
-}
-
-impl VirtqDescriptorTable {
-    unsafe fn allocate(
-        queue_size: u16,
-        physical_allocator: &impl Allocator,
-    ) -> Result<Self, AllocZeroedBufferError> {
-        let queue_size = queue_size as usize;
-
-        let mem_size = mem::size_of::<VirtqDescriptor>() * queue_size;
-
-        // Check that this matches the spec. See 2.7 Split Virtqueues
-        assert_eq!(
-            mem_size,
-            16 * queue_size,
-            "Descriptor table size doesn't match the spec"
-        );
-
-        let physical_address =
-            memory::allocate_zeroed_buffer(physical_allocator, mem_size, VIRTQ_DESC_ALIGN)?;
-
-        let descriptors = VolatileArrayRW::new(physical_address as usize, queue_size);
-
-        Ok(Self {
-            physical_address,
-            next_index: 0,
-            descriptors,
-        })
-    }
-
-    fn add_descriptor(
-        &mut self,
-        buffer_addr: u64,
-        buffer_len: u32,
-        flags: VirtqDescriptorFlags,
-    ) -> u16 {
-        // 2.7.13.1 Placing Buffers Into The Descriptor Table
-        let desc_index = self.next_index;
-        self.next_index = (self.next_index + 1) % self.descriptors.len() as u16;
-
-        let descriptor = VirtqDescriptor {
-            addr: buffer_addr,
-            len: buffer_len,
-            flags,
-            next: 0,
-        };
-
-        self.descriptors.write(desc_index as usize, descriptor);
-
-        desc_index
-    }
-
-    fn get_descriptor(&self, index: u16) -> VirtqDescriptor {
-        self.descriptors.read(index as usize)
-    }
-}
-
-impl fmt::Debug for VirtqDescriptorTable {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("VirtqDescriptorTable")
-            .field("physical_address", &self.physical_address)
-            .field("next_index", &self.next_index)
-            .field("descriptors", &self.descriptors)
-            .finish()
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct VirtqDescriptor {
-    /// Physical address for the buffer.
-    pub addr: u64,
-    /// Length of the buffer, in bytes.
-    pub len: u32,
-    pub flags: VirtqDescriptorFlags,
-    /// Next field if flags & NEXT
-    pub next: u16,
-}
-
-#[bitfield(u16)]
-pub struct VirtqDescriptorFlags {
-    /// This marks a buffer as continuing via the next field.
-    pub next: bool,
-
-    /// This marks a buffer as device write-only (otherwise device read-only).
-    pub device_write: bool,
-
-    /// This means the buffer contains a list of buffer descriptors.
-    pub indirect: bool,
-
-    #[bits(13)]
-    __padding: u16,
-}
-
-/// Wrapper around the virtq avail (driver -> device) ring. See 2.7.6 The
-/// Virtqueue Available Ring
-///
-/// The driver uses the available ring to offer buffers to the device: each ring
-/// entry refers to the head of a descriptor chain. It is only written by the
-/// driver and read by the device.
-///
-/// The struct in the spec is:
-///
-/// ```ignore
-///     struct virtq_avail {
-///             le16 flags;
-///             le16 idx;
-///             le16 ring[];
-///             le16 used_event; /* Only if VIRTIO_F_EVENT_IDX: */
-///     };
-/// ```
-pub struct VirtqAvailRing {
-    physical_address: u64,
-
-    flags: RegisterRW<VirtqAvailRingFlags>,
-
-    /// idx field indicates where the driver would put the next descriptor entry
-    /// in the ring (modulo the queue size). This starts at 0, and increases.
-    idx: RegisterRW<u16>,
-
-    ring: VolatileArrayRW<u16>,
-
-    /// Only if VIRTIO_F_EVENT_IDX
-    used_event: RegisterRW<u16>,
-}
-
-impl VirtqAvailRing {
-    unsafe fn allocate(
-        queue_size: u16,
-        physical_allocator: &impl Allocator,
-    ) -> Result<Self, AllocZeroedBufferError> {
-        let queue_size = queue_size as usize;
-
-        // Compute sizes before we do allocations.
-        let flags_offset = 0;
-        let idx_offset = mem::size_of::<VirtqAvailRingFlags>();
-        let ring_offset = idx_offset + mem::size_of::<u16>();
-        let ring_len = queue_size * mem::size_of::<u16>();
-        let used_event_offset = ring_offset + ring_len;
-        let struct_size = used_event_offset + mem::size_of::<u16>();
-
-        // Check that this matches the spec. See 2.7 Split Virtqueues
-        assert_eq!(
-            struct_size,
-            6 + 2 * queue_size,
-            "VirtqAvailRing size doesn't match the spec"
-        );
-
-        let physical_address =
-            memory::allocate_zeroed_buffer(physical_allocator, struct_size, VIRTQ_AVAIL_ALIGN)?;
-
-        let flags = RegisterRW::from_address(physical_address as usize + flags_offset);
-        let idx = RegisterRW::from_address(physical_address as usize + idx_offset);
-        let ring_address = physical_address as usize + ring_offset;
-        let ring = VolatileArrayRW::new(ring_address, queue_size);
-        let used_event = RegisterRW::from_address(physical_address as usize + used_event_offset);
-
-        Ok(Self {
-            physical_address,
-            flags,
-            idx,
-            ring,
-            used_event,
-        })
-    }
-
-    fn add_entry(&mut self, desc_index: u16) {
-        // 2.7.13.2 Updating The Available Ring
-        let idx = self.idx.read();
-        self.ring.write(idx as usize, desc_index);
-
-        // 2.7.13.3 Updating idx
-        self.idx.modify(|idx| idx.wrapping_add(1));
-    }
-}
-
-impl fmt::Debug for VirtqAvailRing {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("VirtqAvailRing")
-            .field("physical_address", &self.physical_address)
-            .field("flags", &self.flags)
-            .field("idx", &self.idx)
-            .field("ring", &self.ring)
-            .field("used_event", &self.used_event)
-            .finish()
-    }
-}
-
-#[bitfield(u16)]
-pub struct VirtqAvailRingFlags {
-    /// See 2.7.7 Used Buffer Notification Suppression
-    no_interrupt: bool,
-
-    #[bits(15)]
-    __reserved: u16,
-}
-
-/// Wrapper around the virtq used (device -> drive) ring. See 2.7.8 The
-/// Virtqueue Used Ring.
-///
-/// The used ring is where the device returns buffers once it is done with them:
-/// it is only written to by the device, and read by the driver.
-///
-/// The struct in the spec is:
-///
-/// ```ignore
-/// struct virtq_used {
-///         le16 flags;
-///         le16 idx;
-///         struct virtq_used_elem ring[];
-///         le16 avail_event; /* Only if VIRTIO_F_EVENT_IDX */
-/// };
-/// ```
-pub struct VirtqUsedRing {
-    physical_address: u64,
-
-    flags: RegisterRW<VirtqUsedRingFlags>,
-
-    /// idx field indicates where the device would put the next descriptor entry
-    /// in the ring (modulo the queue size). This starts at 0, and increases.
-    idx: RegisterRW<u16>,
-
-    ring: VolatileArrayRW<VirtqUsedElem>,
-
-    /// Only if VIRTIO_F_EVENT_IDX
-    avail_event: RegisterRW<u16>,
-}
-
-#[bitfield(u16)]
-pub struct VirtqUsedRingFlags {
-    /// See 2.7.10 Available Buffer Notification Suppression
-    no_notify: bool,
-
-    #[bits(15)]
-    __reserved: u16,
-}
-
-/// 2.7.8 The Virtqueue Used Ring
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct VirtqUsedElem {
-    /// Index of start of used descriptor chain.
-    pub id: u32,
-
-    /// The number of bytes written into the device writable portion of the
-    /// buffer described by the descriptor chain.
-    pub len: u32,
-}
-
-impl VirtqUsedRing {
-    unsafe fn allocate(
-        queue_size: u16,
-        physical_allocator: &impl Allocator,
-    ) -> Result<Self, AllocZeroedBufferError> {
-        let queue_size = queue_size as usize;
-
-        // Compute sizes before we do allocations.
-        let flags_offset = 0;
-        let idx_offset = mem::size_of::<VirtqUsedRingFlags>();
-        let ring_offset = idx_offset + mem::size_of::<u16>();
-        let ring_len = queue_size * mem::size_of::<VirtqUsedElem>();
-        let avail_event_offset = ring_offset + ring_len;
-        let struct_size = avail_event_offset + mem::size_of::<u16>();
-
-        // Check that this matches the spec. See 2.7 Split Virtqueues
-        assert_eq!(
-            struct_size,
-            6 + 8 * queue_size,
-            "VirtqUsedRing size doesn't match the spec"
-        );
-
-        let physical_address =
-            memory::allocate_zeroed_buffer(physical_allocator, struct_size, VIRTQ_USED_ALIGN)?;
-
-        let flags = RegisterRW::from_address(physical_address as usize + flags_offset);
-        let idx = RegisterRW::from_address(physical_address as usize + idx_offset);
-        let ring_address = physical_address as usize + ring_offset;
-        let ring = VolatileArrayRW::new(ring_address, queue_size);
-        let avail_event = RegisterRW::from_address(physical_address as usize + avail_event_offset);
-
-        Ok(Self {
-            physical_address,
-            flags,
-            idx,
-            ring,
-            avail_event,
-        })
-    }
-
-    fn get_used_elem(&self, idx: u16) -> VirtqUsedElem {
-        self.ring.read(idx as usize)
-    }
-}
-
-impl fmt::Debug for VirtqUsedRing {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("VirtqUsedRing")
-            .field("physical_address", &self.physical_address)
-            .field("flags", &self.flags)
-            .field("idx", &self.idx)
-            .field("ring", &self.ring)
-            .field("avail_event", &self.avail_event)
-            .finish()
     }
 }
