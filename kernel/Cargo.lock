@@ -110,12 +110,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "paste"
-version = "1.0.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f746c4065a8fa3fe23974dd82f15431cc8d40779821001404d10d2e79ca7d79"
-
-[[package]]
 name = "pc-keyboard"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -193,11 +187,9 @@ version = "0.1.0"
 dependencies = [
  "acpi",
  "bitfield-struct",
- "bitvec",
  "lazy_static",
  "limine",
  "linked_list_allocator",
- "paste",
  "pc-keyboard",
  "pic8259",
  "spin 0.9.8",

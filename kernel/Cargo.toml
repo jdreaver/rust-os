@@ -10,7 +10,6 @@ lazy_static = { version = "1", features = ["spin_no_std"] }
 # N.B. Make sure this matches vesa_framebuffer version so tests are consistent.
 limine = "0.1.10"
 linked_list_allocator = "0.9"
-paste = "1.0" # To be able to create new identifiers in macros
 pc-keyboard = "0.5"
 pic8259 = "0.10"
 spin = "0.9"
@@ -18,8 +17,3 @@ uart_16550 = "0.2"
 uefi = "0.20"
 vesa_framebuffer = { path = "../crates/vesa_framebuffer" }
 x86_64 = "0.14"
-
-[dependencies.bitvec]
-version = "1"
-default-features = false
-features = ["atomic", "alloc"]
