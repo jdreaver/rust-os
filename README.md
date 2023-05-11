@@ -30,7 +30,7 @@ In one terminal:
 make run-debug
 ```
 
-In another
+In another terminal:
 
 ```
 make gdb
@@ -52,9 +52,8 @@ make test
 
 ## TODO
 
-- Make `init` function and make the order of operations clear
-  - Move creating the `OffsetPageTable` from `memory.rs` to `boot_info.rs`
 - Split up `pci.rs` into sub modules
+- Consider custom page table implementation to get around `&mut` requirements <https://github.com/rust-osdev/x86_64/issues/416>
 - Make PCI capabilities list a first class thing
   - Don't print them when debug printing the type 0 header!
   - Take inspiration from <https://docs.rs/pci-driver/latest/pci_driver/config/caps/index.html>
