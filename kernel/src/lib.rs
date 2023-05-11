@@ -10,6 +10,7 @@
     clippy::doc_markdown,
     clippy::implicit_hasher,
     clippy::implicit_return,
+    clippy::len_without_is_empty,
     clippy::missing_const_for_fn,
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,

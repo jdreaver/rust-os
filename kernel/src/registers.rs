@@ -1,6 +1,3 @@
-// Inspiration taken from
-// https://docs.rs/pci-driver/latest/pci_driver/#pci_struct-and-pci_bit_field
-
 use core::fmt::Debug;
 use core::marker::PhantomData;
 
@@ -228,3 +225,80 @@ macro_rules! register_struct {
 //         $crate::register_struct_v2!(@internal $offset + core::mem::size_of::<$type>(), $($rest_name : $rest_type),*);
 //     };
 // }
+
+/// Abstraction over a region of memory containing an array of `T`s, using
+/// volatile reads and writes under the hood.
+#[derive(Clone, Copy)]
+pub struct VolatileArrayRW<T> {
+    ptr: *mut T,
+    len: usize,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> VolatileArrayRW<T> {
+    /// # Safety
+    ///
+    /// The caller must ensure that the address is a valid memory location for a
+    /// an array containing `size` `T`s.
+    pub unsafe fn new(address: usize, len: usize) -> Self {
+        Self {
+            ptr: address as *mut T,
+            len,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Read from the array at `index` using `read_volatile`.
+    pub fn read(&self, index: usize) -> T {
+        assert!(index < self.len, "VolatileArrayRW read index out of bounds");
+        unsafe { core::ptr::read_volatile(self.ptr.add(index)) }
+    }
+
+    /// Write to the array at `index` using `write_volatile`.
+    pub fn write(&self, index: usize, val: T) {
+        assert!(
+            index < self.len,
+            "VolatileArrayRW write index out of bounds"
+        );
+        unsafe {
+            core::ptr::write_volatile(self.ptr.add(index), val);
+        }
+    }
+
+    /// Modify the value of the array at `index` by reading it, applying the
+    /// given function, and writing the result back.
+    pub fn modify(&self, index: usize, f: impl FnOnce(T) -> T) {
+        assert!(
+            index < self.len,
+            "VolatileArrayRW write index out of bounds"
+        );
+        let val = self.read(index);
+        self.write(index, f(val));
+    }
+
+    /// Similar to `modify`, but the callback instead takes a mutable reference
+    /// to the value read from the array. Then, the mutated value is stored back
+    /// in the array.
+    ///
+    /// This is a nicer API in case all you are doing is calling mutable
+    /// functions on the value, because otherwise you would probably `clone()`
+    /// the value, mutate it, and then return the value anyway.
+    pub fn modify_mut(&self, index: usize, f: impl FnOnce(&mut T)) {
+        let mut val = self.read(index);
+        f(&mut val);
+        self.write(index, val);
+    }
+}
+
+impl<T: Debug> Debug for VolatileArrayRW<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("VolatileArrayRW")
+            .field("ptr", &self.ptr)
+            .field("size", &self.len)
+            .finish()
+    }
+}

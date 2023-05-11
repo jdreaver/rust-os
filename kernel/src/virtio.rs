@@ -13,7 +13,7 @@ use crate::pci::{
     self, BARAddress, PCIDeviceCapabilityHeader, PCIDeviceConfig, PCIDeviceConfigType0,
     PCIDeviceConfigTypes,
 };
-use crate::registers::{RegisterRO, RegisterRW};
+use crate::registers::{RegisterRO, RegisterRW, VolatileArrayRW};
 use crate::serial_println;
 use crate::{memory, register_struct};
 
@@ -625,7 +625,7 @@ pub struct VirtqDescriptorTable {
     next_index: u16,
 
     /// Array of descriptors.
-    descriptors: &'static mut [VirtqDescriptor],
+    descriptors: VolatileArrayRW<VirtqDescriptor>,
 }
 
 impl VirtqDescriptorTable {
@@ -647,8 +647,7 @@ impl VirtqDescriptorTable {
         let physical_address =
             memory::allocate_zeroed_buffer(physical_allocator, mem_size, VIRTQ_DESC_ALIGN)?;
 
-        let descriptors =
-            core::slice::from_raw_parts_mut(physical_address as *mut VirtqDescriptor, mem_size);
+        let descriptors = VolatileArrayRW::new(physical_address as usize, queue_size);
 
         Ok(Self {
             physical_address,
@@ -674,16 +673,13 @@ impl VirtqDescriptorTable {
             next: 0,
         };
 
-        self.descriptors[desc_index as usize] = descriptor;
+        self.descriptors.write(desc_index as usize, descriptor);
 
         desc_index
     }
 
     fn get_descriptor(&self, index: u16) -> VirtqDescriptor {
-        *self
-            .descriptors
-            .get(index as usize)
-            .expect("Invalid descriptor index")
+        self.descriptors.read(index as usize)
     }
 }
 
@@ -692,10 +688,7 @@ impl fmt::Debug for VirtqDescriptorTable {
         f.debug_struct("VirtqDescriptorTable")
             .field("physical_address", &self.physical_address)
             .field("next_index", &self.next_index)
-            .field(
-                "descriptors",
-                &format_args!("&[{}]", self.descriptors.len()),
-            )
+            .field("descriptors", &self.descriptors)
             .finish()
     }
 }
@@ -753,7 +746,7 @@ pub struct VirtqAvailRing {
     /// in the ring (modulo the queue size). This starts at 0, and increases.
     idx: RegisterRW<u16>,
 
-    ring: &'static mut [u16],
+    ring: VolatileArrayRW<u16>,
 
     /// Only if VIRTIO_F_EVENT_IDX
     used_event: RegisterRW<u16>,
@@ -787,7 +780,7 @@ impl VirtqAvailRing {
         let flags = RegisterRW::from_address(physical_address as usize + flags_offset);
         let idx = RegisterRW::from_address(physical_address as usize + idx_offset);
         let ring_address = physical_address as usize + ring_offset;
-        let ring = core::slice::from_raw_parts_mut(ring_address as *mut u16, ring_len);
+        let ring = VolatileArrayRW::new(ring_address, queue_size);
         let used_event = RegisterRW::from_address(physical_address as usize + used_event_offset);
 
         Ok(Self {
@@ -802,7 +795,7 @@ impl VirtqAvailRing {
     fn add_entry(&mut self, desc_index: u16) {
         // 2.7.13.2 Updating The Available Ring
         let idx = self.idx.read();
-        self.ring[idx as usize] = desc_index;
+        self.ring.write(idx as usize, desc_index);
 
         // 2.7.13.3 Updating idx
         self.idx.modify(|idx| idx.wrapping_add(1));
@@ -815,7 +808,7 @@ impl fmt::Debug for VirtqAvailRing {
             .field("physical_address", &self.physical_address)
             .field("flags", &self.flags)
             .field("idx", &self.idx)
-            .field("ring", &format_args!("&[{}]", self.ring.len()))
+            .field("ring", &self.ring)
             .field("used_event", &self.used_event)
             .finish()
     }
@@ -855,7 +848,7 @@ pub struct VirtqUsedRing {
     /// in the ring (modulo the queue size). This starts at 0, and increases.
     idx: RegisterRW<u16>,
 
-    ring: &'static mut [VirtqUsedElem],
+    ring: VolatileArrayRW<VirtqUsedElem>,
 
     /// Only if VIRTIO_F_EVENT_IDX
     avail_event: RegisterRW<u16>,
@@ -910,7 +903,7 @@ impl VirtqUsedRing {
         let flags = RegisterRW::from_address(physical_address as usize + flags_offset);
         let idx = RegisterRW::from_address(physical_address as usize + idx_offset);
         let ring_address = physical_address as usize + ring_offset;
-        let ring = core::slice::from_raw_parts_mut(ring_address as *mut VirtqUsedElem, ring_len);
+        let ring = VolatileArrayRW::new(ring_address, queue_size);
         let avail_event = RegisterRW::from_address(physical_address as usize + avail_event_offset);
 
         Ok(Self {
@@ -923,10 +916,7 @@ impl VirtqUsedRing {
     }
 
     fn get_used_elem(&self, idx: u16) -> VirtqUsedElem {
-        *self
-            .ring
-            .get(idx as usize)
-            .expect("virt queue used elem idx out of bounds")
+        self.ring.read(idx as usize)
     }
 }
 
@@ -936,7 +926,7 @@ impl fmt::Debug for VirtqUsedRing {
             .field("physical_address", &self.physical_address)
             .field("flags", &self.flags)
             .field("idx", &self.idx)
-            .field("ring", &format_args!("&[{}]", self.ring.len()))
+            .field("ring", &self.ring)
             .field("avail_event", &self.avail_event)
             .finish()
     }
