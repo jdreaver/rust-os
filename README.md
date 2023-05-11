@@ -52,7 +52,6 @@ make test
 
 ## TODO
 
-- Split up `pci.rs` into sub modules
 - Consider custom page table implementation to get around `&mut` requirements <https://github.com/rust-osdev/x86_64/issues/416>
 - Make PCI capabilities list a first class thing
   - Don't print them when debug printing the type 0 header!
