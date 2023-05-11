@@ -48,7 +48,7 @@ impl From<InterruptIndex> for usize {
     }
 }
 
-pub fn init_idt() {
+pub(crate) fn init_idt() {
     IDT.load();
 
     // Enable PIC and interrupts

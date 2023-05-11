@@ -2,6 +2,6 @@ mod config;
 mod device;
 mod queue;
 
-pub use config::*;
-pub use device::*;
-pub use queue::*;
+pub(crate) use config::*;
+pub(crate) use device::*;
+pub(crate) use queue::*;

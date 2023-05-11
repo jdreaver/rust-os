@@ -13,7 +13,7 @@ use crate::virtio::config::VirtIONotifyConfig;
 
 /// Wrapper around allocated virt queues for a an initialized VirtIO device.
 #[derive(Debug)]
-pub struct VirtQueue {
+pub(crate) struct VirtQueue {
     /// The queue's index in the device's virtqueue array.
     index: u16,
 
@@ -50,7 +50,12 @@ impl VirtQueue {
     }
 
     /// See "2.7.13 Supplying Buffers to The Device"
-    pub fn add_buffer(&mut self, buffer_addr: u64, buffer_len: u32, flags: VirtqDescriptorFlags) {
+    pub(crate) fn add_buffer(
+        &mut self,
+        buffer_addr: u64,
+        buffer_len: u32,
+        flags: VirtqDescriptorFlags,
+    ) {
         let desc_index = self
             .descriptors
             .add_descriptor(buffer_addr, buffer_len, flags);
@@ -61,15 +66,11 @@ impl VirtQueue {
         };
     }
 
-    pub fn index(&self) -> u16 {
-        self.index
-    }
-
-    pub fn used_ring_index(&self) -> u16 {
+    pub(crate) fn used_ring_index(&self) -> u16 {
         self.used_ring.idx.read()
     }
 
-    pub fn get_used_ring_entry(&self, index: u16) -> (VirtqUsedElem, VirtqDescriptor) {
+    pub(crate) fn get_used_ring_entry(&self, index: u16) -> (VirtqUsedElem, VirtqDescriptor) {
         // Load the used element
         let used_elem = self.used_ring.get_used_elem(index);
 
@@ -86,7 +87,7 @@ const VIRTQ_AVAIL_ALIGN: usize = 2;
 const VIRTQ_USED_ALIGN: usize = 4;
 
 /// See 2.7.5 The Virtqueue Descriptor Table
-pub struct VirtqDescriptorTable {
+pub(crate) struct VirtqDescriptorTable {
     /// The physical address for the queue's descriptor table.
     physical_address: u64,
 
@@ -168,26 +169,26 @@ impl fmt::Debug for VirtqDescriptorTable {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct VirtqDescriptor {
+pub(crate) struct VirtqDescriptor {
     /// Physical address for the buffer.
-    pub addr: u64,
+    pub(crate) addr: u64,
     /// Length of the buffer, in bytes.
-    pub len: u32,
-    pub flags: VirtqDescriptorFlags,
+    pub(crate) len: u32,
+    pub(crate) flags: VirtqDescriptorFlags,
     /// Next field if flags & NEXT
-    pub next: u16,
+    pub(crate) next: u16,
 }
 
 #[bitfield(u16)]
-pub struct VirtqDescriptorFlags {
+pub(crate) struct VirtqDescriptorFlags {
     /// This marks a buffer as continuing via the next field.
-    pub next: bool,
+    pub(crate) next: bool,
 
     /// This marks a buffer as device write-only (otherwise device read-only).
-    pub device_write: bool,
+    pub(crate) device_write: bool,
 
     /// This means the buffer contains a list of buffer descriptors.
-    pub indirect: bool,
+    pub(crate) indirect: bool,
 
     #[bits(13)]
     __padding: u16,
@@ -210,7 +211,7 @@ pub struct VirtqDescriptorFlags {
 ///             le16 used_event; /* Only if VIRTIO_F_EVENT_IDX: */
 ///     };
 /// ```
-pub struct VirtqAvailRing {
+pub(crate) struct VirtqAvailRing {
     physical_address: u64,
 
     flags: RegisterRW<VirtqAvailRingFlags>,
@@ -292,7 +293,7 @@ impl fmt::Debug for VirtqAvailRing {
 }
 
 #[bitfield(u16)]
-pub struct VirtqAvailRingFlags {
+pub(crate) struct VirtqAvailRingFlags {
     /// See 2.7.7 Used Buffer Notification Suppression
     no_interrupt: bool,
 
@@ -316,7 +317,7 @@ pub struct VirtqAvailRingFlags {
 ///         le16 avail_event; /* Only if VIRTIO_F_EVENT_IDX */
 /// };
 /// ```
-pub struct VirtqUsedRing {
+pub(crate) struct VirtqUsedRing {
     physical_address: u64,
 
     flags: RegisterRW<VirtqUsedRingFlags>,
@@ -332,7 +333,7 @@ pub struct VirtqUsedRing {
 }
 
 #[bitfield(u16)]
-pub struct VirtqUsedRingFlags {
+pub(crate) struct VirtqUsedRingFlags {
     /// See 2.7.10 Available Buffer Notification Suppression
     no_notify: bool,
 
@@ -343,13 +344,13 @@ pub struct VirtqUsedRingFlags {
 /// 2.7.8 The Virtqueue Used Ring
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct VirtqUsedElem {
+pub(crate) struct VirtqUsedElem {
     /// Index of start of used descriptor chain.
-    pub id: u32,
+    pub(crate) id: u32,
 
     /// The number of bytes written into the device writable portion of the
     /// buffer described by the descriptor chain.
-    pub len: u32,
+    pub(crate) len: u32,
 }
 
 impl VirtqUsedRing {

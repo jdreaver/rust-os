@@ -25,7 +25,7 @@ struct Selectors {
     tss_selector: SegmentSelector,
 }
 
-pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
+pub(crate) const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 
 lazy_static! {
     // N.B. TSS is mostly used in 32 bit mode, but in 64 bit mode it is still
@@ -50,7 +50,7 @@ lazy_static! {
     };
 }
 
-pub fn init() {
+pub(crate) fn init() {
     use x86_64::instructions::tables::load_tss;
     use x86_64::registers::segmentation::{Segment, CS, DS, ES, FS, GS, SS};
 

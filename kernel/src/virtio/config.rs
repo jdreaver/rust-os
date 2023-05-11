@@ -15,7 +15,7 @@ use crate::serial_println;
 
 /// Holds the configuration for a VirtIO device.
 #[derive(Debug, Clone, Copy)]
-pub struct VirtIODeviceConfig {
+pub(crate) struct VirtIODeviceConfig {
     /// Common PCI configuration registers.
     pci_config: PCIDeviceConfig,
 
@@ -29,7 +29,7 @@ pub struct VirtIODeviceConfig {
 }
 
 impl VirtIODeviceConfig {
-    pub fn from_pci_config(
+    pub(crate) fn from_pci_config(
         pci_config: PCIDeviceConfig,
         mapper: &mut impl Mapper<Size4KiB>,
         frame_allocator: &mut impl FrameAllocator<Size4KiB>,
@@ -116,7 +116,7 @@ impl VirtIODeviceConfig {
         self.pci_config
     }
 
-    pub fn common_virtio_config(&self) -> VirtIOPCICommonConfigRegisters {
+    pub(super) fn common_virtio_config(&self) -> VirtIOPCICommonConfigRegisters {
         self.common_virtio_config
     }
 
@@ -126,7 +126,7 @@ impl VirtIODeviceConfig {
 }
 
 #[derive(Clone, Copy)]
-pub struct VirtIOPCICapabilityHeader {
+pub(crate) struct VirtIOPCICapabilityHeader {
     /// The body of the PCID device for this VirtIO device.
     device_config_body: PCIDeviceConfigType0,
 
@@ -147,7 +147,7 @@ impl VirtIOPCICapabilityHeader {
     /// # Safety
     ///
     /// Caller must ensure that the capability header is from a VirtIO device.
-    pub unsafe fn from_pci_capability(
+    pub(crate) unsafe fn from_pci_capability(
         device_config_body: PCIDeviceConfigType0,
         header: &PCIDeviceCapabilityHeader,
     ) -> Option<Self> {
@@ -212,7 +212,7 @@ impl VirtIOPCICapabilityHeader {
 
     /// Compute and map physical address for VirtIO capabilities that need to
     /// reach through a BAR to access their configuration.
-    pub fn compute_and_map_config_address(
+    pub(crate) fn compute_and_map_config_address(
         self,
         mapper: &mut impl Mapper<Size4KiB>,
         frame_allocator: &mut impl FrameAllocator<Size4KiB>,
@@ -271,7 +271,7 @@ const VIRTIO_CAPABILITY_HEADER_SIZE: usize = 16;
 
 register_struct!(
     /// See 4.1.4 Virtio Structure PCI Capabilities in spec
-    VirtIOPCICapabilityHeaderRegisters {
+    pub(super) VirtIOPCICapabilityHeaderRegisters {
         // TODO: Support field docstrings in register_struct! macro.
         // This should equal 0x9, which is the PCI capability ID meaning "vendor
         // specific".
@@ -329,7 +329,7 @@ enum VirtIOConfig {
 
 register_struct!(
     /// 4.1.4.3 Common configuration structure layout
-    VirtIOPCICommonConfigRegisters {
+    pub(super) VirtIOPCICommonConfigRegisters {
         0x00 => device_feature_select: RegisterRW<u32>,
         0x04 => device_feature: RegisterRO<u32>,
         0x08 => driver_feature_select: RegisterRW<u32>,
@@ -353,7 +353,7 @@ register_struct!(
 
 #[bitfield(u8)]
 /// 2.1 Device Status Field
-pub struct VirtIOConfigStatus {
+pub(crate) struct VirtIOConfigStatus {
     /// ACKNOWLEDGE (1) Indicates that the guest OS has found the device and
     /// recognized it as a valid virtio device.
     pub(crate) acknowledge: bool,
@@ -389,14 +389,14 @@ pub struct VirtIOConfigStatus {
 
 register_struct!(
     /// 4.1.4.5 ISR status capability
-    VirtIOPCIISRRegisters {
+    pub(super) VirtIOPCIISRRegisters {
         0x00 => isr: RegisterRW<VirtIOISRStatus>,
     }
 );
 
 #[bitfield(u32)]
 /// 4.1.4.5 ISR status capability
-pub struct VirtIOISRStatus {
+pub(crate) struct VirtIOISRStatus {
     queue_interrupt: bool,
     device_config_interrupt: bool,
 
@@ -406,7 +406,7 @@ pub struct VirtIOISRStatus {
 
 /// 4.1.4.4 Notification structure layout
 #[derive(Debug, Clone, Copy)]
-pub struct VirtIONotifyConfig {
+pub(crate) struct VirtIONotifyConfig {
     /// Physical address for the configuration area for the Notify capability
     /// (BAR + offset has already been applied).
     config_addr: PhysAddr,

@@ -10,15 +10,15 @@ use crate::{memory, serial_println, strings};
 static mut BOOT_INFO: Option<BootInfo> = None;
 
 #[derive(Debug)]
-pub struct BootInfo {
-    pub info_name: &'static str,
-    pub info_version: &'static str,
-    pub higher_half_direct_map_offset: VirtAddr,
-    pub kernel_address_physical_base: PhysAddr,
-    pub kernel_address_virtual_base: VirtAddr,
-    pub efi_system_table_address: Option<VirtAddr>,
-    pub rsdp_address: Option<VirtAddr>,
-    pub framebuffer: &'static mut limine::LimineFramebuffer,
+pub(crate) struct BootInfo {
+    pub(crate) info_name: &'static str,
+    pub(crate) info_version: &'static str,
+    pub(crate) higher_half_direct_map_offset: VirtAddr,
+    pub(crate) kernel_address_physical_base: PhysAddr,
+    pub(crate) kernel_address_virtual_base: VirtAddr,
+    pub(crate) efi_system_table_address: Option<VirtAddr>,
+    pub(crate) rsdp_address: Option<VirtAddr>,
+    pub(crate) framebuffer: &'static mut limine::LimineFramebuffer,
 }
 
 static BOOT_INFO_REQUEST: LimineBootInfoRequest = LimineBootInfoRequest::new(0);
@@ -29,7 +29,7 @@ static KERNEL_ADDRESS_REQUEST: LimineKernelAddressRequest = LimineKernelAddressR
 static MEMORY_MAP_REQUEST: LimineMemmapRequest = LimineMemmapRequest::new(0);
 static RSDP_REQUEST: LimineRsdpRequest = LimineRsdpRequest::new(0);
 
-pub fn init_boot_info() {
+pub(crate) fn init_boot_info() {
     let (info_name, info_version) = limine_boot_info();
 
     let higher_half_direct_map_offset = limine_higher_half_offset();
@@ -98,7 +98,7 @@ fn limine_rsdp_address() -> Option<VirtAddr> {
     Some(VirtAddr::from_ptr(address_ptr))
 }
 
-pub fn boot_info() -> &'static BootInfo {
+pub(crate) fn boot_info() -> &'static BootInfo {
     unsafe { BOOT_INFO.as_ref().expect("boot info not initialized") }
 }
 
@@ -160,7 +160,7 @@ fn limine_memory_map_entries() -> impl Iterator<Item = &'static limine::LimineMe
     }
 }
 
-pub fn print_limine_memory_map() {
+pub(crate) fn print_limine_memory_map() {
     let memory_map_iter = limine_memory_map_entries();
 
     serial_println!("limine memory map:");
@@ -223,7 +223,7 @@ pub fn print_limine_memory_map() {
 /// > The bootloader page tables are in bootloader-reclaimable memory [...], and
 /// > their specific layout is undefined as long as they provide the above
 /// > memory mappings.
-pub fn allocator_from_limine_memory_map() -> memory::NaiveFreeMemoryBlockAllocator {
+pub(crate) fn allocator_from_limine_memory_map() -> memory::NaiveFreeMemoryBlockAllocator {
     // SAFETY: The limine memory map is valid for the lifetime of the kernel.
     unsafe {
         memory::NaiveFreeMemoryBlockAllocator::from_iter(

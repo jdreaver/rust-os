@@ -9,7 +9,7 @@ use x86_64::instructions::interrupts;
 /// Useful for use with the `write!` macro. We can't implement `Write` for
 /// `SerialPort` or `Mutex<SerialPort>` directly because we don't own those
 /// types.
-pub struct SerialWriter(Option<&'static Mutex<SerialPort>>);
+pub(crate) struct SerialWriter(Option<&'static Mutex<SerialPort>>);
 
 impl Write for SerialWriter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
@@ -34,14 +34,14 @@ static mut SERIAL1_WRITER: SerialWriter = SerialWriter(None);
 /// ```
 /// writeln!(serial1_writer(), "Hello, world!");
 /// ```
-pub fn serial1_writer() -> &'static mut SerialWriter {
+pub(crate) fn serial1_writer() -> &'static mut SerialWriter {
     // This is safe because SerialWriter wraps a Mutex<SerialPort>. The only
     // reason we do this is so we can use this in `write!` macros because the
     // `Write` trait methods require a mutable reference.
     unsafe { &mut SERIAL1_WRITER }
 }
 
-pub fn init_serial_writer() {
+pub(crate) fn init_serial_writer() {
     unsafe {
         SERIAL1_WRITER = SerialWriter(Some(&SERIAL1));
     }
@@ -78,7 +78,7 @@ lazy_static! {
 }
 
 #[doc(hidden)]
-pub fn _print(args: ::core::fmt::Arguments) {
+pub(crate) fn _print(args: ::core::fmt::Arguments) {
     unsafe {
         SERIAL1_WRITER
             .write_fmt(args)

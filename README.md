@@ -52,20 +52,16 @@ make test
 
 ## TODO
 
-- Move creating the `OffsetPageTable` from `memory.rs` to `boot_info.rs`
-- Split up `pci.rs` and `virtio.rs`. They are too large.
-- Don't make everything `pub` so I can find dead code better. Use private stuff or `pub(crate)` or `pub(self)` judiciously.
-  - Move most of `main.rs` into the crate
-  - Get rid of `pub use`
+- Make `init` function and make the order of operations clear
+  - Move creating the `OffsetPageTable` from `memory.rs` to `boot_info.rs`
+- Split up `pci.rs` into sub modules
 - Make PCI capabilities list a first class thing
   - Don't print them when debug printing the type 0 header!
   - Take inspiration from <https://docs.rs/pci-driver/latest/pci_driver/config/caps/index.html>
     - I like the idea of iterating over them and incrementally adding structure
-- In `vesa_framebuffer`, try to initialize a `mut` static slice for the framebuffer (making sure to have padding due to pitch)
-- VirtIO
-  - Rename avail -> driver and used -> device
-  - Figure out PCI interrupts (MSI-X?)
-  - Ensure it is crystal clear that memory allocator needs to be contiguous
+- Figure out PCI interrupts (MSI-X?)
+- VirtIO: Make RNG device a "thing" in its own file
+- VirtIO: Ensure it is crystal clear that memory allocator needs to be contiguous
 - `registers.rs` and macros
   - Consider moving `registers.rs` stuff into dedicated crate with unit tests
   - Also document `registers.rs` stuff

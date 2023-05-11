@@ -147,7 +147,7 @@ fn debug_fmt_register<T: Debug>(
 macro_rules! register_struct {
     (
         $(#[$attr:meta])*
-        $struct_name:ident {
+        $vis:vis $struct_name:ident {
             $(
                 $offset:literal => $name:ident : $register_type:ident $(< $type:ty >)?
             ),* $(,)?
@@ -155,17 +155,17 @@ macro_rules! register_struct {
     ) => {
         $(#[$attr])*
         #[derive(Clone, Copy)]
-        pub struct $struct_name {
+        $vis struct $struct_name {
             address: usize,
         }
 
         impl $struct_name {
-            unsafe fn from_address(address: usize) -> Self {
+            $vis unsafe fn from_address(address: usize) -> Self {
                 Self { address }
             }
 
             $(
-                $crate::register_struct!(@register_method $offset, $name, $register_type, $(< $type >)? );
+                $crate::register_struct!(@register_method $vis, $offset, $name, $register_type, $(< $type >)? );
             )*
         }
 
@@ -181,8 +181,8 @@ macro_rules! register_struct {
         }
     };
 
-    (@register_method $offset:expr, $name:ident, $register_type:ident, $(< $type:ty >)? ) => {
-        pub fn $name(&self) -> $register_type $(< $type >)? {
+    (@register_method $vis:vis, $offset:expr, $name:ident, $register_type:ident, $(< $type:ty >)? ) => {
+        $vis fn $name(&self) -> $register_type $(< $type >)? {
             unsafe { $register_type::from_address(self.address + $offset) }
         }
     };

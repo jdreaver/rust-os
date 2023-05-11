@@ -7,7 +7,7 @@ use crate::virtio::config::{VirtIOConfigStatus, VirtIODeviceConfig};
 use crate::virtio::queue::{VirtQueue, VirtqAvailRing, VirtqDescriptorTable, VirtqUsedRing};
 
 #[derive(Debug)]
-pub struct VirtIOInitializedDevice {
+pub(crate) struct VirtIOInitializedDevice {
     config: VirtIODeviceConfig,
     virtqueues: Vec<VirtQueue>,
 }
@@ -15,7 +15,10 @@ pub struct VirtIOInitializedDevice {
 impl VirtIOInitializedDevice {
     /// See "3 General Initialization And Device Operation" and "4.1.5
     /// PCI-specific Initialization And Device Operation"
-    pub fn new(device_config: VirtIODeviceConfig, physical_allocator: &impl Allocator) -> Self {
+    pub(crate) fn new(
+        device_config: VirtIODeviceConfig,
+        physical_allocator: &impl Allocator,
+    ) -> Self {
         let config = device_config.common_virtio_config();
 
         // Reset the VirtIO device by writing 0 to the status register (see
@@ -118,11 +121,11 @@ impl VirtIOInitializedDevice {
         }
     }
 
-    pub fn config(&self) -> &VirtIODeviceConfig {
+    pub(crate) fn config(&self) -> &VirtIODeviceConfig {
         &self.config
     }
 
-    pub fn get_virtqueue_mut(&mut self, index: u16) -> Option<&mut VirtQueue> {
+    pub(crate) fn get_virtqueue_mut(&mut self, index: u16) -> Option<&mut VirtQueue> {
         self.virtqueues.get_mut(index as usize)
     }
 }

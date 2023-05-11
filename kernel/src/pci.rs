@@ -14,7 +14,7 @@ const MAX_PCI_BUS_DEVICE_FUNCTION: u8 = 7;
 ///
 /// NOTE: I think this would miss devices that are behind a PCI bridge, except
 /// we are enumerating all buses, so maybe it is fine?
-pub fn for_pci_devices_brute_force<F>(base_addr: PhysAddr, mut f: F)
+pub(crate) fn for_pci_devices_brute_force<F>(base_addr: PhysAddr, mut f: F)
 where
     F: FnMut(PCIDeviceConfig),
 {
@@ -40,7 +40,7 @@ where
 /// (ECAM)" of the PCI Express Base Specification, as well as
 /// <https://wiki.osdev.org/PCI_Express>.
 #[derive(Debug, Clone, Copy)]
-pub struct PCIDeviceLocation {
+pub(crate) struct PCIDeviceLocation {
     /// Physical address where the PCI Express extended configuration mechanism
     /// memory region starts for this device.
     ecam_base_address: PhysAddr,
@@ -56,7 +56,7 @@ pub struct PCIDeviceLocation {
 }
 
 impl PCIDeviceLocation {
-    pub fn device_base_address(&self) -> PhysAddr {
+    pub(crate) fn device_base_address(&self) -> PhysAddr {
         let bus = u64::from(self.bus_number);
         let device = u64::from(self.device_number);
         let function = u64::from(self.function_number);
@@ -67,7 +67,7 @@ impl PCIDeviceLocation {
 register_struct!(
     /// See <https://wiki.osdev.org/PCI#Common_Header_Fields> and "7.5.1.1 Type
     /// 0/1 Common Configuration Space" in spec
-    PCIDeviceCommonConfigRegisters {
+    pub(crate) PCIDeviceCommonConfigRegisters {
         // N.B. vendor_id and device_id are in a separate struct.
 
         0x04 => command: RegisterRW<PCIDeviceConfigCommand>,
@@ -91,7 +91,7 @@ register_struct!(
 register_struct!(
     /// See <https://wiki.osdev.org/PCI#Common_Header_Fields> and "7.5.1.1 Type
     /// 0/1 Common Configuration Space" in spec
-    PCIConfigDeviceIDRegisters {
+    pub(crate) PCIConfigDeviceIDRegisters {
         0x00 => vendor_id: RegisterRO<u16>,
         0x02 => device_id: RegisterRO<u16>,
 
@@ -103,7 +103,7 @@ register_struct!(
 );
 
 #[derive(Debug, Clone, Copy)]
-pub struct PCIDeviceConfig {
+pub(crate) struct PCIDeviceConfig {
     location: PCIDeviceLocation,
 
     /// All PCI devices share some common configuration. See
@@ -138,15 +138,15 @@ impl PCIDeviceConfig {
         })
     }
 
-    pub fn device_id(self) -> PCIConfigDeviceID {
+    pub(crate) fn device_id(self) -> PCIConfigDeviceID {
         self.device_id
     }
 
-    pub fn common_registers(self) -> PCIDeviceCommonConfigRegisters {
+    pub(crate) fn common_registers(self) -> PCIDeviceCommonConfigRegisters {
         self.common_registers
     }
 
-    pub fn config_type(&self) -> Result<PCIDeviceConfigTypes, &str> {
+    pub(crate) fn config_type(&self) -> Result<PCIDeviceConfigTypes, &str> {
         let layout = self.common_registers.header_type().read().layout()?;
         let body = match layout {
             PCIDeviceConfigHeaderLayout::GeneralDevice => {
@@ -161,7 +161,7 @@ impl PCIDeviceConfig {
 }
 
 #[derive(Clone, Copy)]
-pub struct PCIConfigDeviceID {
+pub(crate) struct PCIConfigDeviceID {
     registers: PCIConfigDeviceIDRegisters,
 }
 
@@ -172,16 +172,16 @@ impl PCIConfigDeviceID {
         Self { registers }
     }
 
-    pub fn registers(&self) -> PCIConfigDeviceIDRegisters {
+    pub(crate) fn registers(self) -> PCIConfigDeviceIDRegisters {
         self.registers
     }
 
-    pub fn known_vendor_id(&self) -> &'static str {
+    pub(crate) fn known_vendor_id(self) -> &'static str {
         let vendor_id = self.registers.vendor_id().read();
         lookup_vendor_id(vendor_id)
     }
 
-    pub fn known_device_id(&self) -> &'static str {
+    pub(crate) fn known_device_id(self) -> &'static str {
         let vendor_id = self.registers.vendor_id().read();
         let device_id = self.registers.device_id().read();
         lookup_known_device_id(vendor_id, device_id)
@@ -226,7 +226,7 @@ fn lookup_vendor_id(vendor_id: u16) -> &'static str {
 
 /// See "7.5.1.1.3 Command Register (Offset 04h)" in the PCI Express Spec
 #[bitfield(u16)]
-pub struct PCIDeviceConfigCommand {
+pub(crate) struct PCIDeviceConfigCommand {
     io_space_enable: bool,
     memory_space_enable: bool,
     bus_master_enable: bool,
@@ -244,7 +244,7 @@ pub struct PCIDeviceConfigCommand {
 
 /// See "7.5.1.1.4 Status Register (Offset 06h)" in the PCI Express spec.
 #[bitfield(u16)]
-pub struct PCIDeviceConfigStatus {
+pub(crate) struct PCIDeviceConfigStatus {
     immediate_readiness: bool,
     #[bits(2)]
     __: u8,
@@ -265,7 +265,7 @@ pub struct PCIDeviceConfigStatus {
 
 /// 7.5.1.1.9 Header Type Register (Offset 0Eh)
 #[bitfield(u8, debug = false)]
-pub struct PCIDeviceConfigHeaderType {
+pub(crate) struct PCIDeviceConfigHeaderType {
     #[bits(2)]
     raw_layout: u8,
 
@@ -301,7 +301,7 @@ impl fmt::Debug for PCIDeviceConfigHeaderType {
 }
 
 #[derive(Clone, Copy)]
-pub enum PCIDeviceConfigHeaderLayout {
+pub(crate) enum PCIDeviceConfigHeaderLayout {
     GeneralDevice,
     PCIToPCIBridge,
     // N.B. PCIToCardBusBridge doesn't exist any longer in PCI Express. Let's
@@ -397,7 +397,7 @@ fn lookup_known_device_id(vendor_id: u16, device_id: u16) -> &'static str {
 
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
-pub enum PCIDeviceClass {
+pub(crate) enum PCIDeviceClass {
     Unclassified,
     MassStorageController,
     NetworkController,
@@ -500,7 +500,7 @@ fn device_type(class: u8, subclass: u8, prog_if: u8) -> Result<&'static str, &'s
 }
 
 #[derive(Clone, Copy)]
-pub enum PCIDeviceConfigTypes {
+pub(crate) enum PCIDeviceConfigTypes {
     GeneralDevice(PCIDeviceConfigType0),
     PCIToPCIBridge,
     // N.B. PCIToCardBusBridge doesn't exist any longer in PCI Express. Let's
@@ -510,7 +510,7 @@ pub enum PCIDeviceConfigTypes {
 
 register_struct!(
     /// 7.5.1.2 Type 0 Configuration Space Header
-    PCIDeviceConfigType0Registers {
+    pub(crate) PCIDeviceConfigType0Registers {
         // N.B. Base address is for the entire configuration block (that is, the
         // base of the common configuration), not just for the type 0 registers.
         0x10 => raw_bar0: RegisterRW<u32>,
@@ -533,7 +533,7 @@ register_struct!(
 );
 
 #[derive(Clone, Copy)]
-pub struct PCIDeviceConfigType0 {
+pub(crate) struct PCIDeviceConfigType0 {
     common_config: PCIDeviceConfig,
     registers: PCIDeviceConfigType0Registers,
 }
@@ -547,7 +547,7 @@ impl PCIDeviceConfigType0 {
         }
     }
 
-    pub fn iter_capabilities(self) -> PCIDeviceCapabilityIterator {
+    pub(crate) fn iter_capabilities(self) -> PCIDeviceCapabilityIterator {
         // Check if the device even has capabilities.
         let has_caps = self
             .common_config
@@ -581,7 +581,7 @@ impl PCIDeviceConfigType0 {
         }
     }
 
-    pub fn bar(&self, bar_idx: usize) -> BARAddress {
+    pub(crate) fn bar(&self, bar_idx: usize) -> BARAddress {
         let bar_addresses = self.bar_addresses().interpreted();
         let bar_address = bar_addresses
             .get(bar_idx)
@@ -616,7 +616,7 @@ impl fmt::Debug for PCIDeviceConfigType0Capabilities {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub enum BARAddress {
+pub(crate) enum BARAddress {
     /// 32-bit BAR address. Uses a single BAR register.
     Mem32Bit { address: u32, prefetchable: bool },
 
@@ -627,8 +627,8 @@ pub enum BARAddress {
     IO(u32),
 }
 
-pub struct BARAddresses<const N: usize> {
-    pub bars: [u32; N],
+pub(crate) struct BARAddresses<const N: usize> {
+    pub(crate) bars: [u32; N],
 }
 
 impl<const N: usize> BARAddresses<N> {
@@ -732,7 +732,7 @@ impl<const N: usize> fmt::Debug for BARAddresses<N> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct PCIDeviceCapabilityHeader {
+pub(crate) struct PCIDeviceCapabilityHeader {
     config_base_address: usize,
     registers: PCIDeviceCapabilityHeaderRegisters,
 }
@@ -759,12 +759,12 @@ impl PCIDeviceCapabilityHeader {
         })
     }
 
-    pub fn address(&self) -> usize {
+    pub(crate) fn address(&self) -> usize {
         self.registers.address
     }
 
     /// Vendor-specific capability headers have an ID of 0x09.
-    pub fn is_vendor_specific(&self) -> bool {
+    pub(crate) fn is_vendor_specific(&self) -> bool {
         self.registers.id().read() == 0x09
     }
 
@@ -774,14 +774,14 @@ impl PCIDeviceCapabilityHeader {
 }
 
 register_struct!(
-    PCIDeviceCapabilityHeaderRegisters {
+    pub(crate) PCIDeviceCapabilityHeaderRegisters {
         0x0 => id: RegisterRO<u8>,
         0x1 => next: RegisterRO<u8>,
     }
 );
 
 #[derive(Debug, Clone)]
-pub struct PCIDeviceCapabilityIterator {
+pub(crate) struct PCIDeviceCapabilityIterator {
     ptr: Option<PCIDeviceCapabilityHeader>,
 }
 

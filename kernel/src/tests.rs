@@ -8,7 +8,7 @@ use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, Size2MiB, Size
 
 use crate::{acpi, boot_info, memory, pci, serial_println, virtio};
 
-pub fn run_tests(
+pub(crate) fn run_tests(
     boot_info_data: &boot_info::BootInfo,
     mapper: &mut OffsetPageTable,
     frame_allocator: &mut memory::LockedNaiveFreeMemoryBlockAllocator,

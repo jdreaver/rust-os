@@ -13,7 +13,7 @@ use x86_64::{PhysAddr, VirtAddr};
 /// physical memory is mapped to virtual memory at the passed
 /// `physical_memory_offset`. Also, this function must be only called once to
 /// avoid aliasing `&mut` references (which is undefined behavior).
-pub unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
+pub(crate) unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
     let level_4_table = active_level_4_page_table(physical_memory_offset);
     OffsetPageTable::new(level_4_table, physical_memory_offset)
 }
@@ -38,9 +38,9 @@ unsafe fn active_level_4_page_table(physical_memory_offset: VirtAddr) -> &'stati
 /// kernel from the bootloader, and this type exists to give a layer of
 /// indirection between the bootloader memory region type and the kernel.
 #[derive(Debug, Clone, Copy)]
-pub struct UsableMemoryRegion {
-    pub start_address: PhysAddr,
-    pub len: u64,
+pub(crate) struct UsableMemoryRegion {
+    pub(crate) start_address: PhysAddr,
+    pub(crate) len: u64,
 }
 
 const MAX_USABLE_MEMORY_REGIONS: usize = 16;
@@ -53,7 +53,7 @@ const MAX_USABLE_MEMORY_REGIONS: usize = 16;
 ///
 /// Use `from_iter` to instantiate this type from memory regions.
 #[derive(Debug)]
-pub struct NaiveFreeMemoryBlockAllocator {
+pub(crate) struct NaiveFreeMemoryBlockAllocator {
     /// The list of memory regions that we can use for allocations. This would
     /// be a `Vec<UsageMemoryRegion>`, but we can't use `Vec` without an
     /// allocator, so we use a fixed-size array instead.
@@ -79,7 +79,7 @@ impl NaiveFreeMemoryBlockAllocator {
     ///
     /// N.B. We can't implement this using `FromIterator` because we can't
     /// implement the `from_iter` method using `unsafe`.
-    pub unsafe fn from_iter<T: IntoIterator<Item = UsableMemoryRegion>>(iter: T) -> Self {
+    pub(crate) unsafe fn from_iter<T: IntoIterator<Item = UsableMemoryRegion>>(iter: T) -> Self {
         let mut usable_memory_regions = [UsableMemoryRegion {
             start_address: PhysAddr::new(0),
             len: 0,
@@ -157,12 +157,12 @@ unsafe impl<S: PageSize> FrameAllocator<S> for NaiveFreeMemoryBlockAllocator {
 }
 
 /// `NaiveFreeMemoryBlockAllocator` behind a `Mutex`
-pub struct LockedNaiveFreeMemoryBlockAllocator {
+pub(crate) struct LockedNaiveFreeMemoryBlockAllocator {
     mutex: Mutex<NaiveFreeMemoryBlockAllocator>,
 }
 
 impl LockedNaiveFreeMemoryBlockAllocator {
-    pub fn new(alloc: NaiveFreeMemoryBlockAllocator) -> Self {
+    pub(crate) fn new(alloc: NaiveFreeMemoryBlockAllocator) -> Self {
         Self {
             mutex: Mutex::new(alloc),
         }
@@ -210,13 +210,13 @@ unsafe impl<S: PageSize> FrameAllocator<S> for LockedNaiveFreeMemoryBlockAllocat
 
 /// Error type used in `allocate_zeroed_buffer`.
 #[derive(Debug, Clone)]
-pub enum AllocZeroedBufferError {
+pub(crate) enum AllocZeroedBufferError {
     LayoutError(LayoutError),
     AllocError(AllocError),
 }
 
 /// Useful utility wrapper around `Allocator.allocate_zeroed`.
-pub fn allocate_zeroed_buffer(
+pub(crate) fn allocate_zeroed_buffer(
     allocator: &impl Allocator,
     size: usize,
     alignment: usize,
