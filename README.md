@@ -52,7 +52,11 @@ make test
 
 ## TODO
 
-- Consider custom page table implementation to get around `&mut` requirements <https://github.com/rust-osdev/x86_64/issues/416>
+- Multi-tasking
+  - <https://wiki.osdev.org/Brendan%27s_Multi-tasking_Tutorial>
+- Make `LockedNaiveFreeMemoryBlockAllocator` a global static instead of passing
+  it around. The tricky part is all the things that want `&mut impl FrameAllocator`
+  - Consider custom page table implementation to get around `&mut` requirements <https://github.com/rust-osdev/x86_64/issues/416>
 - Make PCI capabilities list a first class thing
   - Don't print them when debug printing the type 0 header!
   - Take inspiration from <https://docs.rs/pci-driver/latest/pci_driver/config/caps/index.html>
@@ -82,24 +86,12 @@ make test
   - I really messed up my pointer math on some structs and now I'm scared. It
     would be _really_ nice to be able to rely on `#[repr(C)]` alignment rules,
     especially for VirtIO where they use C structs in the spec.
-- Make `LockedNaiveFreeMemoryBlockAllocator` a global static instead of passing
-  it around. The tricky part is all the things that want `&mut impl FrameAllocator`
 - Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
 - Filesystem support
   - Now that I have PCI working, attach a drive via QEMU and see what is looks like under PCI
     - I'm pretty sure there is just one SATA controller for multiple drives
   - Example <https://github.com/rafalh/rust-fatfs>
   - <https://wiki.osdev.org/FAT>
-  - ATA
-    - <https://wiki.osdev.org/ATA_PIO_Mode>
-    - <https://wiki.osdev.org/ATA_read/write_sectors>
-    - <https://github.com/mit-pdos/xv6-public/blob/master/ide.c>
-  - Virtio, since we are running in QEMU anyway
-    - <https://wiki.osdev.org/Virtio>
-    - <https://www.qemu.org/2021/01/19/virtio-blk-scsi-configuration/>
-    - <https://brennan.io/2020/03/22/sos-block-device/>
-    - <https://wiki.osdev.org/PCI>
-    - <https://github.com/mit-pdos/xv6-riscv/blob/f5b93ef12f7159f74f80f94729ee4faabe42c360/kernel/virtio_disk.c>
 - Serial print deadlock during interrupt: if we hit an interrupt while we are in
   the middle of printing to the serial port, and the interrupt needs to print to
   the serial port, we can deadlock.
@@ -148,6 +140,11 @@ make test
 - <https://blogs.oracle.com/linux/post/introduction-to-virtio>
 - <https://wiki.libvirt.org/Virtio.html>
 - <https://airbus-seclab.github.io/qemu_blog/regions.html> (show virtio regions with `info mtree`)
+
+Block device:
+- <https://www.qemu.org/2021/01/19/virtio-blk-scsi-configuration/>
+- <https://brennan.io/2020/03/22/sos-block-device/>
+- <https://github.com/mit-pdos/xv6-riscv/blob/f5b93ef12f7159f74f80f94729ee4faabe42c360/kernel/virtio_disk.c>
 
 ### Volatile memory access in Rust, and spurious reads
 
