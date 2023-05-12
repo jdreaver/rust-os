@@ -334,10 +334,11 @@ register_struct!(
         0x04 => device_feature: RegisterRO<u32>,
         0x08 => driver_feature_select: RegisterRW<u32>,
         0x0C => driver_feature: RegisterRW<u32>,
-        0x10 => msix_config: RegisterRW<u16>,
+        0x10 => config_msix_vector: RegisterRW<u16>,
         0x12 => num_queues: RegisterRO<u16>,
         0x14 => device_status: RegisterRW<VirtIOConfigStatus>,
         0x15 => config_generation: RegisterRO<u8>,
+
         0x16 => queue_select: RegisterRW<u16>,
         0x18 => queue_size: RegisterRW<u16>,
         0x1A => queue_msix_vector: RegisterRW<u16>,
