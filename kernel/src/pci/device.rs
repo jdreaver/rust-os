@@ -506,8 +506,9 @@ impl Iterator for PCIDeviceCapabilityIterator {
     type Item = PCIDeviceCapabilityHeader;
 
     fn next(&mut self) -> Option<Self::Item> {
+        let next = self.ptr;
         self.ptr = self.ptr.and_then(|ptr| ptr.next_capability());
-        self.ptr
+        next
     }
 }
 

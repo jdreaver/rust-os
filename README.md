@@ -52,6 +52,8 @@ make test
 
 ## TODO
 
+- Get APIC working <https://wiki.osdev.org/APIC>
+  - Limine masks APIC by default!
 - Multi-tasking
   - <https://wiki.osdev.org/Brendan%27s_Multi-tasking_Tutorial>
   - <https://www.reddit.com/r/osdev/comments/jf1wgy/multitasking_tutorial/>
@@ -126,6 +128,28 @@ make test
 
 ## Resources
 
+### QEMU
+
+In the QEMU monitor (Ctrl+Alt+2 in a QEMU graphical window), these are useful
+for looking at devices:
+
+```
+$ info pci
+$ info qtree
+```
+
+Finding QEMU device help
+
+```
+# List devices
+$ qemu-system-x86_64 -device help
+
+# Help for a specific device
+$ qemu-system-x86_64 -device virtio-rng-pci,help
+```
+
+- <https://marz.utk.edu/my-courses/cosc562/qemu/>
+
 ### PCI
 
 - Spec <https://picture.iczhiku.com/resource/eetop/SYkDTqhOLhpUTnMx.pdf>
@@ -140,6 +164,7 @@ make test
   - <https://stackoverflow.com/questions/20901221/pci-express-bar-memory-mapping-basic-understanding>
   - <https://superuser.com/questions/746458/pci-bar-memory-addresses>
   - <https://softwareengineering.stackexchange.com/questions/358817/how-does-the-base-address-registers-bars-in-a-pci-card-work>
+- <https://marz.utk.edu/my-courses/cosc562/pcie/>
 
 ### Virtio
 
@@ -148,11 +173,13 @@ make test
 - <https://blogs.oracle.com/linux/post/introduction-to-virtio>
 - <https://wiki.libvirt.org/Virtio.html>
 - <https://airbus-seclab.github.io/qemu_blog/regions.html> (show virtio regions with `info mtree`)
+- <https://marz.utk.edu/my-courses/cosc562/virtio/rng/>
 
 Block device:
 - <https://www.qemu.org/2021/01/19/virtio-blk-scsi-configuration/>
 - <https://brennan.io/2020/03/22/sos-block-device/>
 - <https://github.com/mit-pdos/xv6-riscv/blob/f5b93ef12f7159f74f80f94729ee4faabe42c360/kernel/virtio_disk.c>
+- <https://marz.utk.edu/my-courses/cosc562/virtio/block/>
 
 ### Volatile memory access in Rust, and spurious reads
 
@@ -162,10 +189,3 @@ post](https://lokathor.github.io/volatile/) that explains this. There is also a
 good [forum
 thread](https://users.rust-lang.org/t/how-to-make-an-access-volatile-without-std-library/85533/)
 explaining the dangers of this.
-
-### Stephen Marz marz.utk.edu posts
-
-- <https://marz.utk.edu/my-courses/cosc562/qemu/>
-- <https://marz.utk.edu/my-courses/cosc562/pcie/>
-- <https://marz.utk.edu/my-courses/cosc562/virtio/rng/>
-- <https://marz.utk.edu/my-courses/cosc562/virtio/block/>
