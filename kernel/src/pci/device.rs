@@ -142,7 +142,7 @@ impl PCIDeviceConfig {
 
 impl fmt::Debug for PCIDeviceConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PCIDeviceConfigType0")
+        f.debug_struct("PCIDeviceConfig")
             .field("location", &self.location)
             .field("device_id", &self.device_id)
             .field("common_registers", &self.common_registers)
