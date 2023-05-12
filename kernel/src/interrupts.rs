@@ -18,6 +18,9 @@ lazy_static! {
         idt[InterruptIndex::Timer.into()].set_handler_fn(timer_interrupt_handler);
         idt[InterruptIndex::Keyboard.into()].set_handler_fn(keyboard_interrupt_handler);
 
+
+        idt[TMP_PCI_DEBUG_IDT_ENTRY.into()].set_handler_fn(pci_debug_handler);
+
         idt
     };
 }
@@ -28,6 +31,11 @@ const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 
 static PICS: spin::Mutex<pic8259::ChainedPics> =
     spin::Mutex::new(unsafe { pic8259::ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
+
+// TODO: This is the interrupt line reported by my PCI devices in QEMU. Just
+// hard-coding it for now.
+const TMP_PCI_DEBUG_IRQ: u8 = 0xa;
+const TMP_PCI_DEBUG_IDT_ENTRY: u8 = PIC_1_OFFSET + TMP_PCI_DEBUG_IRQ;
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
@@ -59,7 +67,12 @@ pub(crate) fn init_idt() {
         // Limine masks all legacy PIC and APIC IRQs. We have to enable the ones
         // we want. I got these values by calling `pic.read_masks()` using GRUB
         // instead of limine.
-        pic.write_masks(0b1011_1000, 0b1000_1110); // 184 and 142 in decimal
+        let default_pic1_mask = 0b1011_1000; // 184 in decimal
+        let default_pic2_mask = 0b1000_1110; // 142 in decimal
+
+        let pic1_mask = default_pic1_mask;
+        let pic2_mask = default_pic2_mask & !(1 << (TMP_PCI_DEBUG_IRQ - 8)); // 8 is b/c this is the second PIC
+        pic.write_masks(pic1_mask, pic2_mask);
     };
     x86_64::instructions::interrupts::enable();
 }
@@ -144,5 +157,14 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
     unsafe {
         PICS.lock()
             .notify_end_of_interrupt(InterruptIndex::Keyboard.into());
+    }
+}
+
+extern "x86-interrupt" fn pci_debug_handler(_stack_frame: InterruptStackFrame) {
+    serial_print!("GOT PCI INTERRUPT");
+
+    unsafe {
+        PICS.lock()
+            .notify_end_of_interrupt(TMP_PCI_DEBUG_IDT_ENTRY);
     }
 }
