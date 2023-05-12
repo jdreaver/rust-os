@@ -51,7 +51,7 @@ impl VirtIODeviceConfig {
         let mut common_virtio_config = None;
         let mut isr = None;
         let mut notify_config = None;
-        for capability in pci_type0_config.iter_capabilities() {
+        for capability in pci_config.iter_capabilities() {
             let capability = unsafe {
                 VirtIOPCICapabilityHeader::from_pci_capability(pci_type0_config, &capability)
             };

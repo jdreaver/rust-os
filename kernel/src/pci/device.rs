@@ -62,7 +62,7 @@ register_struct!(
     }
 );
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub(crate) struct PCIDeviceConfig {
     location: PCIDeviceLocation,
 
@@ -117,6 +117,38 @@ impl PCIDeviceConfig {
             PCIDeviceConfigHeaderLayout::PCIToPCIBridge => PCIDeviceConfigTypes::PCIToPCIBridge,
         };
         Ok(body)
+    }
+
+    pub(crate) fn iter_capabilities(self) -> PCIDeviceCapabilityIterator {
+        // Check if the device even has capabilities.
+        let has_caps = self
+            .common_registers()
+            .status()
+            .read()
+            .capabilities_list();
+        if !has_caps {
+            return PCIDeviceCapabilityIterator::new(None);
+        }
+
+        let cap_ptr = unsafe {
+            PCIDeviceCapabilityHeader::new(
+                self.common_registers.address,
+                self.common_registers.capabilities_pointer().read(),
+            )
+        };
+        PCIDeviceCapabilityIterator::new(cap_ptr)
+    }
+}
+
+impl fmt::Debug for PCIDeviceConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PCIDeviceConfigType0")
+            .field("location", &self.location)
+            .field("device_id", &self.device_id)
+            .field("common_registers", &self.common_registers)
+            // TODO: Don't print capabilities list as part of debugging this.
+            .field("capabilities", &self.iter_capabilities())
+            .finish()
     }
 }
 
@@ -239,10 +271,10 @@ register_struct!(
         0x2C => subsystem_vendor_id: RegisterRW<u16>,
         0x2E => subsystem_id: RegisterRW<u16>,
         0x30 => expansion_rom_base_address: RegisterRW<u32>,
-        0x34 => capabilities_pointer: RegisterRW<u8>,
+        // 0x34 => capabilities_pointer: RegisterRW<u8>, // In common config
         // 7 bytes reserved
-        0x3C => interrupt_line: RegisterRW<u8>,
-        0x3D => interrupt_pin: RegisterRW<u8>,
+        // 0x3C => interrupt_line: RegisterRW<u8>, // In common config
+        // 0x3D => interrupt_pin: RegisterRW<u8>, // In common config
         0x3E => min_grant: RegisterRW<u8>,
         0x3F => max_latency: RegisterRW<u8>,
     }
@@ -261,27 +293,6 @@ impl PCIDeviceConfigType0 {
             common_config,
             registers: PCIDeviceConfigType0Registers::from_address(address),
         }
-    }
-
-    pub(crate) fn iter_capabilities(self) -> PCIDeviceCapabilityIterator {
-        // Check if the device even has capabilities.
-        let has_caps = self
-            .common_config
-            .common_registers()
-            .status()
-            .read()
-            .capabilities_list();
-        if !has_caps {
-            return PCIDeviceCapabilityIterator::new(None);
-        }
-
-        let cap_ptr = unsafe {
-            PCIDeviceCapabilityHeader::new(
-                self.registers.address,
-                self.registers.capabilities_pointer().read(),
-            )
-        };
-        PCIDeviceCapabilityIterator::new(cap_ptr)
     }
 
     fn bar_addresses(self) -> BARAddresses<6> {
@@ -308,26 +319,10 @@ impl PCIDeviceConfigType0 {
 
 impl fmt::Debug for PCIDeviceConfigType0 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let caps = PCIDeviceConfigType0Capabilities(self.iter_capabilities());
-
         f.debug_struct("PCIDeviceConfigType0")
             .field("BARs", &self.bar_addresses())
             .field("registers", &self.registers)
-            // TODO: Don't print capabilities list as part of debugging this.
-            .field("capabilities", &caps)
             .finish()
-    }
-}
-
-/// Used just to help implement Debug for PCIDeviceConfigType0.
-///
-/// TODO: This is a hack. Don't do this.
-struct PCIDeviceConfigType0Capabilities(PCIDeviceCapabilityIterator);
-
-impl fmt::Debug for PCIDeviceConfigType0Capabilities {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let iter = self.0.clone();
-        f.debug_list().entries(iter).finish()
     }
 }
 
@@ -496,7 +491,7 @@ register_struct!(
     }
 );
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct PCIDeviceCapabilityIterator {
     ptr: Option<PCIDeviceCapabilityHeader>,
 }
@@ -513,5 +508,12 @@ impl Iterator for PCIDeviceCapabilityIterator {
     fn next(&mut self) -> Option<Self::Item> {
         self.ptr = self.ptr.and_then(|ptr| ptr.next_capability());
         self.ptr
+    }
+}
+
+impl fmt::Debug for PCIDeviceCapabilityIterator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let iter = self.clone();
+        f.debug_list().entries(iter).finish()
     }
 }

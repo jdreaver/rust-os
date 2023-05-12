@@ -54,13 +54,21 @@ make test
 
 - Multi-tasking
   - <https://wiki.osdev.org/Brendan%27s_Multi-tasking_Tutorial>
+  - <https://www.reddit.com/r/osdev/comments/jf1wgy/multitasking_tutorial/>
+  - <https://wiki.osdev.org/Context_Switching>
+  - <https://wiki.osdev.org/Kernel_Multitasking>
 - Make `LockedNaiveFreeMemoryBlockAllocator` a global static instead of passing
   it around. The tricky part is all the things that want `&mut impl FrameAllocator`
   - Consider custom page table implementation to get around `&mut` requirements <https://github.com/rust-osdev/x86_64/issues/416>
-- Make PCI capabilities list a first class thing
-  - Don't print them when debug printing the type 0 header!
-  - Take inspiration from <https://docs.rs/pci-driver/latest/pci_driver/config/caps/index.html>
-    - I like the idea of iterating over them and incrementally adding structure
+- PCI refactor
+  - Consider PCI stuff as "visitors" to PCIe config memory. Same with VirtIO.
+    Nothing should be cached in the struct, we don't need to allocate memory for
+    anything, etc. It is just wrappers over pointers and read/write functions.
+  - An actual concrete "device" type will use the visitors under the hood, but a separation might be meaningful.
+  - Make PCI capabilities list a first class thing
+    - Don't print them when debug printing the type 0 header!
+    - Take inspiration from <https://docs.rs/pci-driver/latest/pci_driver/config/caps/index.html>
+      - I like the idea of iterating over them and incrementally adding structure
 - Figure out PCI interrupts (MSI-X?)
 - VirtIO: Make RNG device a "thing" in its own file
 - VirtIO: Ensure it is crystal clear that memory allocator needs to be contiguous
