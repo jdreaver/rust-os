@@ -26,18 +26,19 @@
 
 extern crate alloc;
 
-pub mod acpi;
-pub mod boot_info;
-pub mod gdt;
-pub mod heap;
-pub mod interrupts;
-pub mod memory;
-pub mod pci;
-pub mod registers;
-pub mod serial;
-pub mod strings;
-pub mod tests;
-pub mod virtio;
+pub(crate) mod acpi;
+pub(crate) mod boot_info;
+pub(crate) mod gdt;
+pub(crate) mod heap;
+pub(crate) mod interrupts;
+pub(crate) mod memory;
+pub(crate) mod pci;
+#[allow(dead_code)] // This could be its own crate
+pub(crate) mod registers;
+pub(crate) mod serial;
+pub(crate) mod strings;
+pub(crate) mod tests;
+pub(crate) mod virtio;
 
 use vesa_framebuffer::TextBuffer;
 
@@ -79,7 +80,7 @@ pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     hlt_loop()
 }
 
-pub fn hlt_loop() -> ! {
+pub(crate) fn hlt_loop() -> ! {
     loop {
         x86_64::instructions::hlt();
     }
