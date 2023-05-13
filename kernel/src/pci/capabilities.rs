@@ -224,20 +224,93 @@ impl MSIXTable {
             "MSIXTable index out of bounds"
         );
         let entry_address = self.address + (index * 16);
-        unsafe { MSIXTableEntry::from_address(entry_address) }
+        unsafe { MSIXTableEntry(RawMSIXTableEntry::from_address(entry_address)) }
+    }
+}
+
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct MSIXTableEntry(RawMSIXTableEntry);
+
+impl MSIXTableEntry {
+    pub(crate) fn set_interrupt_vector(self, processor: u8, vector: u8) {
+        self.0
+            .message_address()
+            .write(MSIXMessageAddress::new(processor));
+        self.0
+            .message_data()
+            .write(MSIXMessageData::new().with_vector(vector));
+
+        // Un-mask the entry (default is masked!)
+        self.0.vector_control().modify_mut(|vec| {
+            vec.set_mask_bit(false);
+        });
     }
 }
 
 register_struct!(
     /// See "7.7.2 MSI-X Capability and Table Structure" in the PCI Express Base
     /// Specification.
-    pub(crate) MSIXTableEntry {
-        0x0 => message_address: RegisterRW<u32>,
+    pub(crate) RawMSIXTableEntry {
+        0x0 => message_address: RegisterRW<MSIXMessageAddress>,
         0x4 => message_upper_address: RegisterRW<u32>,
-        0x8 => message_data: RegisterRW<u32>,
+        0x8 => message_data: RegisterRW<MSIXMessageData>,
         0xc => vector_control: RegisterRW<MSIXVectorControl>,
     }
 );
+
+/// The PCI MSI-X message address is architecture specific, and this is the
+/// Intel one. See "11.11.1 Message Address Register Format" in the Intel 64
+/// Manual Volume 3.
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct MSIXMessageAddress(RawMSIXMessageAddress);
+
+impl MSIXMessageAddress {
+    const INTEL_PREFIX: u16 = 0x0fee;
+
+    pub(crate) fn new(processor: u8) -> Self {
+        Self(
+            RawMSIXMessageAddress::new()
+                .with_intel_prefix(Self::INTEL_PREFIX)
+                // Setting RH and DM = false makes Destination ID a processor ID
+                .with_destination_id(processor)
+                .with_redirection_hint(false)
+                .with_destination_mode(false),
+        )
+    }
+}
+
+#[bitfield(u32)]
+/// The PCI MSI-X message address is architecture specific, and this is the
+/// Intel one. See "11.11.1 Message Address Register Format" in the Intel 64
+/// Manual Volume 3.
+pub(crate) struct RawMSIXMessageAddress {
+    #[bits(2)]
+    __reserved: u8,
+    pub(crate) destination_mode: bool,
+    pub(crate) redirection_hint: bool,
+    __reserved: u8,
+    pub(crate) destination_id: u8,
+    #[bits(12)]
+    intel_prefix: u16,
+}
+
+#[bitfield(u32)]
+/// The PCI MSI-X message data is architecture specific, and this is the
+/// Intel one. See "11.11.2 Message Data Register Format" in the Intel 64
+/// Manual Volume 3.
+pub(crate) struct MSIXMessageData {
+    pub(crate) vector: u8,
+    #[bits(3)]
+    pub(crate) delivery_mode: u8,
+    #[bits(3)]
+    __reserved: u8,
+    level: bool,
+    trigger_mode: bool,
+    #[bits(16)]
+    __reserved: u32,
+}
 
 #[bitfield(u32)]
 /// See "7.7.2.8 Vector Control Register for MSI-X Table Entries"

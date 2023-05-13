@@ -4,9 +4,10 @@ use core::fmt::Write;
 
 use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
+use x86_64::structures::idt::InterruptStackFrame;
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, Size2MiB, Size4KiB, Translate};
 
-use crate::{acpi, boot_info, memory, pci, serial_println, virtio};
+use crate::{acpi, apic, boot_info, interrupts, memory, pci, serial_println, virtio};
 
 pub(crate) fn run_tests(
     boot_info_data: &boot_info::BootInfo,
@@ -158,13 +159,52 @@ fn test_rng_virtio_device(
 ) {
     let device_id = device.config().pci_config().device_id();
     if device_id.known_vendor_id() == "virtio" && device_id.known_device_id() == "entropy source" {
+        // Set up MSI-X interrupt
+
+        // Tell the first (and only) virtqueue to use MSI-X table entry 0.
+        device
+            .config()
+            .common_virtio_config()
+            .queue_select()
+            .write(0);
+        serial_println!(
+            "Queue MSI-X vector before: {:#x?}",
+            device
+                .config()
+                .common_virtio_config()
+                .queue_msix_vector()
+                .read()
+        );
+        device
+            .config()
+            .common_virtio_config()
+            .queue_msix_vector()
+            .write(0);
+        serial_println!(
+            "Queue MSI-X vector after: {:#x?}",
+            device
+                .config()
+                .common_virtio_config()
+                .queue_msix_vector()
+                .read()
+        );
+
         let msix = device
             .config()
             .pci_type0_config()
             .msix_config(mapper, frame_allocator)
             .expect("failed to get MSIX config for VirtIO device");
-        serial_println!("VirtIO device MSIX config: {:#x?}", msix);
+
+        // See "11.11 MESSAGE SIGNALLED INTERRUPTS" in the Intel 64 Manual
+        // Volume 3 for x86_64-specific details for the message address and
+        // data.
+        let interrupt_vector = interrupts::install_interrupt(test_virtio_rng_interrupt);
+        let table_entry = msix.table_entry(0);
+        table_entry.set_interrupt_vector(0, interrupt_vector);
         serial_println!("MSIX table entry 0: {:#x?}", msix.table_entry(0));
+        msix.enable();
+
+        serial_println!("VirtIO device MSIX config: {:#x?}", msix);
 
         // RNG device only has a single virtq
         let queue_index = 0;
@@ -207,4 +247,11 @@ fn test_rng_virtio_device(
         };
         serial_println!("RNG buffer: {:x?}", buffer);
     }
+}
+
+pub extern "x86-interrupt" fn test_virtio_rng_interrupt(_stack_frame: InterruptStackFrame) {
+    serial_println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    serial_println!("!!!!!!!!!!! VirtIO RNG interrupt!!!!!!!!!!!!!!!");
+    serial_println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    apic::end_of_interrupt();
 }

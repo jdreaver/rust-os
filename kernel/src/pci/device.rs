@@ -568,6 +568,15 @@ impl MSIXConfig {
         }
     }
 
+    pub(crate) fn enable(&self) {
+        self.capability
+            .registers
+            .message_control()
+            .modify_mut(|control| {
+                control.set_enable(true);
+            });
+    }
+
     pub(crate) fn table_size(&self) -> u16 {
         self.table.table_size()
     }

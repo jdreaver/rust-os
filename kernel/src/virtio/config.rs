@@ -119,7 +119,7 @@ impl VirtIODeviceConfig {
         self.pci_type0_config
     }
 
-    pub(super) fn common_virtio_config(&self) -> VirtIOPCICommonConfigRegisters {
+    pub(crate) fn common_virtio_config(&self) -> VirtIOPCICommonConfigRegisters {
         self.common_virtio_config
     }
 
@@ -289,7 +289,7 @@ enum VirtIOConfig {
 
 register_struct!(
     /// 4.1.4.3 Common configuration structure layout
-    pub(super) VirtIOPCICommonConfigRegisters {
+    pub(crate) VirtIOPCICommonConfigRegisters {
         0x00 => device_feature_select: RegisterRW<u32>,
         0x04 => device_feature: RegisterRO<u32>,
         0x08 => driver_feature_select: RegisterRW<u32>,
