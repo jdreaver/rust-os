@@ -57,8 +57,6 @@ pub extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: Interrupt
             }
         }
     }
-    // unsafe {
-    //     PICS.lock()
-    //         .notify_end_of_interrupt(InterruptIndex::Keyboard.into());
-    // }
+
+    apic::end_of_interrupt();
 }

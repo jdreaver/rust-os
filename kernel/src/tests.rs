@@ -6,7 +6,7 @@ use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, Size2MiB, Size4KiB, Translate};
 
-use crate::{acpi, apic, boot_info, memory, pci, serial_println, virtio};
+use crate::{acpi, boot_info, memory, pci, serial_println, virtio};
 
 pub(crate) fn run_tests(
     boot_info_data: &boot_info::BootInfo,
