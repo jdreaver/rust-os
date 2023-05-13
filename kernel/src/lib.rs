@@ -32,6 +32,7 @@ pub(crate) mod boot_info;
 pub(crate) mod gdt;
 pub(crate) mod heap;
 pub(crate) mod interrupts;
+pub(crate) mod keyboard;
 pub(crate) mod memory;
 pub(crate) mod pci;
 #[allow(dead_code)] // This could be its own crate
@@ -72,17 +73,7 @@ pub fn start() -> ! {
     let ioapic = apic::IOAPIC::from_acpi_info(&acpi_info);
     serial_println!("IO APIC: {:#x?}", ioapic);
 
-    // Set up keyboard interrupts. TODO: Move this somewhere else.
-    let kbd_ioredtbl = apic::IOAPICRedirectionTableRegister::new()
-        .with_interrupt_vector(interrupts::KBD_IRQ)
-        .with_interrupt_mask(false)
-        .with_delivery_mode(0) // Fixed
-        .with_destination_mode(false) // Physical
-        .with_delivery_status(false)
-        .with_destination_field(0); // First APIC
-
-    ioapic.write_ioredtbl(1, kbd_ioredtbl);
-    serial_println!("Keyboard IOREDTBL: {:#x?}", ioapic.read_ioredtbl(1));
+    keyboard::init_keyboard(&ioapic);
 
     // TODO: Initialize TEXT_BUFFER better so we don't need unsafe.
     let text_buffer = unsafe { &mut TEXT_BUFFER };

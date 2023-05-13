@@ -17,10 +17,10 @@ lazy_static! {
                 .set_stack_index(gdt::DOUBLE_FAULT_IST_INDEX);
         }
 
-        idt[KBD_IRQ as usize].set_handler_fn(keyboard_interrupt_handler);
-
         idt
     });
+
+    static ref NEXT_OPEN_INTERRUPT_INDEX: Mutex<u8> = Mutex::new(APIC_INTERRUPT_START_OFFSET);
 }
 
 pub(crate) fn init_idt() {
@@ -53,18 +53,24 @@ fn disable_pic() {
 /// Send spurious interrupts to a high index that we won't use.
 pub(crate) const SPURIOUS_INTERRUPT_VECTOR_INDEX: u8 = 0xFF;
 
-/// Install an interrupt handler in the IDT.
-pub(crate) fn install_interrupt_handler(
-    interrupt_index: u8,
-    handler: extern "x86-interrupt" fn(InterruptStackFrame),
-) {
+/// Install an interrupt handler in the IDT. Uses the next open interrupt index
+/// and returns the used index.
+pub(crate) fn install_interrupt(handler: extern "x86-interrupt" fn(InterruptStackFrame)) -> u8 {
+    let interrupt_index = {
+        let mut next_index = NEXT_OPEN_INTERRUPT_INDEX.lock();
+        let index = *next_index;
+        *next_index += 1;
+        index
+    };
     assert!(
-        interrupt_index >= APIC_INTERRUPT_START_OFFSET,
-        "Cannot install interrupt handler for interrupt index less than {APIC_INTERRUPT_START_OFFSET}, but got {interrupt_index}",
+        interrupt_index < SPURIOUS_INTERRUPT_VECTOR_INDEX,
+        "Ran out of interrupt vectors"
     );
 
     let mut idt = IDT.lock();
     idt[interrupt_index as usize].set_handler_fn(handler);
+
+    interrupt_index
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
@@ -103,42 +109,4 @@ extern "x86-interrupt" fn double_fault_handler(
     _error_code: u64,
 ) -> ! {
     panic!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
-}
-
-// https://wiki.osdev.org/%228042%22_PS/2_Controller#PS.2F2_Controller_IO_Ports
-pub(crate) const KBD_IRQ: u8 = 0x50;
-const KEYBOARD_PORT: u16 = 0x60;
-
-pub extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
-    use x86_64::instructions::port::Port;
-
-    lazy_static! {
-        static ref KEYBOARD: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> = Mutex::new(
-            Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore)
-        );
-    }
-
-    let mut keyboard = KEYBOARD.lock();
-    let mut port = Port::new(KEYBOARD_PORT);
-
-    // KEYBOARD has an internal state machine that processes e.g. modifier keys
-    // like shift and caps lock. It needs to be fed with the scancodes of the
-    // pressed keys. If the scancode is a valid key, the keyboard crate will
-    // eventually return a `DecodedKey`.
-    let scancode: u8 = unsafe { port.read() };
-    if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
-        if let Some(key) = keyboard.process_keyevent(key_event) {
-            match key {
-                DecodedKey::Unicode(character) => {
-                    serial_println!("FOUND UNICODE CHAR {}", character);
-                }
-                DecodedKey::RawKey(key) => serial_println!("FOUND RAW CHAR {:?}", key),
-            }
-        }
-    }
-    // unsafe {
-    //     PICS.lock()
-    //         .notify_end_of_interrupt(InterruptIndex::Keyboard.into());
-    // }
 }

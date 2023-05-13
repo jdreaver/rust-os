@@ -240,7 +240,7 @@ pub(crate) struct IOAPICID {
     #[bits(24)]
     __reserved: u32,
     #[bits(4)]
-    id: u8,
+    pub(crate) id: u8,
     #[bits(4)]
     __reserved: u8,
 }

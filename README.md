@@ -52,8 +52,7 @@ make test
 
 ## TODO
 
-- APIC plan
-  - Get keyboard or timer interrupt working on APIC/IOAPIC
+- Use MSI-X for VirtIO devices
 - HPET for timing (apparently better than Local APIC timer?)
 - Multi-tasking
   - <https://wiki.osdev.org/Brendan%27s_Multi-tasking_Tutorial>
