@@ -55,8 +55,6 @@ make test
 - VirtIO: Make RNG device a "thing" in its own file
 - When virtio-rng interrupt fires, figure out how to get the data out
   - Is there a way for an interrupt to know its number, or to pass some kind of pointer into the interrupt?
-- Centralize identity page mapping all of the PCI config and BAR spaces so we don't need to pass the frame allocator and mapper everywhere.
-  - We could do an initial scan of all PCI devices to collect them, and during that scan we could map all BARs. (However, I don't know if we know how large the BAR spaces are without knowing device specifics)
 - Use MSI-X for VirtIO devices
 - HPET for timing (apparently better than Local APIC timer?)
 - Multi-tasking
