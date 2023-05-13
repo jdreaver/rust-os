@@ -54,7 +54,7 @@ impl ACPIInfo {
     /// Caller must ensure RSDP address is valid, and that page tables are set
     /// up for identity mapping for any memory that could be used to access ACPI
     /// tables (e.g. identity mapping physical memory).
-    pub unsafe fn from_rsdp(rsdp_addr: PhysAddr) -> Self {
+    pub(crate) unsafe fn from_rsdp(rsdp_addr: PhysAddr) -> Self {
         let handler = IdentityMapAcpiHandler;
         let rsdp_addr = rsdp_addr.as_u64() as usize;
         let tables = unsafe {
@@ -65,7 +65,7 @@ impl ACPIInfo {
 
     /// Panics if PCI config regions cannot be found, simply because propagating
     /// the error is a PITA.
-    pub fn pci_config_region_base_address(&self) -> PhysAddr {
+    pub(crate) fn pci_config_region_base_address(&self) -> PhysAddr {
         let pci_config_regions = acpi::mcfg::PciConfigRegions::new(&self.tables)
             .expect("couldn't get PCI config regions");
 
@@ -79,7 +79,7 @@ impl ACPIInfo {
     }
 }
 
-pub fn print_acpi_info(info: &ACPIInfo) {
+pub(crate) fn print_acpi_info(info: &ACPIInfo) {
     let acpi_tables = &info.tables;
     let platform_info = acpi_tables
         .platform_info()
