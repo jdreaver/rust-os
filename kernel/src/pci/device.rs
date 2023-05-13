@@ -1,6 +1,8 @@
 use core::fmt;
 
 use bitfield_struct::bitfield;
+use x86_64::structures::paging::mapper::MapToError;
+use x86_64::structures::paging::{FrameAllocator, Mapper, PageTableFlags, PhysFrame, Size4KiB};
 use x86_64::PhysAddr;
 
 use crate::register_struct;
@@ -304,12 +306,72 @@ impl PCIDeviceConfigType0 {
         }
     }
 
-    pub(crate) fn bar(&self, bar_idx: usize) -> BARAddress {
+    pub(crate) fn bar(&self, bar_idx: u8) -> BARAddress {
         let bar_addresses = self.bar_addresses().interpreted();
         let bar_address = bar_addresses
-            .get(bar_idx)
+            .get(bar_idx as usize)
             .expect("invalid PCI device BAR index");
         bar_address.unwrap_or_else(|| panic!("failed to get BAR address, perhaps you tried to index the second half of a 64 bit BAR?"))
+    }
+
+    /// Capabilities often grab their configuration at a BAR address. The region
+    /// pointed to by the BAR offset (often with some offset) has a certain
+    /// size, and the region needs to be mapped in our page tables. This
+    /// function identity maps the region pointed to by the desired BAR, and
+    /// also returns the physical address of the desired start of the desired
+    /// region.
+    pub(crate) fn bar_region_physical_address(
+        self,
+        bar_idx: u8,
+        physical_offset: u32,
+        region_size: u64,
+        mapper: &mut impl Mapper<Size4KiB>,
+        frame_allocator: &mut impl FrameAllocator<Size4KiB>,
+    ) -> PhysAddr {
+        let bar_phys_addr = match self.bar(bar_idx) {
+            // TODO: Use the prefetchable field when doing mapping.
+            BARAddress::Mem32Bit {
+                address,
+                prefetchable: _,
+            } => PhysAddr::new(u64::from(address)),
+            BARAddress::Mem64Bit {
+                address,
+                prefetchable: _,
+            } => PhysAddr::new(address),
+            BARAddress::IO(address) => panic!(
+                "VirtIO capability uses I/O BAR (address: {:#x}), not supported",
+                address,
+            ),
+        };
+
+        // Need to identity map the BAR target page(s) so we can access them
+        // without faults. Note that these addresses can be outside of physical
+        // memory, in which case they are intercepted by the PCI bus and handled
+        // by the device, so we aren't mapping physical RAM pages here, we are
+        // just ensuring these addresses are identity mapped in the page table
+        // so they don't fault.
+        let config_addr = bar_phys_addr + u64::from(physical_offset);
+        let config_start_frame = PhysFrame::<Size4KiB>::containing_address(config_addr);
+        let config_end_frame = PhysFrame::containing_address(config_addr + (region_size - 1));
+        let frame_range = PhysFrame::range_inclusive(config_start_frame, config_end_frame);
+        for frame in frame_range {
+            let map_result = unsafe {
+                mapper.identity_map(
+                    frame,
+                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                    frame_allocator,
+                )
+            };
+            match map_result {
+                // These errors are okay. They just mean the frame is already
+                // identity mapped (well, hopefully).
+                Ok(_) | Err(MapToError::ParentEntryHugePage | MapToError::PageAlreadyMapped(_)) => {
+                }
+                Err(e) => panic!("failed to map VirtIO device config page: {:?}", e),
+            }
+        }
+
+        config_addr
     }
 }
 

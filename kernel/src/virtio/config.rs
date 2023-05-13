@@ -1,13 +1,11 @@
 use core::fmt;
 
 use bitfield_struct::bitfield;
-use x86_64::structures::paging::mapper::MapToError;
-use x86_64::structures::paging::{FrameAllocator, Mapper, PageTableFlags, PhysFrame, Size4KiB};
+use x86_64::structures::paging::{FrameAllocator, Mapper, Size4KiB};
 use x86_64::PhysAddr;
 
 use crate::pci::{
-    self, BARAddress, PCIDeviceCapabilityHeader, PCIDeviceConfig, PCIDeviceConfigType0,
-    PCIDeviceConfigTypes,
+    PCIDeviceCapabilityHeader, PCIDeviceConfig, PCIDeviceConfigType0, PCIDeviceConfigTypes,
 };
 use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW};
@@ -136,7 +134,6 @@ pub(crate) struct VirtIOPCICapabilityHeader {
 impl fmt::Debug for VirtIOPCICapabilityHeader {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VirtIOPCICapabilityHeader")
-            .field("bar_address", &self.bar_address())
             .field("config_type", &self.config_type())
             .field("registers", &self.registers)
             .finish_non_exhaustive()
@@ -160,11 +157,6 @@ impl VirtIOPCICapabilityHeader {
             device_config_body,
             registers: VirtIOPCICapabilityHeaderRegisters::from_address(header.address()),
         })
-    }
-
-    fn bar_address(self) -> BARAddress {
-        let bar = self.registers.bar().read();
-        self.device_config_body.bar(bar as usize)
     }
 
     fn config_type(self) -> VirtIOPCIConfigType {
@@ -217,51 +209,16 @@ impl VirtIOPCICapabilityHeader {
         mapper: &mut impl Mapper<Size4KiB>,
         frame_allocator: &mut impl FrameAllocator<Size4KiB>,
     ) -> PhysAddr {
-        let bar_phys_addr = match self.bar_address() {
-            // TODO: Use the prefetchable field when doing mapping.
-            pci::BARAddress::Mem32Bit {
-                address,
-                prefetchable: _,
-            } => PhysAddr::new(u64::from(address)),
-            pci::BARAddress::Mem64Bit {
-                address,
-                prefetchable: _,
-            } => PhysAddr::new(address),
-            pci::BARAddress::IO(address) => panic!(
-                "VirtIO capability uses I/O BAR (address: {:#x}), not supported",
-                address,
-            ),
-        };
-
-        // Need to identity map the BAR target page(s) so we can access them
-        // without faults. Note that these addresses can be outside of physical
-        // memory, in which case they are intercepted by the PCI bus and handled
-        // by the device, so we aren't mapping physical RAM pages here, we are
-        // just ensuring these addresses are identity mapped in the page table
-        // so they don't fault.
-        let config_addr = bar_phys_addr + u64::from(self.registers.offset().read());
-        let config_start_frame = PhysFrame::<Size4KiB>::containing_address(config_addr);
-        let config_end_frame =
-            PhysFrame::containing_address(config_addr + u64::from(self.registers.cap_len().read()));
-        let frame_range = PhysFrame::range_inclusive(config_start_frame, config_end_frame);
-        for frame in frame_range {
-            let map_result = unsafe {
-                mapper.identity_map(
-                    frame,
-                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                    frame_allocator,
-                )
-            };
-            match map_result {
-                // These errors are okay. They just mean the frame is already
-                // identity mapped (well, hopefully).
-                Ok(_) | Err(MapToError::ParentEntryHugePage | MapToError::PageAlreadyMapped(_)) => {
-                }
-                Err(e) => panic!("failed to map VirtIO device config page: {:?}", e),
-            }
-        }
-
-        config_addr
+        let bar_idx = self.registers.bar().read();
+        let physical_offset = self.registers.offset().read();
+        let region_size = u64::from(self.registers.cap_len().read());
+        self.device_config_body.bar_region_physical_address(
+            bar_idx,
+            physical_offset,
+            region_size,
+            mapper,
+            frame_allocator,
+        )
     }
 }
 
