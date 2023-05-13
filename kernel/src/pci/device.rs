@@ -121,11 +121,7 @@ impl PCIDeviceConfig {
 
     pub(crate) fn iter_capabilities(self) -> PCIDeviceCapabilityIterator {
         // Check if the device even has capabilities.
-        let has_caps = self
-            .common_registers()
-            .status()
-            .read()
-            .capabilities_list();
+        let has_caps = self.common_registers().status().read().capabilities_list();
         if !has_caps {
             return PCIDeviceCapabilityIterator::new(None);
         }

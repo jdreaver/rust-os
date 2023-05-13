@@ -52,8 +52,10 @@ make test
 
 ## TODO
 
-- Get APIC working <https://wiki.osdev.org/APIC>
-  - Limine masks APIC by default!
+- APIC plan
+  - Have `interrupts.rs` install important fault interrupts, and then have a way to attach new interrupt handlers later. This allows us to install these fault exception handlers early on in the boot process, before we traverse ACPI tables. Traversing ACPI requires allocating some memory so we need to do it after the heap exists.
+  - Get APIC info from ACPI and set up APIC
+  - Get keyboard or timer interrupt working on APIC/IOAPIC
 - Multi-tasking
   - <https://wiki.osdev.org/Brendan%27s_Multi-tasking_Tutorial>
   - <https://www.reddit.com/r/osdev/comments/jf1wgy/multitasking_tutorial/>
@@ -150,6 +152,12 @@ $ qemu-system-x86_64 -device virtio-rng-pci,help
 
 - <https://marz.utk.edu/my-courses/cosc562/qemu/>
 
+### APIC and IO/APIC
+
+- <https://wiki.osdev.org/APIC>
+- APIC for keyboard interrupts (deal with ISA override) <https://www.reddit.com/r/osdev/comments/iipoqt/how_to_get_ioapic_handle_keyboard_interrupts/>
+- <https://blog.wesleyac.com/posts/ioapic-interrupts>
+
 ### PCI
 
 - Spec <https://picture.iczhiku.com/resource/eetop/SYkDTqhOLhpUTnMx.pdf>
@@ -165,6 +173,7 @@ $ qemu-system-x86_64 -device virtio-rng-pci,help
   - <https://superuser.com/questions/746458/pci-bar-memory-addresses>
   - <https://softwareengineering.stackexchange.com/questions/358817/how-does-the-base-address-registers-bars-in-a-pci-card-work>
 - <https://marz.utk.edu/my-courses/cosc562/pcie/>
+- [What do the different interrupts in PCIe do? I referring to MSI, MSI-X and INTx](https://electronics.stackexchange.com/questions/76867/what-do-the-different-interrupts-in-pcie-do-i-referring-to-msi-msi-x-and-intx/)
 
 ### Virtio
 

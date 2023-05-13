@@ -1,10 +1,11 @@
 use lazy_static::lazy_static;
+use spin::Mutex;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
-use crate::{gdt, serial_print, serial_println};
+use crate::{gdt, serial_println};
 
 lazy_static! {
-    static ref IDT: InterruptDescriptorTable = {
+    static ref IDT: Mutex<InterruptDescriptorTable> = Mutex::new({
         let mut idt = InterruptDescriptorTable::new();
         idt.breakpoint.set_handler_fn(breakpoint_handler);
         idt.page_fault.set_handler_fn(page_fault_handler);
@@ -15,66 +16,49 @@ lazy_static! {
             idt.double_fault.set_handler_fn(double_fault_handler)
                 .set_stack_index(gdt::DOUBLE_FAULT_IST_INDEX);
         }
-        idt[InterruptIndex::Timer.into()].set_handler_fn(timer_interrupt_handler);
-        idt[InterruptIndex::Keyboard.into()].set_handler_fn(keyboard_interrupt_handler);
-
-
-        idt[TMP_PCI_DEBUG_IDT_ENTRY.into()].set_handler_fn(pci_debug_handler);
-
         idt
-    };
-}
-
-// Set PIC offset to 32 b/c 0-31 are usually existing interrupts.
-const PIC_1_OFFSET: u8 = 32;
-const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
-
-static PICS: spin::Mutex<pic8259::ChainedPics> =
-    spin::Mutex::new(unsafe { pic8259::ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
-
-// TODO: This is the interrupt line reported by my PCI devices in QEMU. Just
-// hard-coding it for now.
-const TMP_PCI_DEBUG_IRQ: u8 = 0xa;
-const TMP_PCI_DEBUG_IDT_ENTRY: u8 = PIC_1_OFFSET + TMP_PCI_DEBUG_IRQ;
-
-#[derive(Debug, Clone, Copy)]
-#[repr(u8)]
-enum InterruptIndex {
-    Timer = PIC_1_OFFSET,
-    Keyboard,
-}
-
-impl From<InterruptIndex> for u8 {
-    fn from(index: InterruptIndex) -> Self {
-        index as Self
-    }
-}
-
-impl From<InterruptIndex> for usize {
-    fn from(index: InterruptIndex) -> Self {
-        index as Self
-    }
+    });
 }
 
 pub(crate) fn init_idt() {
-    IDT.load();
-
-    // Enable PIC and interrupts
     unsafe {
-        let mut pic = PICS.lock();
-        pic.initialize();
-
-        // Limine masks all legacy PIC and APIC IRQs. We have to enable the ones
-        // we want. I got these values by calling `pic.read_masks()` using GRUB
-        // instead of limine.
-        let default_pic1_mask = 0b1011_1000; // 184 in decimal
-        let default_pic2_mask = 0b1000_1110; // 142 in decimal
-
-        let pic1_mask = default_pic1_mask;
-        let pic2_mask = default_pic2_mask & !(1 << (TMP_PCI_DEBUG_IRQ - 8)); // 8 is b/c this is the second PIC
-        pic.write_masks(pic1_mask, pic2_mask);
+        IDT.lock().load_unsafe();
     };
+    disable_pic();
     x86_64::instructions::interrupts::enable();
+}
+
+// Even though we are disabling the PIC in lieu of the APIC, we still need to
+// set the offsets to avoid CPU exceptions. We should not use indexes 32 through 47
+// for APIC interrupts so we avoid spurious PIC interrupts.
+const MASTER_PIC_OFFSET: u8 = 32;
+const SLAVE_PIC_OFFSET: u8 = MASTER_PIC_OFFSET + 8;
+const APIC_INTERRUPT_START_OFFSET: u8 = SLAVE_PIC_OFFSET + 8;
+
+/// Must disable the legacy PIC if we are using API. We do this by both masking
+/// all of the interrupts and remapping all of the IRQs to be above 32 to avoid
+/// spurious PIC interrupts masquerading as CPU exceptions. See
+/// <https://wiki.osdev.org/8259_PIC#Disabling> and
+/// <https://wiki.osdev.org/APIC>.
+fn disable_pic() {
+    unsafe {
+        let mut pic = pic8259::ChainedPics::new(MASTER_PIC_OFFSET, SLAVE_PIC_OFFSET);
+        pic.disable();
+    };
+}
+
+/// Install an interrupt handler in the IDT.
+pub(crate) fn install_interrupt_handler(
+    interrupt_index: u8,
+    handler: extern "x86-interrupt" fn(InterruptStackFrame),
+) {
+    assert!(
+        interrupt_index >= APIC_INTERRUPT_START_OFFSET,
+        "Cannot install interrupt handler for interrupt index less than {APIC_INTERRUPT_START_OFFSET}, but got {interrupt_index}",
+    );
+
+    let mut idt = IDT.lock();
+    idt[interrupt_index as usize].set_handler_fn(handler);
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
@@ -115,56 +99,38 @@ extern "x86-interrupt" fn double_fault_handler(
     panic!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
 }
 
-extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    serial_print!(".");
-
-    unsafe {
-        PICS.lock()
-            .notify_end_of_interrupt(InterruptIndex::Timer.into());
-    }
-}
-
 // https://wiki.osdev.org/%228042%22_PS/2_Controller#PS.2F2_Controller_IO_Ports
-const KEYBOARD_PORT: u16 = 0x60;
+// const KEYBOARD_PORT: u16 = 0x60;
 
-extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
-    use spin::Mutex;
-    use x86_64::instructions::port::Port;
+// extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
+//     use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
+//     use spin::Mutex;
+//     use x86_64::instructions::port::Port;
 
-    lazy_static! {
-        static ref KEYBOARD: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> = Mutex::new(
-            Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore)
-        );
-    }
+//     lazy_static! {
+//         static ref KEYBOARD: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> = Mutex::new(
+//             Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore)
+//         );
+//     }
 
-    let mut keyboard = KEYBOARD.lock();
-    let mut port = Port::new(KEYBOARD_PORT);
+//     let mut keyboard = KEYBOARD.lock();
+//     let mut port = Port::new(KEYBOARD_PORT);
 
-    // KEYBOARD has an internal state machine that processes e.g. modifier keys
-    // like shift and caps lock. It needs to be fed with the scancodes of the
-    // pressed keys. If the scancode is a valid key, the keyboard crate will
-    // eventually return a `DecodedKey`.
-    let scancode: u8 = unsafe { port.read() };
-    if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
-        if let Some(key) = keyboard.process_keyevent(key_event) {
-            match key {
-                DecodedKey::Unicode(character) => serial_print!("{}", character),
-                DecodedKey::RawKey(key) => serial_print!("{:?}", key),
-            }
-        }
-    }
-    unsafe {
-        PICS.lock()
-            .notify_end_of_interrupt(InterruptIndex::Keyboard.into());
-    }
-}
-
-extern "x86-interrupt" fn pci_debug_handler(_stack_frame: InterruptStackFrame) {
-    serial_print!("GOT PCI INTERRUPT");
-
-    unsafe {
-        PICS.lock()
-            .notify_end_of_interrupt(TMP_PCI_DEBUG_IDT_ENTRY);
-    }
-}
+//     // KEYBOARD has an internal state machine that processes e.g. modifier keys
+//     // like shift and caps lock. It needs to be fed with the scancodes of the
+//     // pressed keys. If the scancode is a valid key, the keyboard crate will
+//     // eventually return a `DecodedKey`.
+//     let scancode: u8 = unsafe { port.read() };
+//     if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
+//         if let Some(key) = keyboard.process_keyevent(key_event) {
+//             match key {
+//                 DecodedKey::Unicode(character) => serial_print!("{}", character),
+//                 DecodedKey::RawKey(key) => serial_print!("{:?}", key),
+//             }
+//         }
+//     }
+//     unsafe {
+//         PICS.lock()
+//             .notify_end_of_interrupt(InterruptIndex::Keyboard.into());
+//     }
+// }
