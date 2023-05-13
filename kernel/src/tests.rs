@@ -66,7 +66,7 @@ pub(crate) fn run_tests(
         serial_println!("VirtIO device initialized: {:#x?}", initialized_device);
 
         // Test out the RNG device
-        test_rng_virtio_device(initialized_device, frame_allocator);
+        test_rng_virtio_device(initialized_device, mapper, frame_allocator);
     });
 
     // Print out some test addresses
@@ -153,10 +153,19 @@ pub(crate) fn run_tests(
 
 fn test_rng_virtio_device(
     mut device: virtio::VirtIOInitializedDevice,
+    mapper: &mut OffsetPageTable,
     frame_allocator: &mut memory::LockedNaiveFreeMemoryBlockAllocator,
 ) {
     let device_id = device.config().pci_config().device_id();
     if device_id.known_vendor_id() == "virtio" && device_id.known_device_id() == "entropy source" {
+        let msix = device
+            .config()
+            .pci_type0_config()
+            .msix_config(mapper, frame_allocator)
+            .expect("failed to get MSIX config for VirtIO device");
+        serial_println!("VirtIO device MSIX config: {:#x?}", msix);
+        serial_println!("MSIX table entry 0: {:#x?}", msix.table_entry(0));
+
         // RNG device only has a single virtq
         let queue_index = 0;
         let buffer_size = 16;

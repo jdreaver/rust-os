@@ -8,9 +8,12 @@ use x86_64::PhysAddr;
 use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW};
 
-use super::capabilities::{PCIDeviceCapabilityHeader, PCIDeviceCapabilityIterator};
+use super::capabilities::{
+    MSIXCapability, MSIXTable, PCIDeviceCapabilityHeader, PCIDeviceCapabilityIterator, MSIXPBA,
+};
 use super::device_id::PCIConfigDeviceID;
 use super::location::PCIDeviceLocation;
+use super::{MSIXTableEntry, PCIDeviceCapability};
 
 const MAX_PCI_BUS: u8 = 255;
 const MAX_PCI_BUS_DEVICE: u8 = 31;
@@ -374,6 +377,19 @@ impl PCIDeviceConfigType0 {
 
         config_addr
     }
+
+    pub(crate) fn msix_config(
+        self,
+        mapper: &mut impl Mapper<Size4KiB>,
+        frame_allocator: &mut impl FrameAllocator<Size4KiB>,
+    ) -> Option<MSIXConfig> {
+        for cap in self.common_config.iter_capabilities() {
+            if let PCIDeviceCapability::MSIX(msix_cap) = cap.capability() {
+                return Some(MSIXConfig::new(self, msix_cap, mapper, frame_allocator));
+            }
+        }
+        None
+    }
 }
 
 impl fmt::Debug for PCIDeviceConfigType0 {
@@ -498,5 +514,65 @@ impl<const N: usize> fmt::Debug for BARAddresses<N> {
         bar_list.finish()?;
 
         Ok(())
+    }
+}
+
+/// Contains all of the different bits of MSI-X configuration for a device,
+/// including the header, the MSI-X table, and the MSI-X PBA.
+#[derive(Debug)]
+pub(crate) struct MSIXConfig {
+    capability: MSIXCapability,
+    table: MSIXTable,
+    pba: MSIXPBA,
+}
+
+impl MSIXConfig {
+    pub(super) fn new(
+        device_config: PCIDeviceConfigType0,
+        capability: MSIXCapability,
+        mapper: &mut impl Mapper<Size4KiB>,
+        frame_allocator: &mut impl FrameAllocator<Size4KiB>,
+    ) -> Self {
+        // N.B. The table size is encoded as N - 1 for some reason, so we add 1.
+        let table_size = capability.registers.message_control().read().table_size() + 1;
+
+        let table_offset_bits = capability.registers.table_offset().read();
+        let table_bar_idx = table_offset_bits.bar_indicator_register();
+        let table_offset = table_offset_bits.table_offset();
+        let table_region_size = table_size as usize * core::mem::size_of::<MSIXTableEntry>();
+        let table_address = device_config.bar_region_physical_address(
+            table_bar_idx,
+            table_offset,
+            table_region_size as u64,
+            mapper,
+            frame_allocator,
+        );
+        let table = unsafe { MSIXTable::new(table_address.as_u64() as usize, table_size) };
+
+        let pba_offset_bits = capability.registers.pending_bit_array_offset().read();
+        let pba_bar_idx = pba_offset_bits.bar_indicator_register();
+        let pba_offset = pba_offset_bits.pba_offset();
+        let pba_region_size = table_size as usize * core::mem::size_of::<u64>();
+        let pba_address = device_config.bar_region_physical_address(
+            pba_bar_idx,
+            pba_offset,
+            pba_region_size as u64,
+            mapper,
+            frame_allocator,
+        );
+        let pba = unsafe { MSIXPBA::new(pba_address.as_u64() as usize, table_size) };
+        Self {
+            capability,
+            table,
+            pba,
+        }
+    }
+
+    pub(crate) fn table_size(&self) -> u16 {
+        self.table.table_size()
+    }
+
+    pub(crate) fn table_entry(&self, index: usize) -> MSIXTableEntry {
+        self.table.entry(index)
     }
 }

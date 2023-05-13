@@ -99,7 +99,7 @@ impl fmt::Debug for PCIDeviceCapabilityIterator {
 
 #[derive(Debug, Clone)]
 pub(crate) struct MSIXCapability {
-    registers: MSIXCapabilityRegisters,
+    pub(super) registers: MSIXCapabilityRegisters,
 }
 
 impl MSIXCapability {
@@ -119,7 +119,7 @@ impl MSIXCapability {
 register_struct!(
     /// See "7.7.2 MSI-X Capability and Table Structure" in the PCI Express Base
     /// Specification.
-    pub(crate) MSIXCapabilityRegisters {
+    pub(super) MSIXCapabilityRegisters {
         0x0 => capability_id: RegisterRO<u8>,
         0x1 => next_capability: RegisterRO<u8>,
         0x2 => message_control: RegisterRW<MSIXMessageControl>,
@@ -131,32 +131,32 @@ register_struct!(
 #[bitfield(u16)]
 /// See "7.7.2.2 Message Control Register for MSI-X (Offset 02h)" in PCI Express
 /// Base Specification.
-pub(crate) struct MSIXMessageControl {
+pub(super) struct MSIXMessageControl {
     #[bits(11)]
-    table_size: u16,
+    pub(super) table_size: u16,
     #[bits(3)]
     __reserved: u8,
-    function_mask: bool,
-    enable: bool,
+    pub(super) function_mask: bool,
+    pub(super) enable: bool,
 }
 
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 /// See "7.7.2.3 Table Offset/Table BIR Register for MSI-X (Offset 04h)" in PCI
 /// Express Base Specification.
-pub(crate) struct MSIXTableOffset(u32);
+pub(super) struct MSIXTableOffset(u32);
 
 impl MSIXTableOffset {
     /// BIR (BAR Indicator Register) is a 3-bit field that indicates which BAR
     /// contains the MSI-X table.
-    pub(crate) fn bar_indicator_register(self) -> u8 {
+    pub(super) fn bar_indicator_register(self) -> u8 {
         (self.0 & 0b111) as u8
     }
 
     /// The offset of the MSI-X table from the base address of the BAR indicated
     /// by the BIR field. We mask off the first 3 bits to make this 32 bit (4
     /// byte) aligned.
-    pub(crate) fn table_offset(self) -> u32 {
+    pub(super) fn table_offset(self) -> u32 {
         self.0 & 0b1111_1111_1111_1111_1111_1111_1111_1000
     }
 }
@@ -174,19 +174,19 @@ impl fmt::Debug for MSIXTableOffset {
 #[derive(Clone, Copy)]
 /// See "7.7.2.4 PBA Offset/PBA BIR Register for MSI-X (Offset 08h)" in PCI
 /// Express Base Specification.
-pub(crate) struct MSIXPendingBitArrayOffset(u32);
+pub(super) struct MSIXPendingBitArrayOffset(u32);
 
 impl MSIXPendingBitArrayOffset {
     /// BIR (BAR Indicator Register) is a 3-bit field that indicates which BAR
     /// contains the MSI-X table.
-    pub(crate) fn bar_indicator_register(self) -> u8 {
+    pub(super) fn bar_indicator_register(self) -> u8 {
         (self.0 & 0b111) as u8
     }
 
     /// The offset of the MSI-X table from the base address of the BAR indicated
     /// by the BIR field. We mask off the first 3 bits to make this 32 bit (4
     /// byte) aligned.
-    pub(crate) fn pba_offset(self) -> u32 {
+    pub(super) fn pba_offset(self) -> u32 {
         self.0 & 0b1111_1111_1111_1111_1111_1111_1111_1000
     }
 }
@@ -197,5 +197,80 @@ impl fmt::Debug for MSIXPendingBitArrayOffset {
             .field("bar_indicator_register", &self.bar_indicator_register())
             .field("pba_offset", &self.pba_offset())
             .finish()
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct MSIXTable {
+    address: usize,
+    table_size: u16,
+}
+
+impl MSIXTable {
+    pub(super) unsafe fn new(address: usize, table_size: u16) -> Self {
+        Self {
+            address,
+            table_size,
+        }
+    }
+
+    pub(super) fn table_size(&self) -> u16 {
+        self.table_size
+    }
+
+    pub(super) fn entry(&self, index: usize) -> MSIXTableEntry {
+        assert!(
+            index < self.table_size as usize,
+            "MSIXTable index out of bounds"
+        );
+        let entry_address = self.address + (index * 16);
+        unsafe { MSIXTableEntry::from_address(entry_address) }
+    }
+}
+
+register_struct!(
+    /// See "7.7.2 MSI-X Capability and Table Structure" in the PCI Express Base
+    /// Specification.
+    pub(crate) MSIXTableEntry {
+        0x0 => message_address: RegisterRW<u32>,
+        0x4 => message_upper_address: RegisterRW<u32>,
+        0x8 => message_data: RegisterRW<u32>,
+        0xc => vector_control: RegisterRW<MSIXVectorControl>,
+    }
+);
+
+#[bitfield(u32)]
+/// See "7.7.2.8 Vector Control Register for MSI-X Table Entries"
+pub(crate) struct MSIXVectorControl {
+    pub(crate) mask_bit: bool,
+    #[bits(15)]
+    __reserved: u16,
+    pub(crate) st_lower: u8,
+    pub(crate) st_upper: u8,
+}
+
+#[derive(Debug)]
+pub(super) struct MSIXPBA {
+    address: usize,
+    pba_size: u16,
+}
+
+impl MSIXPBA {
+    pub(super) unsafe fn new(address: usize, pba_size: u16) -> Self {
+        Self { address, pba_size }
+    }
+
+    pub(super) fn pba_size(&self) -> u16 {
+        self.pba_size
+    }
+
+    pub(super) fn entry(&self, index: usize) -> Option<u64> {
+        if index >= self.pba_size as usize {
+            return None;
+        }
+
+        let entry_address = self.address + (index * 16);
+        let ptr = entry_address as *const u64;
+        Some(unsafe { ptr.read_volatile() })
     }
 }
