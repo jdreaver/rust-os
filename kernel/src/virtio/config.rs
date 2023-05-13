@@ -5,7 +5,8 @@ use x86_64::structures::paging::{FrameAllocator, Mapper, Size4KiB};
 use x86_64::PhysAddr;
 
 use crate::pci::{
-    PCIDeviceCapabilityHeader, PCIDeviceConfig, PCIDeviceConfigType0, PCIDeviceConfigTypes,
+    PCIDeviceCapability, PCIDeviceCapabilityHeader, PCIDeviceConfig, PCIDeviceConfigType0,
+    PCIDeviceConfigTypes,
 };
 use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW};
@@ -149,9 +150,7 @@ impl VirtIOPCICapabilityHeader {
         header: &PCIDeviceCapabilityHeader,
     ) -> Option<Self> {
         // VirtIO-specific capabilities must have an ID for vendor-specific.
-        if !header.is_vendor_specific() {
-            return None;
-        }
+        let PCIDeviceCapability::VendorSpecific(_) = header.capability() else { return None; };
 
         Some(Self {
             device_config_body,
