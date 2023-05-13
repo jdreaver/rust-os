@@ -57,10 +57,15 @@ pub fn start() -> ! {
     let mut frame_allocator = memory::LockedNaiveFreeMemoryBlockAllocator::new(frame_allocator);
     heap::init(&mut mapper, &mut frame_allocator).expect("failed to initialize allocator");
 
+    // N.B. Probing ACPI must happen after heap initialization because the Rust
+    // `acpi` crate uses alloc. It would be nice to not need that...
+    let acpi_info = unsafe { acpi::ACPIInfo::from_rsdp(boot_info_data.rsdp_physical_addr()) };
+
     // TODO: Initialize TEXT_BUFFER better so we don't need unsafe.
     let text_buffer = unsafe { &mut TEXT_BUFFER };
     tests::run_tests(
         boot_info_data,
+        &acpi_info,
         &mut mapper,
         &mut frame_allocator,
         text_buffer,

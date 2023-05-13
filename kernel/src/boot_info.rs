@@ -17,8 +17,19 @@ pub(crate) struct BootInfo {
     pub(crate) kernel_address_physical_base: PhysAddr,
     pub(crate) kernel_address_virtual_base: VirtAddr,
     pub(crate) efi_system_table_address: Option<VirtAddr>,
-    pub(crate) rsdp_address: Option<VirtAddr>,
+    rsdp_address: Option<VirtAddr>,
     pub(crate) framebuffer: &'static mut limine::LimineFramebuffer,
+}
+
+impl BootInfo {
+    /// Physical address for the Root System Description Pointer (RSDP). See <https://wiki.osdev.org/RSDP>
+    pub(crate) fn rsdp_physical_addr(&self) -> PhysAddr {
+        self.rsdp_address
+            .map(|addr| {
+                x86_64::PhysAddr::new(addr.as_u64() - self.higher_half_direct_map_offset.as_u64())
+            })
+            .expect("failed to get RSDP physical address")
+    }
 }
 
 static BOOT_INFO_REQUEST: LimineBootInfoRequest = LimineBootInfoRequest::new(0);

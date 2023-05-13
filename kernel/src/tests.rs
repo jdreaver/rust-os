@@ -10,6 +10,7 @@ use crate::{acpi, boot_info, memory, pci, serial_println, virtio};
 
 pub(crate) fn run_tests(
     boot_info_data: &boot_info::BootInfo,
+    acpi_info: &acpi::ACPIInfo,
     mapper: &mut OffsetPageTable,
     frame_allocator: &mut memory::LockedNaiveFreeMemoryBlockAllocator,
     text_buffer: &'static mut TextBuffer,
@@ -47,18 +48,7 @@ pub(crate) fn run_tests(
 
     text_buffer.flush(&mut framebuffer);
 
-    let rsdp_physical_addr = boot_info_data
-        .rsdp_address
-        .map(|addr| {
-            x86_64::PhysAddr::new(
-                addr.as_u64() - boot_info_data.higher_half_direct_map_offset.as_u64(),
-            )
-        })
-        .expect("failed to get RSDP physical address");
-    serial_println!("RSDP physical address: {:?}", rsdp_physical_addr);
-
-    let acpi_info = unsafe { acpi::ACPIInfo::from_rsdp(rsdp_physical_addr) };
-    acpi::print_acpi_info(&acpi_info);
+    acpi::print_acpi_info(acpi_info);
     let pci_config_region_base_address = acpi_info.pci_config_region_base_address();
 
     // Iterate over PCI devices
