@@ -6,7 +6,7 @@ use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, Size2MiB, Size4KiB, Translate};
 
-use crate::{acpi, boot_info, memory, pci, serial_println, virtio};
+use crate::{acpi, apic, boot_info, memory, pci, serial_println, virtio};
 
 pub(crate) fn run_tests(
     boot_info_data: &boot_info::BootInfo,
@@ -50,6 +50,13 @@ pub(crate) fn run_tests(
 
     acpi::print_acpi_info(acpi_info);
     let pci_config_region_base_address = acpi_info.pci_config_region_base_address();
+
+    let apic_info = acpi_info.apic_info();
+    serial_println!("ACPI APIC: {:#x?}", apic_info);
+
+    let local_apic_reg =
+        unsafe { apic::LocalAPICRegisters::from_address(apic_info.local_apic_address as usize) };
+    serial_println!("Local APIC Registers: {:#x?}", local_apic_reg);
 
     // Iterate over PCI devices
     pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
