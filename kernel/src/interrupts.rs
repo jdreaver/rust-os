@@ -47,6 +47,9 @@ fn disable_pic() {
     };
 }
 
+/// Send spurious interrupts to a high index that we won't use.
+pub(crate) const SPURIOUS_INTERRUPT_VECTOR_INDEX: u8 = 0xFF;
+
 /// Install an interrupt handler in the IDT.
 pub(crate) fn install_interrupt_handler(
     interrupt_index: u8,

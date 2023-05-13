@@ -51,13 +51,6 @@ pub(crate) fn run_tests(
     acpi::print_acpi_info(acpi_info);
     let pci_config_region_base_address = acpi_info.pci_config_region_base_address();
 
-    let apic_info = acpi_info.apic_info();
-    serial_println!("ACPI APIC: {:#x?}", apic_info);
-
-    let local_apic_reg =
-        unsafe { apic::LocalAPICRegisters::from_address(apic_info.local_apic_address as usize) };
-    serial_println!("Local APIC Registers: {:#x?}", local_apic_reg);
-
     // Iterate over PCI devices
     pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
         serial_println!("Found PCI device: {:#x?}", device);

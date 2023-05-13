@@ -63,6 +63,10 @@ pub fn start() -> ! {
     // `acpi` crate uses alloc. It would be nice to not need that...
     let acpi_info = unsafe { acpi::ACPIInfo::from_rsdp(boot_info_data.rsdp_physical_addr()) };
 
+    let mut local_apic = apic::LocalAPIC::from_acpi_info(&acpi_info);
+    local_apic.enable();
+    serial_println!("Local APIC: {:#x?}", local_apic);
+
     // TODO: Initialize TEXT_BUFFER better so we don't need unsafe.
     let text_buffer = unsafe { &mut TEXT_BUFFER };
     tests::run_tests(

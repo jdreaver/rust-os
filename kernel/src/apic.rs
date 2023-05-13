@@ -1,13 +1,40 @@
+use bitfield_struct::bitfield;
+
+use crate::acpi::ACPIInfo;
+use crate::interrupts::SPURIOUS_INTERRUPT_VECTOR_INDEX;
 use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW, RegisterWO};
+
+#[derive(Debug, Clone)]
+pub(crate) struct LocalAPIC {
+    registers: LocalAPICRegisters,
+}
+
+impl LocalAPIC {
+    pub(crate) fn from_acpi_info(acpi_info: &ACPIInfo) -> Self {
+        let apic_info = acpi_info.apic_info();
+        let registers =
+            unsafe { LocalAPICRegisters::from_address(apic_info.local_apic_address as usize) };
+        Self { registers }
+    }
+
+    pub(crate) fn enable(&mut self) {
+        self.registers.spurious_interrupt_vector().modify_mut(
+            |vec: &mut SpuriousInterruptVector| {
+                vec.set_vector(SPURIOUS_INTERRUPT_VECTOR_INDEX);
+                vec.set_apic_enabled(true);
+            },
+        );
+    }
+}
 
 register_struct!(
     /// See "11.4.1 The Local APIC Block Diagram", specifically "Table 11-1. Local
     /// APIC Register Address Map" in the Intel 64 Manual Volume 3. Also see
     /// <https://wiki.osdev.org/APIC>.
     pub(crate) LocalAPICRegisters {
-        0x20 => local_apic_id: RegisterRW<u32>,
-        0x30 => local_apic_version: RegisterRO<u32>,
+        0x20 => local_apic_id: RegisterRW<APICId>,
+        0x30 => local_apic_version: RegisterRO<APICVersion>,
         0x80 => task_priority: RegisterRW<u32>,
         0x90 => arbitration_priority: RegisterRO<u32>,
         0xa0 => processor_priority: RegisterRO<u32>,
@@ -15,7 +42,7 @@ register_struct!(
         0xc0 => remote_read: RegisterRO<u32>,
         0xd0 => logical_destination: RegisterRW<u32>,
         0xe0 => destination_format: RegisterRW<u32>,
-        0xf0 => spurious_interrupt_vector: RegisterRW<u32>,
+        0xf0 => spurious_interrupt_vector: RegisterRW<SpuriousInterruptVector>,
 
         0x100 => in_service_0: RegisterRO<u32>,
         0x110 => in_service_1: RegisterRO<u32>,
@@ -59,3 +86,38 @@ register_struct!(
         0x3e0 => divide_configuration: RegisterRW<u32>,
     }
 );
+
+#[bitfield(u32)]
+/// See "11.4.6 Local APIC ID" in the Intel 64 Manual Volume 3.
+pub(crate) struct APICId {
+    #[bits(24)]
+    __reserved: u32,
+    id: u8,
+}
+
+#[bitfield(u32)]
+/// See "11.4.8 Local APIC Version Register" in the Intel 64 Manual Volume 3.
+pub(crate) struct APICVersion {
+    version: u8,
+    __reserved: u8,
+    max_lvt_entry: u8,
+    support_suppress_eoi_broadcast: bool,
+    #[bits(7)]
+    __reserved2: u8,
+}
+
+#[bitfield(u32)]
+/// See "11.9 SPURIOUS INTERRUPT" in the Intel 64 Manual Volume 3.
+pub(crate) struct SpuriousInterruptVector {
+    vector: u8,
+    apic_enabled: bool,
+    focus_processor_checking: bool,
+
+    #[bits(2)]
+    __reserved: u8,
+
+    eoi_broadcast_suppression: bool,
+
+    #[bits(19)]
+    __reserved: u32,
+}
