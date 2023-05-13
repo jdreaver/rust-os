@@ -1,9 +1,12 @@
 use core::ptr::NonNull;
 
 use acpi::mcfg::{Mcfg, McfgEntry};
+use acpi::platform::interrupt::Apic;
 use acpi::{AcpiHandler, AcpiTable, AcpiTables, PhysicalMapping};
 use x86_64::PhysAddr;
 
+use crate::register_struct;
+use crate::registers::{RegisterRO, RegisterRW, RegisterWO};
 use crate::serial_println;
 
 /// We need to implement `acpi::AcpiHandler` to use the `acpi` crate. This is
@@ -77,7 +80,81 @@ impl ACPIInfo {
 
         PhysAddr::new(pci_config_region_base_address)
     }
+
+    /// Asserts that the interrupt model is APIC, and returns the APIC info data
+    /// structure.
+    pub(crate) fn apic(&self) -> Apic {
+        let interrupt_model = self
+            .tables
+            .platform_info()
+            .expect("failed to get platform info for APIC")
+            .interrupt_model;
+        match interrupt_model {
+            acpi::InterruptModel::Unknown => panic!("unknown interrupt model instead of ACPI"),
+            acpi::InterruptModel::Apic(apic) => apic,
+            _ => panic!("truly unknown interrupt model {interrupt_model:?}"),
+        }
+    }
 }
+
+register_struct!(
+    /// See "11.4.1 The Local APIC Block Diagram", specifically "Table 11-1. Local
+    /// APIC Register Address Map" in the Intel 64 Manual Volume 3. Also see
+    /// <https://wiki.osdev.org/APIC>.
+    pub(crate) LocalAPICRegisters {
+        0x20 => local_apic_id: RegisterRW<u32>,
+        0x30 => local_apic_version: RegisterRO<u32>,
+        0x80 => task_priority: RegisterRW<u32>,
+        0x90 => arbitration_priority: RegisterRO<u32>,
+        0xa0 => processor_priority: RegisterRO<u32>,
+        0xb0 => end_of_interrupt: RegisterWO<u32>,
+        0xc0 => remote_read: RegisterRO<u32>,
+        0xd0 => logical_destination: RegisterRW<u32>,
+        0xe0 => destination_format: RegisterRW<u32>,
+        0xf0 => spurious_interrupt_vector: RegisterRW<u32>,
+
+        0x100 => in_service_0: RegisterRO<u32>,
+        0x110 => in_service_1: RegisterRO<u32>,
+        0x120 => in_service_2: RegisterRO<u32>,
+        0x130 => in_service_3: RegisterRO<u32>,
+        0x140 => in_service_4: RegisterRO<u32>,
+        0x150 => in_service_5: RegisterRO<u32>,
+        0x160 => in_service_6: RegisterRO<u32>,
+        0x170 => in_service_7: RegisterRO<u32>,
+
+        0x180 => trigger_mode_0: RegisterRO<u32>,
+        0x190 => trigger_mode_1: RegisterRO<u32>,
+        0x1a0 => trigger_mode_2: RegisterRO<u32>,
+        0x1b0 => trigger_mode_3: RegisterRO<u32>,
+        0x1c0 => trigger_mode_4: RegisterRO<u32>,
+        0x1d0 => trigger_mode_5: RegisterRO<u32>,
+        0x1e0 => trigger_mode_6: RegisterRO<u32>,
+        0x1f0 => trigger_mode_7: RegisterRO<u32>,
+
+        0x200 => interrupt_request_0: RegisterRO<u32>,
+        0x210 => interrupt_request_1: RegisterRO<u32>,
+        0x220 => interrupt_request_2: RegisterRO<u32>,
+        0x230 => interrupt_request_3: RegisterRO<u32>,
+        0x240 => interrupt_request_4: RegisterRO<u32>,
+        0x250 => interrupt_request_5: RegisterRO<u32>,
+        0x260 => interrupt_request_6: RegisterRO<u32>,
+        0x270 => interrupt_request_7: RegisterRO<u32>,
+
+        0x280 => error_status: RegisterRO<u32>,
+        0x2f0 => lvt_corrected_machine_check_interrupt: RegisterRW<u32>,
+        0x300 => interrupt_command_low_bits: RegisterRW<u32>,
+        0x310 => interrupt_command_high_bits: RegisterRW<u32>,
+        0x320 => lvt_timer: RegisterRW<u32>,
+        0x330 => lvt_thermal_sensor: RegisterRW<u32>,
+        0x340 => lvt_performance_monitoring_counters: RegisterRW<u32>,
+        0x350 => lvt_lint0: RegisterRW<u32>,
+        0x360 => lvt_lint1: RegisterRW<u32>,
+        0x370 => lvt_error: RegisterRW<u32>,
+        0x380 => initial_count: RegisterRW<u32>,
+        0x398 => current_count: RegisterRO<u32>,
+        0x3e0 => divide_configuration: RegisterRW<u32>,
+    }
+);
 
 pub(crate) fn print_acpi_info(info: &ACPIInfo) {
     let acpi_tables = &info.tables;
@@ -91,10 +168,13 @@ pub(crate) fn print_acpi_info(info: &ACPIInfo) {
         }
     }
     serial_println!("ACPI power profile: {:?}", platform_info.power_profile);
-    serial_println!(
-        "ACPI interrupt model:\n{:#x?}",
-        platform_info.interrupt_model
-    );
+
+    let apic = info.apic();
+    serial_println!("ACPI APIC: {:#x?}", apic);
+
+    let local_apic_reg =
+        unsafe { LocalAPICRegisters::from_address(apic.local_apic_address as usize) };
+    serial_println!("Local APIC Registers: {:#x?}", local_apic_reg);
 
     serial_println!("ACPI SDTs:");
     for (signature, sdt) in &acpi_tables.sdts {
