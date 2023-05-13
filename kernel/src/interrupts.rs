@@ -16,6 +16,9 @@ lazy_static! {
             idt.double_fault.set_handler_fn(double_fault_handler)
                 .set_stack_index(gdt::DOUBLE_FAULT_IST_INDEX);
         }
+
+        idt[KBD_IRQ as usize].set_handler_fn(keyboard_interrupt_handler);
+
         idt
     });
 }
@@ -103,37 +106,39 @@ extern "x86-interrupt" fn double_fault_handler(
 }
 
 // https://wiki.osdev.org/%228042%22_PS/2_Controller#PS.2F2_Controller_IO_Ports
-// const KEYBOARD_PORT: u16 = 0x60;
+pub(crate) const KBD_IRQ: u8 = 0x50;
+const KEYBOARD_PORT: u16 = 0x60;
 
-// extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
-//     use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
-//     use spin::Mutex;
-//     use x86_64::instructions::port::Port;
+pub extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
+    use x86_64::instructions::port::Port;
 
-//     lazy_static! {
-//         static ref KEYBOARD: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> = Mutex::new(
-//             Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore)
-//         );
-//     }
+    lazy_static! {
+        static ref KEYBOARD: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> = Mutex::new(
+            Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore)
+        );
+    }
 
-//     let mut keyboard = KEYBOARD.lock();
-//     let mut port = Port::new(KEYBOARD_PORT);
+    let mut keyboard = KEYBOARD.lock();
+    let mut port = Port::new(KEYBOARD_PORT);
 
-//     // KEYBOARD has an internal state machine that processes e.g. modifier keys
-//     // like shift and caps lock. It needs to be fed with the scancodes of the
-//     // pressed keys. If the scancode is a valid key, the keyboard crate will
-//     // eventually return a `DecodedKey`.
-//     let scancode: u8 = unsafe { port.read() };
-//     if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
-//         if let Some(key) = keyboard.process_keyevent(key_event) {
-//             match key {
-//                 DecodedKey::Unicode(character) => serial_print!("{}", character),
-//                 DecodedKey::RawKey(key) => serial_print!("{:?}", key),
-//             }
-//         }
-//     }
-//     unsafe {
-//         PICS.lock()
-//             .notify_end_of_interrupt(InterruptIndex::Keyboard.into());
-//     }
-// }
+    // KEYBOARD has an internal state machine that processes e.g. modifier keys
+    // like shift and caps lock. It needs to be fed with the scancodes of the
+    // pressed keys. If the scancode is a valid key, the keyboard crate will
+    // eventually return a `DecodedKey`.
+    let scancode: u8 = unsafe { port.read() };
+    if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
+        if let Some(key) = keyboard.process_keyevent(key_event) {
+            match key {
+                DecodedKey::Unicode(character) => {
+                    serial_println!("FOUND UNICODE CHAR {}", character);
+                }
+                DecodedKey::RawKey(key) => serial_println!("FOUND RAW CHAR {:?}", key),
+            }
+        }
+    }
+    // unsafe {
+    //     PICS.lock()
+    //         .notify_end_of_interrupt(InterruptIndex::Keyboard.into());
+    // }
+}

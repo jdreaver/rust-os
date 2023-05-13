@@ -53,9 +53,8 @@ make test
 ## TODO
 
 - APIC plan
-  - Have `interrupts.rs` install important fault interrupts, and then have a way to attach new interrupt handlers later. This allows us to install these fault exception handlers early on in the boot process, before we traverse ACPI tables. Traversing ACPI requires allocating some memory so we need to do it after the heap exists.
-  - Get APIC info from ACPI and set up APIC
   - Get keyboard or timer interrupt working on APIC/IOAPIC
+- HPET for timing (apparently better than Local APIC timer?)
 - Multi-tasking
   - <https://wiki.osdev.org/Brendan%27s_Multi-tasking_Tutorial>
   - <https://www.reddit.com/r/osdev/comments/jf1wgy/multitasking_tutorial/>

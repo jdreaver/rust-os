@@ -63,9 +63,26 @@ pub fn start() -> ! {
     // `acpi` crate uses alloc. It would be nice to not need that...
     let acpi_info = unsafe { acpi::ACPIInfo::from_rsdp(boot_info_data.rsdp_physical_addr()) };
 
+    serial_println!("TEMP APIC INFO: {:#x?}", acpi_info.apic_info());
+
     let mut local_apic = apic::LocalAPIC::from_acpi_info(&acpi_info);
     local_apic.enable();
     serial_println!("Local APIC: {:#x?}", local_apic);
+
+    let ioapic = apic::IOAPIC::from_acpi_info(&acpi_info);
+    serial_println!("IO APIC: {:#x?}", ioapic);
+
+    // Set up keyboard interrupts. TODO: Move this somewhere else.
+    let kbd_ioredtbl = apic::IOAPICRedirectionTableRegister::new()
+        .with_interrupt_vector(interrupts::KBD_IRQ)
+        .with_interrupt_mask(false)
+        .with_delivery_mode(0) // Fixed
+        .with_destination_mode(false) // Physical
+        .with_delivery_status(false)
+        .with_destination_field(0); // First APIC
+
+    ioapic.write_ioredtbl(1, kbd_ioredtbl);
+    serial_println!("Keyboard IOREDTBL: {:#x?}", ioapic.read_ioredtbl(1));
 
     // TODO: Initialize TEXT_BUFFER better so we don't need unsafe.
     let text_buffer = unsafe { &mut TEXT_BUFFER };
