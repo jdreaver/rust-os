@@ -187,8 +187,25 @@ good [forum
 thread](https://users.rust-lang.org/t/how-to-make-an-access-volatile-without-std-library/85533/)
 explaining the dangers of this.
 
-### Interrupt handling
+### Interrupt/IRQ handling
 
 - <https://unix.stackexchange.com/questions/47306/how-does-the-linux-kernel-handle-shared-irqs>
 - <https://www.kernel.org/doc/html/next/PCI/msi-howto.html>
 - <https://www.oreilly.com/library/view/linux-device-drivers/0596005903/ch10.html>
+
+How linux does things:
+- For CPU exceptions (vectors < 32), they have a hard-coded handler in the IDT
+- For external interrupts (starting at 32) Linux pre-populates a stub interrupt handler for every vector (256 - 32 of them on x86_64) that simply calls `common_interrupt` with the vector number.
+  - [This is the code](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/include/asm/idtentry.h#L483) where they create the stubs
+  - [`DECLARE_IDTENTRY` definition](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/include/asm/idtentry.h#L17), which [is used](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/include/asm/idtentry.h#L636) (via one intermediate macro in the same file) to create `asm_common_interrupt`, which is what the stub jumps to.
+- [Definition for `common_interrupt`](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/kernel/irq.c#L240)
+  - [`DEFINE_IDTENTRY_IRQ` def](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/include/asm/idtentry.h#L191)
+
+Other higher-level Linux resources:
+- <https://github.com/torvalds/linux/blob/bb7c241fae6228e89c0286ffd6f249b3b0dea225/arch/x86/include/asm/irq_vectors.h>
+  - They _statically_ define what each IDT entry will do (though some are generic, like 32..127 being for device interrupts)
+  - `SPURIOUS_APIC_VECTOR = 0xff`, they do this too <https://github.com/torvalds/linux/blob/bb7c241fae6228e89c0286ffd6f249b3b0dea225/arch/x86/include/asm/irq_vectors.h#L53-L61>
+- <https://subscription.packtpub.com/book/iot-and-hardware/9781789342048/2/ch02lvl1sec06/linux-kernel-interrupt-management>
+- <https://linux-kernel-labs.github.io/refs/heads/master/lectures/interrupts.html>
+- <http://books.gigatux.nl/mirror/kerneldevelopment/0672327201/ch06lev1sec6.html>
+- <https://0xax.gitbooks.io/linux-insides/content/Interrupts/linux-interrupts-8.html>
