@@ -1,10 +1,10 @@
 use core::ptr;
 
 use spin::Mutex;
-use x86_64::structures::idt::InterruptStackFrame;
 use x86_64::structures::paging::{OffsetPageTable, Translate};
 use x86_64::VirtAddr;
 
+use crate::interrupts::InterruptHandlerID;
 use crate::{apic, memory, serial_println};
 
 use super::{VirtIODeviceConfig, VirtIOInitializedDevice, VirtqDescriptorFlags};
@@ -80,10 +80,12 @@ impl VirtIORNG {
         physical_allocator: &mut memory::LockedNaiveFreeMemoryBlockAllocator,
     ) {
         let msix_table_id = 0;
+        let handler_id = 1; // If we had multiple RNG devices, we could disambiguate them
         self.initialized_device.install_virtqueue_msix_handler(
             Self::QUEUE_INDEX,
             msix_table_id,
             processor_id,
+            handler_id,
             virtio_rng_interrupt,
             mapper,
             physical_allocator,
@@ -105,9 +107,13 @@ impl VirtIORNG {
     }
 }
 
-pub extern "x86-interrupt" fn virtio_rng_interrupt(_stack_frame: InterruptStackFrame) {
+fn virtio_rng_interrupt(vector: u8, handler_id: InterruptHandlerID) {
     serial_println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    serial_println!("!!!!!!!!!!! VirtIO RNG interrupt!!!!!!!!!!!!!!!");
+    serial_println!(
+        "!! VirtIO RNG interrupt (vec={}, id={}) !!!!!!!",
+        vector,
+        handler_id
+    );
     serial_println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 
     let mut lock = VIRTIO_RNG.lock();

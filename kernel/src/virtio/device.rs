@@ -1,8 +1,8 @@
 use alloc::vec::Vec;
 use core::alloc::Allocator;
-use x86_64::structures::idt::InterruptStackFrame;
 use x86_64::structures::paging::OffsetPageTable;
 
+use crate::interrupts::{InterruptHandler, InterruptHandlerID};
 use crate::{interrupts, memory, serial_println};
 
 use super::config::{VirtIOConfigStatus, VirtIODeviceConfig};
@@ -136,7 +136,8 @@ impl VirtIOInitializedDevice {
         virtqueue_index: u16,
         msix_table_index: u16,
         processor_number: u8,
-        handler: extern "x86-interrupt" fn(InterruptStackFrame),
+        handler_id: InterruptHandlerID,
+        handler: InterruptHandler,
         mapper: &mut OffsetPageTable,
         frame_allocator: &mut memory::LockedNaiveFreeMemoryBlockAllocator,
     ) {
@@ -159,7 +160,7 @@ impl VirtIOInitializedDevice {
             .pci_type0_config()
             .msix_config(mapper, frame_allocator)
             .expect("failed to get MSIX config for VirtIO device");
-        let interrupt_vector = interrupts::install_interrupt(handler);
+        let interrupt_vector = interrupts::install_interrupt(handler_id, handler);
         let table_entry = msix.table_entry(msix_table_index as usize);
         table_entry.set_interrupt_vector(processor_number, interrupt_vector);
         msix.enable();

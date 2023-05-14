@@ -52,7 +52,8 @@ make test
 
 ## TODO
 
-- Figure out why we only see one virtio-rng interrupt fire
+- Figure out why we only see one virtio-rng interrupt fire once
+  - Do we need to increment an index on our side? I'm pretty sure we are doing that wrong. Maybe it is coalescing interrupts.
 - HPET for timing (apparently better than Local APIC timer?)
 - Multi-tasking
   - <https://wiki.osdev.org/Brendan%27s_Multi-tasking_Tutorial>

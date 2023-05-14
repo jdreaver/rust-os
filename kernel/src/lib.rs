@@ -53,7 +53,7 @@ pub fn start() -> ! {
     let boot_info_data = boot_info::boot_info();
 
     gdt::init();
-    interrupts::init_idt();
+    interrupts::init_interrupts();
 
     let mut mapper = unsafe { memory::init(boot_info_data.higher_half_direct_map_offset) };
     let frame_allocator = boot_info::allocator_from_limine_memory_map();

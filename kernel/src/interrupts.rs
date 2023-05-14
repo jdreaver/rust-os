@@ -1,32 +1,102 @@
 use lazy_static::lazy_static;
+use paste::paste;
+use seq_macro::seq;
 use spin::Mutex;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 use crate::{gdt, serial_println};
 
-lazy_static! {
-    static ref IDT: Mutex<InterruptDescriptorTable> = Mutex::new({
+/// CPU exception interrupt vectors stop at 32.
+const FIRST_EXTERNAL_INTERRUPT_VECTOR: usize = 32;
+
+/// This is how many interrupt vectors we have available in the IDT on x86 systems.
+const NUM_INTERRUPT_VECTORS: usize = 256;
+
+/// Macro to generate a stub interrupt handler for external interrupts that just
+/// calls the common interrupt handler with the vector.
+macro_rules! external_stub_interrupt_handler {
+    ($idt:ident $vector:literal) => {
+        paste! {
+            extern "x86-interrupt" fn [<_idt_entry_ $vector>](_: InterruptStackFrame) {
+                common_external_interrupt_handler($vector);
+            }
+
+            $idt[$vector].set_handler_fn([<_idt_entry_ $vector>]);
+        }
+    };
+}
+
+/// Common entrypoint to all external interrupts. The kernel creates stub
+/// handlers using `external_stub_interrupt_handler!` for every external
+/// interrupt vector, and those handlers call into this function with the
+/// `vector`. This gives us a layer of indirection that allows us to reuse
+/// handler code while still being able to identify the source interrupt vector.
+///
+/// For reference, here is how Linux does things:
+///
+/// - For CPU exceptions (vectors < 32), they have a hard-coded handler in the IDT
+/// - For external interrupts (starting at 32) Linux pre-populates a stub interrupt handler for every vector (256 - 32 of them on x86_64) that simply calls `common_interrupt` with the vector number.
+///   - [This is the code](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/include/asm/idtentry.h#L483) where they create the stubs
+///   - [`DECLARE_IDTENTRY` definition](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/include/asm/idtentry.h#L17), which [is used](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/include/asm/idtentry.h#L636) (via one intermediate macro in the same file) to create `asm_common_interrupt`, which is what the stub jumps to.
+/// - [Definition for `common_interrupt`](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/kernel/irq.c#L240)
+///   - [`DEFINE_IDTENTRY_IRQ` def](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/include/asm/idtentry.h#L191)
+///
+fn common_external_interrupt_handler(vector: u8) {
+    serial_println!("DEBUG: Interrupt: vector: {}", vector);
+    let &(interrupt_id, handler) = EXTERNAL_INTERRUPT_HANDLERS
+        .lock()
+        .get(vector as usize)
+        .expect("Invalid interrupt vector");
+    handler(vector, interrupt_id);
+}
+
+fn default_external_interrupt_handler(vector: u8, interrupt_id: InterruptHandlerID) {
+    panic!("Unhandled external interrupt: vector: {vector}, interrupt_id: {interrupt_id}");
+}
+
+/// This is passed to interrupt handler functions to disambiguate multiple IRQs
+/// using the same function.
+pub(crate) type InterruptHandlerID = u32;
+
+pub(crate) type InterruptHandler = fn(vector: u8, InterruptHandlerID);
+
+/// Holds the interrupt handlers for external interrupts. This is a static
+/// because we need to be able to access it from the interrupt handlers, which
+/// are `extern "x86-interrupt"`.
+static EXTERNAL_INTERRUPT_HANDLERS: Mutex<
+    [(InterruptHandlerID, InterruptHandler); NUM_INTERRUPT_VECTORS],
+> = Mutex::new([(0, default_external_interrupt_handler); NUM_INTERRUPT_VECTORS]);
+
+lazy_static!(
+    static ref IDT: InterruptDescriptorTable = {
+        // TODO: Set up a handler for all of the possible CPU exceptions!
         let mut idt = InterruptDescriptorTable::new();
         idt.breakpoint.set_handler_fn(breakpoint_handler);
         idt.page_fault.set_handler_fn(page_fault_handler);
-        idt.general_protection_fault.set_handler_fn(general_protection_fault_handler);
+        idt.general_protection_fault
+            .set_handler_fn(general_protection_fault_handler);
         unsafe {
             // set_stack_index is unsafe because the caller must ensure that the
             // used index is valid and not already used for another exception.
-            idt.double_fault.set_handler_fn(double_fault_handler)
+            idt.double_fault
+                .set_handler_fn(double_fault_handler)
                 .set_stack_index(gdt::DOUBLE_FAULT_IST_INDEX);
         }
 
+        // Set up stub handlers for all external interrupts.
+        seq!(N in 32..255 {
+            external_stub_interrupt_handler!(idt N);
+        });
+
         idt
-    });
-
-    static ref NEXT_OPEN_INTERRUPT_INDEX: Mutex<u8> = Mutex::new(APIC_INTERRUPT_START_OFFSET);
-}
-
-pub(crate) fn init_idt() {
-    unsafe {
-        IDT.lock().load_unsafe();
     };
+);
+
+pub(crate) fn init_interrupts() {
+    unsafe {
+        IDT.load_unsafe();
+    };
+
     disable_pic();
     x86_64::instructions::interrupts::enable();
 }
@@ -34,7 +104,7 @@ pub(crate) fn init_idt() {
 // Even though we are disabling the PIC in lieu of the APIC, we still need to
 // set the offsets to avoid CPU exceptions. We should not use indexes 32 through 47
 // for APIC interrupts so we avoid spurious PIC interrupts.
-const MASTER_PIC_OFFSET: u8 = 32;
+const MASTER_PIC_OFFSET: u8 = FIRST_EXTERNAL_INTERRUPT_VECTOR as u8;
 const SLAVE_PIC_OFFSET: u8 = MASTER_PIC_OFFSET + 8;
 const APIC_INTERRUPT_START_OFFSET: u8 = SLAVE_PIC_OFFSET + 8;
 
@@ -53,9 +123,13 @@ fn disable_pic() {
 /// Send spurious interrupts to a high index that we won't use.
 pub(crate) const SPURIOUS_INTERRUPT_VECTOR_INDEX: u8 = 0xFF;
 
+lazy_static! {
+    static ref NEXT_OPEN_INTERRUPT_INDEX: Mutex<u8> = Mutex::new(APIC_INTERRUPT_START_OFFSET);
+}
+
 /// Install an interrupt handler in the IDT. Uses the next open interrupt index
 /// and returns the used index.
-pub(crate) fn install_interrupt(handler: extern "x86-interrupt" fn(InterruptStackFrame)) -> u8 {
+pub(crate) fn install_interrupt(interrupt_id: InterruptHandlerID, handler: InterruptHandler) -> u8 {
     let interrupt_index = {
         let mut next_index = NEXT_OPEN_INTERRUPT_INDEX.lock();
         let index = *next_index;
@@ -67,8 +141,7 @@ pub(crate) fn install_interrupt(handler: extern "x86-interrupt" fn(InterruptStac
         "Ran out of interrupt vectors"
     );
 
-    let mut idt = IDT.lock();
-    idt[interrupt_index as usize].set_handler_fn(handler);
+    EXTERNAL_INTERRUPT_HANDLERS.lock()[interrupt_index as usize] = (interrupt_id, handler);
 
     interrupt_index
 }

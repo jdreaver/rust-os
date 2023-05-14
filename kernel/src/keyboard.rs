@@ -2,12 +2,12 @@ use lazy_static::lazy_static;
 use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
 use spin::Mutex;
 use x86_64::instructions::port::Port;
-use x86_64::structures::idt::InterruptStackFrame;
 
+use crate::interrupts::InterruptHandlerID;
 use crate::{apic, interrupts, serial_println};
 
 pub(crate) fn init_keyboard(ioapic: &apic::IOAPIC) {
-    let kbd_irq = interrupts::install_interrupt(keyboard_interrupt_handler);
+    let kbd_irq = interrupts::install_interrupt(1, keyboard_interrupt_handler);
     let kbd_ioredtbl = apic::IOAPICRedirectionTableRegister::new()
         .with_interrupt_vector(kbd_irq)
         .with_interrupt_mask(false)
@@ -29,7 +29,7 @@ pub(crate) fn init_keyboard(ioapic: &apic::IOAPIC) {
 /// exist I think we need to parse some ACPI AML.
 const KEYBOARD_IOAPIC_REDTBL_INDEX: u8 = 1;
 
-pub extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
+fn keyboard_interrupt_handler(_vector: u8, _handler_id: InterruptHandlerID) {
     // https://wiki.osdev.org/%228042%22_PS/2_Controller#PS.2F2_Controller_IO_Ports
     const KEYBOARD_PORT: u16 = 0x60;
 
