@@ -188,3 +188,9 @@ post](https://lokathor.github.io/volatile/) that explains this. There is also a
 good [forum
 thread](https://users.rust-lang.org/t/how-to-make-an-access-volatile-without-std-library/85533/)
 explaining the dangers of this.
+
+### Interrupt handling
+
+- <https://unix.stackexchange.com/questions/47306/how-does-the-linux-kernel-handle-shared-irqs>
+- <https://www.kernel.org/doc/html/next/PCI/msi-howto.html>
+- <https://www.oreilly.com/library/view/linux-device-drivers/0596005903/ch10.html>
