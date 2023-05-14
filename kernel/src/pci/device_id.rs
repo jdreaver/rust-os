@@ -35,6 +35,14 @@ impl PCIConfigDeviceID {
         self.registers
     }
 
+    pub(crate) fn vendor_id(self) -> u16 {
+        self.registers.vendor_id().read()
+    }
+
+    pub(crate) fn device_id(self) -> u16 {
+        self.registers.device_id().read()
+    }
+
     pub(crate) fn known_vendor_id(self) -> &'static str {
         let vendor_id = self.registers.vendor_id().read();
         lookup_vendor_id(vendor_id)

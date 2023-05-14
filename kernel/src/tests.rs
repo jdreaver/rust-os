@@ -4,10 +4,9 @@ use core::fmt::Write;
 
 use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
-use x86_64::structures::idt::InterruptStackFrame;
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, Size2MiB, Size4KiB, Translate};
 
-use crate::{acpi, apic, boot_info, memory, pci, serial_println, virtio};
+use crate::{acpi, boot_info, memory, pci, serial_println, virtio};
 
 pub(crate) fn run_tests(
     boot_info_data: &boot_info::BootInfo,
@@ -62,13 +61,17 @@ pub(crate) fn run_tests(
         let Some(device_config) = virtio::VirtIODeviceConfig::from_pci_config(device, mapper, frame_allocator) else { return; };
         serial_println!("Found VirtIO device, initializing");
 
-        let initialized_device =
-            virtio::VirtIOInitializedDevice::new(device_config, frame_allocator);
-        serial_println!("VirtIO device initialized: {:#x?}", initialized_device);
+        // let initialized_device =
+        //     virtio::VirtIOInitializedDevice::new(device_config, frame_allocator);
+        // serial_println!("VirtIO device initialized: {:#x?}", initialized_device);
 
-        // Test out the RNG device
-        test_rng_virtio_device(initialized_device, mapper, frame_allocator);
+        // Try to hook up the RNG device
+        virtio::try_init_virtio_rng(device_config, mapper, frame_allocator);
     });
+
+    // Request some VirtIO RNG bytes
+    virtio::request_random_numbers(mapper);
+    virtio::request_random_numbers(mapper);
 
     // Print out some test addresses
     let addresses = [
@@ -150,70 +153,4 @@ pub(crate) fn run_tests(
 
     // Test custom panic handler
     // panic!("Some panic message");
-}
-
-fn test_rng_virtio_device(
-    mut device: virtio::VirtIOInitializedDevice,
-    mapper: &mut OffsetPageTable,
-    frame_allocator: &mut memory::LockedNaiveFreeMemoryBlockAllocator,
-) {
-    let device_id = device.config().pci_config().device_id();
-    if device_id.known_vendor_id() == "virtio" && device_id.known_device_id() == "entropy source" {
-        let queue_index = 0;
-        device.install_virtqueue_msix_handler(
-            queue_index,
-            0,
-            0,
-            test_virtio_rng_interrupt,
-            mapper,
-            frame_allocator,
-        );
-
-        // RNG device only has a single virtq
-        let buffer_size = 16;
-
-        let buf = memory::allocate_zeroed_buffer(frame_allocator, buffer_size, 16)
-            .expect("failed to allocate buffer for entropy virtq");
-        let virtq = device.get_virtqueue_mut(queue_index).unwrap();
-        let flags = virtio::VirtqDescriptorFlags::new().with_device_write(true);
-        virtq.add_buffer(buf, buffer_size as u32, flags);
-
-        serial_println!("Added buffer to virtq: {:#x?}", virtq);
-        serial_println!("Waiting for response...");
-
-        // Dummy loop to waste time to wait for response, but apparently it
-        // isn't needed? Neat.
-        //
-        // let mut i = 0;
-        // while virtq.used_ring_index() == 0 {
-        //     i += 1;
-        //     if i > 1_000 {
-        //         panic!("timed out")
-        //     }
-        // }
-
-        let used_index = virtq.used_ring_index() - 1;
-        let (used_entry, descriptor) = virtq.get_used_ring_entry(used_index);
-        serial_println!("Got used entry: {:#x?}", (used_entry, descriptor));
-
-        // The used entry should be using the exact same buffer we just
-        // created, but let's pretend we didn't know that.
-        let buffer = unsafe {
-            core::slice::from_raw_parts(
-                descriptor.addr as *const u8,
-                // NOTE: Using the length from the used entry, not the buffer
-                // length, b/c the RNG device might not have written the whole
-                // thing!
-                used_entry.len as usize,
-            )
-        };
-        serial_println!("RNG buffer: {:x?}", buffer);
-    }
-}
-
-pub extern "x86-interrupt" fn test_virtio_rng_interrupt(_stack_frame: InterruptStackFrame) {
-    serial_println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    serial_println!("!!!!!!!!!!! VirtIO RNG interrupt!!!!!!!!!!!!!!!");
-    serial_println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    apic::end_of_interrupt();
 }

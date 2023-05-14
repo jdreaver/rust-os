@@ -52,9 +52,7 @@ make test
 
 ## TODO
 
-- VirtIO: Make RNG device a "thing" in its own file
-- When virtio-rng interrupt fires, figure out how to get the data out
-  - Is there a way for an interrupt to know its number, or to pass some kind of pointer into the interrupt?
+- Figure out why we only see one virtio-rng interrupt fire
 - HPET for timing (apparently better than Local APIC timer?)
 - Multi-tasking
   - <https://wiki.osdev.org/Brendan%27s_Multi-tasking_Tutorial>
