@@ -10,6 +10,9 @@ use crate::{apic, memory, serial_println};
 use super::{VirtIODeviceConfig, VirtIOInitializedDevice, VirtqDescriptorFlags};
 
 static VIRTIO_RNG: Mutex<Option<VirtIORNG>> = Mutex::new(None);
+
+// TODO: Use separate buffers so we can have multiple requests in flight at
+// once. Currently all requests will use the same buffer.
 static VIRTIO_RNG_BUFFER: [u8; 16] = [0; 16];
 
 pub(crate) fn try_init_virtio_rng(
@@ -51,6 +54,9 @@ pub(crate) fn request_random_numbers(mapper: &mut OffsetPageTable) {
 #[derive(Debug)]
 struct VirtIORNG {
     initialized_device: VirtIOInitializedDevice,
+
+    // How far into the used ring we've processed entries.
+    processed_used_index: u16,
 }
 
 impl VirtIORNG {
@@ -70,7 +76,10 @@ impl VirtIORNG {
 
         let initialized_device = VirtIOInitializedDevice::new(device_config, physical_allocator);
 
-        Self { initialized_device }
+        Self {
+            initialized_device,
+            processed_used_index: 0,
+        }
     }
 
     fn enable_msix(
@@ -124,21 +133,26 @@ fn virtio_rng_interrupt(vector: u8, handler_id: InterruptHandlerID) {
         .get_virtqueue_mut(VirtIORNG::QUEUE_INDEX)
         .unwrap();
     let used_index = virtq.used_ring_index() - 1;
-    let (used_entry, descriptor) = virtq.get_used_ring_entry(used_index);
-    serial_println!("Got used entry: {:#x?}", (used_entry, descriptor));
 
-    // The used entry should be using the exact same buffer we just
-    // created, but let's pretend we didn't know that.
-    let buffer = unsafe {
-        core::slice::from_raw_parts(
-            descriptor.addr as *const u8,
-            // NOTE: Using the length from the used entry, not the buffer
-            // length, b/c the RNG device might not have written the whole
-            // thing!
-            used_entry.len as usize,
-        )
+    for i in rng.processed_used_index..=used_index {
+        let (used_entry, descriptor) = virtq.get_used_ring_entry(i);
+        // serial_println!("Got used entry: {:#x?}", (used_entry, descriptor));
+
+        // The used entry should be using the exact same buffer we just
+        // created, but let's pretend we didn't know that.
+        let buffer = unsafe {
+            core::slice::from_raw_parts(
+                descriptor.addr as *const u8,
+                // NOTE: Using the length from the used entry, not the buffer
+                // length, b/c the RNG device might not have written the whole
+                // thing!
+                used_entry.len as usize,
+            )
+        };
+        serial_println!("RNG buffer: {:x?}", buffer);
     };
-    serial_println!("RNG buffer: {:x?}", buffer);
+
+    rng.processed_used_index = used_index;
 
     apic::end_of_interrupt();
 }
