@@ -1,10 +1,12 @@
 use alloc::vec::Vec;
 use core::alloc::Allocator;
+use x86_64::structures::idt::InterruptStackFrame;
+use x86_64::structures::paging::OffsetPageTable;
 
-use crate::serial_println;
+use crate::{interrupts, memory, serial_println};
 
-use crate::virtio::config::{VirtIOConfigStatus, VirtIODeviceConfig};
-use crate::virtio::queue::{VirtQueue, VirtqAvailRing, VirtqDescriptorTable, VirtqUsedRing};
+use super::config::{VirtIOConfigStatus, VirtIODeviceConfig};
+use super::queue::{VirtQueue, VirtqAvailRing, VirtqDescriptorTable, VirtqUsedRing};
 
 #[derive(Debug)]
 pub(crate) struct VirtIOInitializedDevice {
@@ -127,5 +129,39 @@ impl VirtIOInitializedDevice {
 
     pub(crate) fn get_virtqueue_mut(&mut self, index: u16) -> Option<&mut VirtQueue> {
         self.virtqueues.get_mut(index as usize)
+    }
+
+    pub(crate) fn install_virtqueue_msix_handler(
+        &mut self,
+        virtqueue_index: u16,
+        msix_table_index: u16,
+        processor_number: u8,
+        handler: extern "x86-interrupt" fn(InterruptStackFrame),
+        mapper: &mut OffsetPageTable,
+        frame_allocator: &mut memory::LockedNaiveFreeMemoryBlockAllocator,
+    ) {
+        // Select the virtqueue and tell it to use the given MSI-X table index
+        let common_config = self.config.common_virtio_config();
+        common_config.queue_select().write(virtqueue_index);
+        common_config.queue_msix_vector().write(msix_table_index);
+
+        // Read back the virtqueue's MSI-X table index to ensure that it was
+        // set correctly
+        assert_eq!(
+            common_config.queue_msix_vector().read(),
+            msix_table_index,
+            "failed to set virtqueue's MSI-X table index"
+        );
+
+        // Install the interrupt handler via MSI-X
+        let msix = self
+            .config
+            .pci_type0_config()
+            .msix_config(mapper, frame_allocator)
+            .expect("failed to get MSIX config for VirtIO device");
+        let interrupt_vector = interrupts::install_interrupt(handler);
+        let table_entry = msix.table_entry(msix_table_index as usize);
+        table_entry.set_interrupt_vector(processor_number, interrupt_vector);
+        msix.enable();
     }
 }

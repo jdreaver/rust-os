@@ -55,7 +55,6 @@ make test
 - VirtIO: Make RNG device a "thing" in its own file
 - When virtio-rng interrupt fires, figure out how to get the data out
   - Is there a way for an interrupt to know its number, or to pass some kind of pointer into the interrupt?
-- Use MSI-X for VirtIO devices
 - HPET for timing (apparently better than Local APIC timer?)
 - Multi-tasking
   - <https://wiki.osdev.org/Brendan%27s_Multi-tasking_Tutorial>
@@ -65,7 +64,8 @@ make test
 - Make `LockedNaiveFreeMemoryBlockAllocator` a global static instead of passing
   it around. The tricky part is all the things that want `&mut impl FrameAllocator`
   - Consider custom page table implementation to get around `&mut` requirements <https://github.com/rust-osdev/x86_64/issues/416>
-- VirtIO: Ensure it is crystal clear that memory allocator needs to be contiguous
+- VirtIO: Ensure it is crystal clear that memory allocator needs to be physically contiguous
+  - I realized I'm passing around `frame_allocator: &impl Allocator` a lot, which doesn't ensure that
 - `registers.rs` and macros
   - Consider moving `registers.rs` stuff into dedicated crate with unit tests
   - Also document `registers.rs` stuff
