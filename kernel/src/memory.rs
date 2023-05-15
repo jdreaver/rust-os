@@ -10,15 +10,11 @@ use x86_64::structures::paging::{
 use x86_64::{PhysAddr, VirtAddr};
 
 /// Page table mapper used by all kernel contexts.
-static KERNEL_MAPPER: KernelMapper = KernelMapper {
-    mutex: Mutex::new(None),
-};
+static KERNEL_MAPPER: KernelMapper = KernelMapper::new();
 
 /// Physical memory frame allocator used by all kernel contexts.
 pub(crate) static KERNEL_PHYSICAL_ALLOCATOR: LockedNaiveFreeMemoryBlockAllocator =
-    LockedNaiveFreeMemoryBlockAllocator {
-        mutex: Mutex::new(None),
-    };
+    LockedNaiveFreeMemoryBlockAllocator::new();
 
 /// Initialize the `KERNEL_MAPPER` with the passed `physical_memory_offset`.
 ///
@@ -32,21 +28,8 @@ pub(crate) unsafe fn init(
     physical_memory_offset: VirtAddr,
     usable_memory_regions: impl Iterator<Item = UsableMemoryRegion>,
 ) {
-    let (level_4_table_frame, _) = x86_64::registers::control::Cr3::read();
-
-    let phys = level_4_table_frame.start_address();
-    let virt = physical_memory_offset + phys.as_u64();
-    let page_table_ptr: *mut PageTable = virt.as_mut_ptr();
-
-    let level_4_table = &mut *page_table_ptr;
-
-    KERNEL_MAPPER
-        .mutex
-        .lock()
-        .replace(OffsetPageTable::new(level_4_table, physical_memory_offset));
-
-    let allocator = NaiveFreeMemoryBlockAllocator::from_iter(usable_memory_regions);
-    KERNEL_PHYSICAL_ALLOCATOR.mutex.lock().replace(allocator);
+    KERNEL_MAPPER.init(physical_memory_offset);
+    KERNEL_PHYSICAL_ALLOCATOR.init(usable_memory_regions);
 }
 
 /// Mutex wrapper around `OffsetPageTable`.
@@ -55,6 +38,24 @@ struct KernelMapper {
 }
 
 impl KernelMapper {
+    const fn new() -> Self {
+        Self {
+            mutex: Mutex::new(None),
+        }
+    }
+
+    unsafe fn init(&self, physical_memory_offset: VirtAddr) {
+        let (level_4_table_frame, _) = x86_64::registers::control::Cr3::read();
+
+        let phys = level_4_table_frame.start_address();
+        let virt = physical_memory_offset + phys.as_u64();
+        let page_table_ptr: *mut PageTable = virt.as_mut_ptr();
+
+        let level_4_table = unsafe { &mut *page_table_ptr };
+        let mapper = unsafe { OffsetPageTable::new(level_4_table, physical_memory_offset) };
+        self.mutex.lock().replace(mapper);
+    }
+
     fn with_lock<R>(&self, f: impl FnOnce(&mut OffsetPageTable) -> R) -> R {
         let mut mutex_guard = self.mutex.lock();
         let mapper = mutex_guard
@@ -245,6 +246,17 @@ pub(crate) struct LockedNaiveFreeMemoryBlockAllocator {
 }
 
 impl LockedNaiveFreeMemoryBlockAllocator {
+    const fn new() -> Self {
+        Self {
+            mutex: Mutex::new(None),
+        }
+    }
+
+    unsafe fn init(&self, usable_memory_regions: impl Iterator<Item = UsableMemoryRegion>) {
+        let allocator = unsafe { NaiveFreeMemoryBlockAllocator::from_iter(usable_memory_regions) };
+        self.mutex.lock().replace(allocator);
+    }
+
     fn with_lock<R>(&self, f: impl FnOnce(&mut NaiveFreeMemoryBlockAllocator) -> R) -> R {
         let mut mutex_guard = self.mutex.lock();
         let allocator = mutex_guard
