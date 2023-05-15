@@ -2,10 +2,25 @@ use core::alloc::{AllocError, Allocator, Layout, LayoutError};
 use core::ptr::NonNull;
 
 use spin::Mutex;
-use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, PageSize, PageTable, PhysFrame};
+use x86_64::structures::paging::mapper::{MapToError, Translate};
+use x86_64::structures::paging::{
+    FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTable, PageTableFlags, PhysFrame,
+    Size4KiB,
+};
 use x86_64::{PhysAddr, VirtAddr};
 
-/// Initialize a new `OffsetPageTable`.
+/// Page table mapper used by all kernel contexts.
+static KERNEL_MAPPER: Mutex<Option<OffsetPageTable<'static>>> = Mutex::new(None);
+
+/// Physical memory frame allocator used by all kernel contexts.
+///
+/// TODO: Change name to `KERNEL_PHYSICAL_ALLOCATOR`?
+pub(crate) static KERNEL_ALLOCATOR: LockedNaiveFreeMemoryBlockAllocator =
+    LockedNaiveFreeMemoryBlockAllocator {
+        mutex: Mutex::new(None),
+    };
+
+/// Initialize the `KERNEL_MAPPER` with the passed `physical_memory_offset`.
 ///
 /// # Safety
 ///
@@ -13,25 +28,33 @@ use x86_64::{PhysAddr, VirtAddr};
 /// physical memory is mapped to virtual memory at the passed
 /// `physical_memory_offset`. Also, this function must be only called once to
 /// avoid aliasing `&mut` references (which is undefined behavior).
-pub(crate) unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
-    let level_4_table = active_level_4_page_table(physical_memory_offset);
-    OffsetPageTable::new(level_4_table, physical_memory_offset)
-}
-
-/// Returns a mutable reference to the active level 4 table.
-///
-/// This function is unsafe because the caller must guarantee that the complete
-/// physical memory is mapped to virtual memory at the passed
-/// `physical_memory_offset`. Also, this function must be only called once to
-/// avoid aliasing `&mut` references (which is undefined behavior).
-unsafe fn active_level_4_page_table(physical_memory_offset: VirtAddr) -> &'static mut PageTable {
+pub(crate) unsafe fn init(
+    physical_memory_offset: VirtAddr,
+    usable_memory_regions: impl Iterator<Item = UsableMemoryRegion>,
+) {
     let (level_4_table_frame, _) = x86_64::registers::control::Cr3::read();
 
     let phys = level_4_table_frame.start_address();
     let virt = physical_memory_offset + phys.as_u64();
     let page_table_ptr: *mut PageTable = virt.as_mut_ptr();
 
-    unsafe { &mut *page_table_ptr }
+    let level_4_table = &mut *page_table_ptr;
+
+    KERNEL_MAPPER
+        .lock()
+        .replace(OffsetPageTable::new(level_4_table, physical_memory_offset));
+
+    let allocator = NaiveFreeMemoryBlockAllocator::from_iter(usable_memory_regions);
+    KERNEL_ALLOCATOR.mutex.lock().replace(allocator);
+}
+
+/// Translate a given physical address to a virtual address, if possible.
+pub(crate) fn translate_addr(addr: VirtAddr) -> Option<PhysAddr> {
+    KERNEL_MAPPER
+        .lock()
+        .as_ref()
+        .expect("kernel mapper not initialized")
+        .translate_addr(addr)
 }
 
 /// A region of memory we can use for allocation. These are usually given to the
@@ -156,34 +179,80 @@ unsafe impl<S: PageSize> FrameAllocator<S> for NaiveFreeMemoryBlockAllocator {
     }
 }
 
-/// `NaiveFreeMemoryBlockAllocator` behind a `Mutex`
-pub(crate) struct LockedNaiveFreeMemoryBlockAllocator {
-    mutex: Mutex<NaiveFreeMemoryBlockAllocator>,
+/// Allocates a physical frame of memory for the given size.
+pub(crate) fn allocate_frame<S: PageSize>() -> Option<PhysFrame<S>> {
+    KERNEL_ALLOCATOR
+        .mutex
+        .lock()
+        .as_mut()
+        .expect("kernel memory allocator not initialized")
+        .allocate_frame()
 }
 
-impl LockedNaiveFreeMemoryBlockAllocator {
-    pub(crate) fn new(alloc: NaiveFreeMemoryBlockAllocator) -> Self {
-        Self {
-            mutex: Mutex::new(alloc),
-        }
+/// Allocates a physical page for the given virtual page of memory and maps the
+/// virtual page to the physical page.
+pub(crate) fn allocate_and_map_page(
+    page: Page,
+    flags: PageTableFlags,
+) -> Result<(), MapToError<Size4KiB>> {
+    let frame = allocate_frame::<Size4KiB>().ok_or(MapToError::FrameAllocationFailed)?;
+    let mut alloc_guard = KERNEL_ALLOCATOR.mutex.lock();
+    let allocator = alloc_guard
+        .as_mut()
+        .expect("kernel memory allocator not initialized");
+    let mut mapper_guard = KERNEL_MAPPER.lock();
+    let mapper = mapper_guard
+        .as_mut()
+        .expect("kernel mapper not initialized");
+    unsafe {
+        mapper.map_to(page, frame, flags, allocator)?.flush();
+        Ok(())
     }
+}
+
+pub(crate) fn identity_map_frame(
+    frame: PhysFrame,
+    flags: PageTableFlags,
+) -> Result<(), MapToError<Size4KiB>> {
+    let mut alloc_guard = KERNEL_ALLOCATOR.mutex.lock();
+    let allocator = alloc_guard
+        .as_mut()
+        .expect("kernel memory allocator not initialized");
+    let mut mapper_guard = KERNEL_MAPPER.lock();
+    let mapper = mapper_guard
+        .as_mut()
+        .expect("kernel mapper not initialized");
+    let map_result = unsafe { mapper.identity_map(frame, flags, allocator) };
+    match map_result {
+        Ok(flusher) => {
+            flusher.flush();
+            Ok(())
+        }
+        // These errors are okay. They just mean the frame is already identity
+        // mapped (well, hopefully).
+        Err(MapToError::ParentEntryHugePage | MapToError::PageAlreadyMapped(_)) => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// `NaiveFreeMemoryBlockAllocator` behind a `Mutex`
+pub(crate) struct LockedNaiveFreeMemoryBlockAllocator {
+    mutex: Mutex<Option<NaiveFreeMemoryBlockAllocator>>,
 }
 
 /// We implement the `Allocator` trait for `LockedNaiveFreeMemoryBlockAllocator`
 /// so that we can use it for custom allocations for physically contiguous
 /// memory.
-///
-/// TODO: In the future, we should make this a global static instead of needing
-/// to pass it around. The problem is, `Allocator` is fine with non-mutable
-/// references, but `FrameAllocator` requires a mutable reference, and we want
-/// to use the same allocator for both.
 unsafe impl Allocator for LockedNaiveFreeMemoryBlockAllocator {
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         let size = layout.size() as u64;
         let alignment = layout.align() as u64;
         let start_address = {
-            self.mutex
-                .lock()
+            let mut mutex_guard = self.mutex.lock();
+            let allocator = mutex_guard
+                .as_mut()
+                .expect("kernel memory allocator not initialized");
+            allocator
                 .allocate_contiguous_memory(size, Some(alignment))
                 .ok_or(AllocError)?
         };
@@ -204,7 +273,11 @@ unsafe impl Allocator for LockedNaiveFreeMemoryBlockAllocator {
 
 unsafe impl<S: PageSize> FrameAllocator<S> for LockedNaiveFreeMemoryBlockAllocator {
     fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
-        self.mutex.lock().allocate_frame()
+        self.mutex
+            .lock()
+            .as_mut()
+            .expect("kernel memory allocator not initialized")
+            .allocate_frame()
     }
 }
 
@@ -217,13 +290,12 @@ pub(crate) enum AllocZeroedBufferError {
 
 /// Useful utility wrapper around `Allocator.allocate_zeroed`.
 pub(crate) fn allocate_zeroed_buffer(
-    allocator: &impl Allocator,
     size: usize,
     alignment: usize,
 ) -> Result<u64, AllocZeroedBufferError> {
     let layout =
         Layout::from_size_align(size, alignment).map_err(AllocZeroedBufferError::LayoutError)?;
-    let address = allocator
+    let address = KERNEL_ALLOCATOR
         .allocate_zeroed(layout)
         .map_err(AllocZeroedBufferError::AllocError)?;
     Ok(address.addr().get() as u64)

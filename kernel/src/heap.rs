@@ -1,7 +1,9 @@
 use linked_list_allocator::LockedHeap;
 use x86_64::structures::paging::mapper::MapToError;
-use x86_64::structures::paging::{FrameAllocator, Mapper, Page, PageTableFlags, Size4KiB};
+use x86_64::structures::paging::{Page, PageTableFlags, Size4KiB};
 use x86_64::VirtAddr;
+
+use crate::memory;
 
 /// NOTE: `LockedHeap` uses a spin lock under the hood, so we should ensure we
 /// _never_ do allocations in interrupt handlers, because we can cause a
@@ -15,13 +17,7 @@ pub(crate) const HEAP_SIZE: usize = 100 * 1024; // 100 KiB
 
 /// Maps pages for a kernel heap defined by `HEAP_START` and `HEAP_SIZE` and
 /// initializes `ALLOCATOR` with this heap.
-pub(crate) fn init(
-    // N.B. Can't make Mapper generic over page size because we will always need
-    // a way to allocate page tables, which are 4 KiB. See
-    // https://github.com/rust-osdev/x86_64/issues/390
-    mapper: &mut impl Mapper<Size4KiB>,
-    frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-) -> Result<(), MapToError<Size4KiB>> {
+pub(crate) fn init() -> Result<(), MapToError<Size4KiB>> {
     let page_range = {
         let heap_start = VirtAddr::new(HEAP_START as u64);
         let heap_end = heap_start + HEAP_SIZE as u64 - 1u64;
@@ -31,13 +27,8 @@ pub(crate) fn init(
     };
 
     for page in page_range {
-        let frame = frame_allocator
-            .allocate_frame()
-            .ok_or(MapToError::FrameAllocationFailed)?;
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-        unsafe {
-            mapper.map_to(page, frame, flags, frame_allocator)?.flush();
-        }
+        memory::allocate_and_map_page(page, flags)?;
     }
 
     unsafe {

@@ -55,10 +55,14 @@ pub fn start() -> ! {
     gdt::init();
     interrupts::init_interrupts();
 
-    let mut mapper = unsafe { memory::init(boot_info_data.higher_half_direct_map_offset) };
-    let frame_allocator = boot_info::allocator_from_limine_memory_map();
-    let mut frame_allocator = memory::LockedNaiveFreeMemoryBlockAllocator::new(frame_allocator);
-    heap::init(&mut mapper, &mut frame_allocator).expect("failed to initialize allocator");
+    let limine_usable_memory = boot_info::limine_usable_memory_regions();
+    unsafe {
+        memory::init(
+            boot_info_data.higher_half_direct_map_offset,
+            limine_usable_memory,
+        );
+    };
+    heap::init().expect("failed to initialize heap");
 
     // N.B. Probing ACPI must happen after heap initialization because the Rust
     // `acpi` crate uses alloc. It would be nice to not need that...
@@ -73,13 +77,7 @@ pub fn start() -> ! {
 
     // TODO: Initialize TEXT_BUFFER better so we don't need unsafe.
     let text_buffer = unsafe { &mut TEXT_BUFFER };
-    tests::run_tests(
-        boot_info_data,
-        &acpi_info,
-        &mut mapper,
-        &mut frame_allocator,
-        text_buffer,
-    );
+    tests::run_tests(boot_info_data, &acpi_info, text_buffer);
 
     hlt_loop()
 }

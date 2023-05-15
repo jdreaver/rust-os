@@ -171,6 +171,27 @@ fn limine_memory_map_entries() -> impl Iterator<Item = &'static limine::LimineMe
     }
 }
 
+/// Create usable memory regions iterator from the limine memory map.
+///
+/// N.B. In principle we could use the reclaimable regions as well (entry.typ ==
+/// `limine::LimineMemoryMapEntryType::BootloaderReclaimable`) However, I'm not
+/// confident what cleanup needs to be done. In particular, the [limine
+/// protocol](https://github.com/limine-bootloader/limine/blob/trunk/PROTOCOL.md)
+/// says:
+///
+/// > The bootloader page tables are in bootloader-reclaimable memory [...], and
+/// > their specific layout is undefined as long as they provide the above
+/// > memory mappings.
+pub(crate) fn limine_usable_memory_regions() -> impl Iterator<Item = memory::UsableMemoryRegion> {
+    limine_memory_map_entries()
+        // See not above about usable vs reclaimable.
+        .filter(|entry| entry.typ == limine::LimineMemoryMapEntryType::Usable)
+        .map(|entry| memory::UsableMemoryRegion {
+            start_address: PhysAddr::new(entry.base),
+            len: entry.len,
+        })
+}
+
 pub(crate) fn print_limine_memory_map() {
     let memory_map_iter = limine_memory_map_entries();
 
@@ -220,31 +241,4 @@ pub(crate) fn print_limine_memory_map() {
         "    framebuffer: {} MiB",
         memory_totals[LimineMemoryMapEntryType::Framebuffer as usize] / 1024 / 1024
     );
-}
-
-/// Create a `NaiveFreeMemoryBlockAllocator` from the reclaimable regions in the
-/// limine memory map.
-///
-/// N.B. In principle we could use the reclaimable regions as well (entry.typ ==
-/// `limine::LimineMemoryMapEntryType::BootloaderReclaimable`) However, I'm not
-/// confident what cleanup needs to be done. In particular, the [limine
-/// protocol](https://github.com/limine-bootloader/limine/blob/trunk/PROTOCOL.md)
-/// says:
-///
-/// > The bootloader page tables are in bootloader-reclaimable memory [...], and
-/// > their specific layout is undefined as long as they provide the above
-/// > memory mappings.
-pub(crate) fn allocator_from_limine_memory_map() -> memory::NaiveFreeMemoryBlockAllocator {
-    // SAFETY: The limine memory map is valid for the lifetime of the kernel.
-    unsafe {
-        memory::NaiveFreeMemoryBlockAllocator::from_iter(
-            limine_memory_map_entries()
-                // See not above about usable vs reclaimable.
-                .filter(|entry| entry.typ == limine::LimineMemoryMapEntryType::Usable)
-                .map(|entry| memory::UsableMemoryRegion {
-                    start_address: PhysAddr::new(entry.base),
-                    len: entry.len,
-                }),
-        )
-    }
 }

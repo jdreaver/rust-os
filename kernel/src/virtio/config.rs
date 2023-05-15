@@ -1,7 +1,6 @@
 use core::fmt;
 
 use bitfield_struct::bitfield;
-use x86_64::structures::paging::{FrameAllocator, Mapper, Size4KiB};
 use x86_64::PhysAddr;
 
 use crate::pci::{
@@ -28,11 +27,7 @@ pub(crate) struct VirtIODeviceConfig {
 }
 
 impl VirtIODeviceConfig {
-    pub(crate) fn from_pci_config(
-        pci_config: PCIDeviceConfig,
-        mapper: &mut impl Mapper<Size4KiB>,
-        frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-    ) -> Option<Self> {
+    pub(crate) fn from_pci_config(pci_config: PCIDeviceConfig) -> Option<Self> {
         // Check that this is a VirtIO device.
         let vendor_id = pci_config.device_id().registers().vendor_id().read();
         if vendor_id != 0x1af4 {
@@ -65,7 +60,7 @@ impl VirtIODeviceConfig {
                 continue;
             }
 
-            let config = capability.config(mapper, frame_allocator);
+            let config = capability.config();
 
             // N.B. The VirtIO spec says that capabilities of the same type
             // should be ordered by preference. It also says "The driver
@@ -169,18 +164,14 @@ impl VirtIOPCICapabilityHeader {
 
     /// Returns the VirtIO device configuration associated with this capability
     /// header.
-    fn config(
-        self,
-        mapper: &mut impl Mapper<Size4KiB>,
-        frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-    ) -> VirtIOConfig {
+    fn config(self) -> VirtIOConfig {
         match self.config_type() {
             VirtIOPCIConfigType::Common => VirtIOConfig::Common(unsafe {
-                let config_addr = self.compute_and_map_config_address(mapper, frame_allocator);
+                let config_addr = self.compute_and_map_config_address();
                 VirtIOPCICommonConfigRegisters::from_address(config_addr.as_u64() as usize)
             }),
             VirtIOPCIConfigType::Notify => VirtIOConfig::Notify({
-                let config_addr = self.compute_and_map_config_address(mapper, frame_allocator);
+                let config_addr = self.compute_and_map_config_address();
 
                 // Per 4.1.4.4 Notification structure layout, the notify
                 // configuration is in the capabilities struct and the notify
@@ -195,7 +186,7 @@ impl VirtIOPCICapabilityHeader {
                 }
             }),
             VirtIOPCIConfigType::ISR => VirtIOConfig::ISR(unsafe {
-                let config_addr = self.compute_and_map_config_address(mapper, frame_allocator);
+                let config_addr = self.compute_and_map_config_address();
                 VirtIOPCIISRRegisters::from_address(config_addr.as_u64() as usize)
             }),
             VirtIOPCIConfigType::Device => VirtIOConfig::Device,
@@ -207,21 +198,12 @@ impl VirtIOPCICapabilityHeader {
 
     /// Compute and map physical address for VirtIO capabilities that need to
     /// reach through a BAR to access their configuration.
-    pub(crate) fn compute_and_map_config_address(
-        self,
-        mapper: &mut impl Mapper<Size4KiB>,
-        frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-    ) -> PhysAddr {
+    pub(crate) fn compute_and_map_config_address(self) -> PhysAddr {
         let bar_idx = self.registers.bar().read();
         let physical_offset = self.registers.offset().read();
         let region_size = u64::from(self.registers.cap_len().read());
-        self.device_config_body.bar_region_physical_address(
-            bar_idx,
-            physical_offset,
-            region_size,
-            mapper,
-            frame_allocator,
-        )
+        self.device_config_body
+            .bar_region_physical_address(bar_idx, physical_offset, region_size)
     }
 }
 

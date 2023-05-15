@@ -1,9 +1,7 @@
 use alloc::vec::Vec;
-use core::alloc::Allocator;
-use x86_64::structures::paging::OffsetPageTable;
 
 use crate::interrupts::{InterruptHandler, InterruptHandlerID};
-use crate::{interrupts, memory, serial_println};
+use crate::{interrupts, serial_println};
 
 use super::config::{VirtIOConfigStatus, VirtIODeviceConfig};
 use super::queue::{VirtQueue, VirtqAvailRing, VirtqDescriptorTable, VirtqUsedRing};
@@ -17,10 +15,7 @@ pub(crate) struct VirtIOInitializedDevice {
 impl VirtIOInitializedDevice {
     /// See "3 General Initialization And Device Operation" and "4.1.5
     /// PCI-specific Initialization And Device Operation"
-    pub(crate) fn new(
-        device_config: VirtIODeviceConfig,
-        physical_allocator: &impl Allocator,
-    ) -> Self {
+    pub(crate) fn new(device_config: VirtIODeviceConfig) -> Self {
         let config = device_config.common_virtio_config();
 
         // Reset the VirtIO device by writing 0 to the status register (see
@@ -80,20 +75,18 @@ impl VirtIOInitializedDevice {
             let queue_size = config.queue_size().read();
 
             let descriptors = unsafe {
-                VirtqDescriptorTable::allocate(queue_size, physical_allocator)
+                VirtqDescriptorTable::allocate(queue_size)
                     .expect("failed to allocate driver ring buffer")
             };
             config.queue_desc().write(descriptors.physical_address());
 
             let avail_ring = unsafe {
-                VirtqAvailRing::allocate(queue_size, physical_allocator)
-                    .expect("failed to allocate driver ring buffer")
+                VirtqAvailRing::allocate(queue_size).expect("failed to allocate driver ring buffer")
             };
             config.queue_driver().write(avail_ring.physical_address());
 
             let used_ring = unsafe {
-                VirtqUsedRing::allocate(queue_size, physical_allocator)
-                    .expect("failed to allocate driver ring buffer")
+                VirtqUsedRing::allocate(queue_size).expect("failed to allocate driver ring buffer")
             };
             config.queue_device().write(used_ring.physical_address());
 
@@ -123,10 +116,6 @@ impl VirtIOInitializedDevice {
         }
     }
 
-    pub(crate) fn config(&self) -> &VirtIODeviceConfig {
-        &self.config
-    }
-
     pub(crate) fn get_virtqueue_mut(&mut self, index: u16) -> Option<&mut VirtQueue> {
         self.virtqueues.get_mut(index as usize)
     }
@@ -138,8 +127,6 @@ impl VirtIOInitializedDevice {
         processor_number: u8,
         handler_id: InterruptHandlerID,
         handler: InterruptHandler,
-        mapper: &mut OffsetPageTable,
-        frame_allocator: &mut memory::LockedNaiveFreeMemoryBlockAllocator,
     ) {
         // Select the virtqueue and tell it to use the given MSI-X table index
         let common_config = self.config.common_virtio_config();
@@ -158,7 +145,7 @@ impl VirtIOInitializedDevice {
         let msix = self
             .config
             .pci_type0_config()
-            .msix_config(mapper, frame_allocator)
+            .msix_config()
             .expect("failed to get MSIX config for VirtIO device");
         let interrupt_vector = interrupts::install_interrupt(handler_id, handler);
         let table_entry = msix.table_entry(msix_table_index as usize);

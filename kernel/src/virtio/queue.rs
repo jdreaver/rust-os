@@ -1,4 +1,3 @@
-use core::alloc::Allocator;
 use core::fmt;
 use core::mem;
 
@@ -99,10 +98,7 @@ pub(crate) struct VirtqDescriptorTable {
 }
 
 impl VirtqDescriptorTable {
-    pub(crate) unsafe fn allocate(
-        queue_size: u16,
-        physical_allocator: &impl Allocator,
-    ) -> Result<Self, AllocZeroedBufferError> {
+    pub(crate) unsafe fn allocate(queue_size: u16) -> Result<Self, AllocZeroedBufferError> {
         let queue_size = queue_size as usize;
 
         let mem_size = mem::size_of::<VirtqDescriptor>() * queue_size;
@@ -114,8 +110,7 @@ impl VirtqDescriptorTable {
             "Descriptor table size doesn't match the spec"
         );
 
-        let physical_address =
-            memory::allocate_zeroed_buffer(physical_allocator, mem_size, VIRTQ_DESC_ALIGN)?;
+        let physical_address = memory::allocate_zeroed_buffer(mem_size, VIRTQ_DESC_ALIGN)?;
 
         let descriptors = VolatileArrayRW::new(physical_address as usize, queue_size);
 
@@ -227,10 +222,7 @@ pub(crate) struct VirtqAvailRing {
 }
 
 impl VirtqAvailRing {
-    pub(crate) unsafe fn allocate(
-        queue_size: u16,
-        physical_allocator: &impl Allocator,
-    ) -> Result<Self, AllocZeroedBufferError> {
+    pub(crate) unsafe fn allocate(queue_size: u16) -> Result<Self, AllocZeroedBufferError> {
         let queue_size = queue_size as usize;
 
         // Compute sizes before we do allocations.
@@ -248,8 +240,7 @@ impl VirtqAvailRing {
             "VirtqAvailRing size doesn't match the spec"
         );
 
-        let physical_address =
-            memory::allocate_zeroed_buffer(physical_allocator, struct_size, VIRTQ_AVAIL_ALIGN)?;
+        let physical_address = memory::allocate_zeroed_buffer(struct_size, VIRTQ_AVAIL_ALIGN)?;
 
         let flags = RegisterRW::from_address(physical_address as usize + flags_offset);
         let idx = RegisterRW::from_address(physical_address as usize + idx_offset);
@@ -354,10 +345,7 @@ pub(crate) struct VirtqUsedElem {
 }
 
 impl VirtqUsedRing {
-    pub(crate) unsafe fn allocate(
-        queue_size: u16,
-        physical_allocator: &impl Allocator,
-    ) -> Result<Self, AllocZeroedBufferError> {
+    pub(crate) unsafe fn allocate(queue_size: u16) -> Result<Self, AllocZeroedBufferError> {
         let queue_size = queue_size as usize;
 
         // Compute sizes before we do allocations.
@@ -375,8 +363,7 @@ impl VirtqUsedRing {
             "VirtqUsedRing size doesn't match the spec"
         );
 
-        let physical_address =
-            memory::allocate_zeroed_buffer(physical_allocator, struct_size, VIRTQ_USED_ALIGN)?;
+        let physical_address = memory::allocate_zeroed_buffer(struct_size, VIRTQ_USED_ALIGN)?;
 
         let flags = RegisterRW::from_address(physical_address as usize + flags_offset);
         let idx = RegisterRW::from_address(physical_address as usize + idx_offset);

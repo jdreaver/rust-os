@@ -4,15 +4,13 @@ use core::fmt::Write;
 
 use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
-use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, Size2MiB, Size4KiB, Translate};
+use x86_64::structures::paging::{Size2MiB, Size4KiB};
 
 use crate::{acpi, boot_info, memory, pci, serial_println, virtio};
 
 pub(crate) fn run_tests(
     boot_info_data: &boot_info::BootInfo,
     acpi_info: &acpi::ACPIInfo,
-    mapper: &mut OffsetPageTable,
-    frame_allocator: &mut memory::LockedNaiveFreeMemoryBlockAllocator,
     text_buffer: &'static mut TextBuffer,
 ) {
     serial_println!("limine boot info:\n{:#x?}", boot_info_data);
@@ -58,7 +56,7 @@ pub(crate) fn run_tests(
 
     // Find VirtIO devices
     pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
-        let Some(device_config) = virtio::VirtIODeviceConfig::from_pci_config(device, mapper, frame_allocator) else { return; };
+        let Some(device_config) = virtio::VirtIODeviceConfig::from_pci_config(device) else { return; };
         serial_println!("Found VirtIO device, initializing");
 
         // let initialized_device =
@@ -66,12 +64,12 @@ pub(crate) fn run_tests(
         // serial_println!("VirtIO device initialized: {:#x?}", initialized_device);
 
         // Try to hook up the RNG device
-        virtio::try_init_virtio_rng(device_config, mapper, frame_allocator);
+        virtio::try_init_virtio_rng(device_config);
     });
 
     // Request some VirtIO RNG bytes
-    virtio::request_random_numbers(mapper);
-    virtio::request_random_numbers(mapper);
+    virtio::request_random_numbers();
+    virtio::request_random_numbers();
 
     // Print out some test addresses
     let addresses = [
@@ -88,35 +86,20 @@ pub(crate) fn run_tests(
 
     for &address in &addresses {
         let virt = x86_64::VirtAddr::new(address);
-        let phys = mapper.translate_addr(virt);
+        let phys = memory::translate_addr(virt);
         serial_println!("{:?} -> {:?}", virt, phys);
     }
 
-    serial_println!(
-        "next 4KiB page: {:?}",
-        FrameAllocator::<Size4KiB>::allocate_frame(frame_allocator)
-    );
-    serial_println!(
-        "next 2MiB page: {:?}",
-        FrameAllocator::<Size2MiB>::allocate_frame(frame_allocator)
-    );
-    serial_println!(
-        "next 4KiB page: {:?}",
-        FrameAllocator::<Size4KiB>::allocate_frame(frame_allocator)
-    );
-    serial_println!(
-        "next 2MiB page: {:?}",
-        FrameAllocator::<Size2MiB>::allocate_frame(frame_allocator)
-    );
+    serial_println!("next 4KiB page: {:?}", memory::allocate_frame::<Size4KiB>());
+    serial_println!("next 2MiB page: {:?}", memory::allocate_frame::<Size2MiB>());
+    serial_println!("next 4KiB page: {:?}", memory::allocate_frame::<Size4KiB>());
+    serial_println!("next 2MiB page: {:?}", memory::allocate_frame::<Size2MiB>());
 
     for _ in 0..10000 {
-        FrameAllocator::<Size4KiB>::allocate_frame(frame_allocator);
+        memory::allocate_frame::<Size4KiB>();
     }
 
-    serial_println!(
-        "far page: {:?}",
-        FrameAllocator::<Size4KiB>::allocate_frame(frame_allocator)
-    );
+    serial_println!("far page: {:?}", memory::allocate_frame::<Size4KiB>());
 
     // Invoke a breakpoint exception and ensure we continue on
     serial_println!("interrupt");
@@ -138,7 +121,7 @@ pub(crate) fn run_tests(
     assert_eq!(vec.into_iter().sum::<u32>(), 45);
 
     // Create a Box value with the `Allocator` API
-    let my_box = Box::new_in(42, &*frame_allocator);
+    let my_box = Box::new_in(42, &memory::KERNEL_ALLOCATOR);
     serial_println!("Allocator alloc'ed my_box {:?} at {:p}", my_box, my_box);
 
     // Trigger a page fault, which should trigger a double fault if we don't

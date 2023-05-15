@@ -1,12 +1,11 @@
 use core::fmt;
 
 use bitfield_struct::bitfield;
-use x86_64::structures::paging::mapper::MapToError;
-use x86_64::structures::paging::{FrameAllocator, Mapper, PageTableFlags, PhysFrame, Size4KiB};
+use x86_64::structures::paging::{PageTableFlags, PhysFrame, Size4KiB};
 use x86_64::PhysAddr;
 
-use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW};
+use crate::{memory, register_struct};
 
 use super::capabilities::{
     MSIXCapability, MSIXTable, PCIDeviceCapabilityHeader, PCIDeviceCapabilityIterator, MSIXPBA,
@@ -329,8 +328,6 @@ impl PCIDeviceConfigType0 {
         bar_idx: u8,
         physical_offset: u32,
         region_size: u64,
-        mapper: &mut impl Mapper<Size4KiB>,
-        frame_allocator: &mut impl FrameAllocator<Size4KiB>,
     ) -> PhysAddr {
         let bar_phys_addr = match self.bar(bar_idx) {
             // TODO: Use the prefetchable field when doing mapping.
@@ -359,33 +356,17 @@ impl PCIDeviceConfigType0 {
         let config_end_frame = PhysFrame::containing_address(config_addr + (region_size - 1));
         let frame_range = PhysFrame::range_inclusive(config_start_frame, config_end_frame);
         for frame in frame_range {
-            let map_result = unsafe {
-                mapper.identity_map(
-                    frame,
-                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                    frame_allocator,
-                )
-            };
-            match map_result {
-                // These errors are okay. They just mean the frame is already
-                // identity mapped (well, hopefully).
-                Ok(_) | Err(MapToError::ParentEntryHugePage | MapToError::PageAlreadyMapped(_)) => {
-                }
-                Err(e) => panic!("failed to map VirtIO device config page: {:?}", e),
-            }
+            let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+            memory::identity_map_frame(frame, flags).expect("failed to identity map PCI BAR frame");
         }
 
         config_addr
     }
 
-    pub(crate) fn msix_config(
-        self,
-        mapper: &mut impl Mapper<Size4KiB>,
-        frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-    ) -> Option<MSIXConfig> {
+    pub(crate) fn msix_config(self) -> Option<MSIXConfig> {
         for cap in self.common_config.iter_capabilities() {
             if let PCIDeviceCapability::MSIX(msix_cap) = cap.capability() {
-                return Some(MSIXConfig::new(self, msix_cap, mapper, frame_allocator));
+                return Some(MSIXConfig::new(self, msix_cap));
             }
         }
         None
@@ -527,12 +508,7 @@ pub(crate) struct MSIXConfig {
 }
 
 impl MSIXConfig {
-    pub(super) fn new(
-        device_config: PCIDeviceConfigType0,
-        capability: MSIXCapability,
-        mapper: &mut impl Mapper<Size4KiB>,
-        frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-    ) -> Self {
+    pub(super) fn new(device_config: PCIDeviceConfigType0, capability: MSIXCapability) -> Self {
         // N.B. The table size is encoded as N - 1 for some reason, so we add 1.
         let table_size = capability.registers.message_control().read().table_size() + 1;
 
@@ -544,8 +520,6 @@ impl MSIXConfig {
             table_bar_idx,
             table_offset,
             table_region_size as u64,
-            mapper,
-            frame_allocator,
         );
         let table = unsafe { MSIXTable::new(table_address.as_u64() as usize, table_size) };
 
@@ -557,8 +531,6 @@ impl MSIXConfig {
             pba_bar_idx,
             pba_offset,
             pba_region_size as u64,
-            mapper,
-            frame_allocator,
         );
         let pba = unsafe { MSIXPBA::new(pba_address.as_u64() as usize, table_size) };
         Self {
