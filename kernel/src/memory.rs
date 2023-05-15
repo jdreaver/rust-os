@@ -10,7 +10,9 @@ use x86_64::structures::paging::{
 use x86_64::{PhysAddr, VirtAddr};
 
 /// Page table mapper used by all kernel contexts.
-static KERNEL_MAPPER: Mutex<Option<OffsetPageTable<'static>>> = Mutex::new(None);
+static KERNEL_MAPPER: KernelMapper = KernelMapper {
+    mutex: Mutex::new(None),
+};
 
 /// Physical memory frame allocator used by all kernel contexts.
 ///
@@ -41,6 +43,7 @@ pub(crate) unsafe fn init(
     let level_4_table = &mut *page_table_ptr;
 
     KERNEL_MAPPER
+        .mutex
         .lock()
         .replace(OffsetPageTable::new(level_4_table, physical_memory_offset));
 
@@ -48,13 +51,24 @@ pub(crate) unsafe fn init(
     KERNEL_ALLOCATOR.mutex.lock().replace(allocator);
 }
 
+/// Mutex wrapper around `OffsetPageTable`.
+struct KernelMapper {
+    mutex: Mutex<Option<OffsetPageTable<'static>>>,
+}
+
+impl KernelMapper {
+    fn with_lock<R>(&self, f: impl FnOnce(&mut OffsetPageTable) -> R) -> R {
+        let mut mutex_guard = self.mutex.lock();
+        let mapper = mutex_guard
+            .as_mut()
+            .expect("kernel memory mapper not initialized");
+        f(mapper)
+    }
+}
+
 /// Translate a given physical address to a virtual address, if possible.
 pub(crate) fn translate_addr(addr: VirtAddr) -> Option<PhysAddr> {
-    KERNEL_MAPPER
-        .lock()
-        .as_ref()
-        .expect("kernel mapper not initialized")
-        .translate_addr(addr)
+    KERNEL_MAPPER.with_lock(|mapper| mapper.translate_addr(addr))
 }
 
 /// A region of memory we can use for allocation. These are usually given to the
@@ -196,48 +210,48 @@ pub(crate) fn allocate_and_map_page(
     flags: PageTableFlags,
 ) -> Result<(), MapToError<Size4KiB>> {
     let frame = allocate_frame::<Size4KiB>().ok_or(MapToError::FrameAllocationFailed)?;
-    let mut alloc_guard = KERNEL_ALLOCATOR.mutex.lock();
-    let allocator = alloc_guard
-        .as_mut()
-        .expect("kernel memory allocator not initialized");
-    let mut mapper_guard = KERNEL_MAPPER.lock();
-    let mapper = mapper_guard
-        .as_mut()
-        .expect("kernel mapper not initialized");
-    unsafe {
-        mapper.map_to(page, frame, flags, allocator)?.flush();
-        Ok(())
-    }
+    KERNEL_ALLOCATOR.with_lock(|allocator| {
+        KERNEL_MAPPER.with_lock(|mapper| unsafe {
+            mapper.map_to(page, frame, flags, allocator)?.flush();
+            Ok(())
+        })
+    })
 }
 
 pub(crate) fn identity_map_frame(
     frame: PhysFrame,
     flags: PageTableFlags,
 ) -> Result<(), MapToError<Size4KiB>> {
-    let mut alloc_guard = KERNEL_ALLOCATOR.mutex.lock();
-    let allocator = alloc_guard
-        .as_mut()
-        .expect("kernel memory allocator not initialized");
-    let mut mapper_guard = KERNEL_MAPPER.lock();
-    let mapper = mapper_guard
-        .as_mut()
-        .expect("kernel mapper not initialized");
-    let map_result = unsafe { mapper.identity_map(frame, flags, allocator) };
-    match map_result {
-        Ok(flusher) => {
-            flusher.flush();
-            Ok(())
-        }
-        // These errors are okay. They just mean the frame is already identity
-        // mapped (well, hopefully).
-        Err(MapToError::ParentEntryHugePage | MapToError::PageAlreadyMapped(_)) => Ok(()),
-        Err(e) => Err(e),
-    }
+    KERNEL_ALLOCATOR.with_lock(|allocator| {
+        KERNEL_MAPPER.with_lock(|mapper| {
+            let map_result = unsafe { mapper.identity_map(frame, flags, allocator) };
+            match map_result {
+                Ok(flusher) => {
+                    flusher.flush();
+                    Ok(())
+                }
+                // These errors are okay. They just mean the frame is already identity
+                // mapped (well, hopefully).
+                Err(MapToError::ParentEntryHugePage | MapToError::PageAlreadyMapped(_)) => Ok(()),
+                Err(e) => Err(e),
+            }
+        })
+    })
 }
 
 /// `NaiveFreeMemoryBlockAllocator` behind a `Mutex`
 pub(crate) struct LockedNaiveFreeMemoryBlockAllocator {
     mutex: Mutex<Option<NaiveFreeMemoryBlockAllocator>>,
+}
+
+impl LockedNaiveFreeMemoryBlockAllocator {
+    fn with_lock<R>(&self, f: impl FnOnce(&mut NaiveFreeMemoryBlockAllocator) -> R) -> R {
+        let mut mutex_guard = self.mutex.lock();
+        let allocator = mutex_guard
+            .as_mut()
+            .expect("kernel memory allocator not initialized");
+        f(allocator)
+    }
 }
 
 /// We implement the `Allocator` trait for `LockedNaiveFreeMemoryBlockAllocator`
@@ -247,15 +261,11 @@ unsafe impl Allocator for LockedNaiveFreeMemoryBlockAllocator {
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         let size = layout.size() as u64;
         let alignment = layout.align() as u64;
-        let start_address = {
-            let mut mutex_guard = self.mutex.lock();
-            let allocator = mutex_guard
-                .as_mut()
-                .expect("kernel memory allocator not initialized");
+        let start_address = self.with_lock(|allocator| {
             allocator
                 .allocate_contiguous_memory(size, Some(alignment))
-                .ok_or(AllocError)?
-        };
+                .ok_or(AllocError)
+        })?;
 
         let slice = unsafe {
             core::slice::from_raw_parts_mut(start_address.as_u64() as *mut u8, layout.size())
