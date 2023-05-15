@@ -357,7 +357,8 @@ impl PCIDeviceConfigType0 {
         let frame_range = PhysFrame::range_inclusive(config_start_frame, config_end_frame);
         for frame in frame_range {
             let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-            memory::identity_map_frame(frame, flags).expect("failed to identity map PCI BAR frame");
+            memory::identity_map_physical_frame(frame, flags)
+                .expect("failed to identity map PCI BAR frame");
         }
 
         config_addr

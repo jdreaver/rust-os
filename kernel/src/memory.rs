@@ -15,9 +15,7 @@ static KERNEL_MAPPER: KernelMapper = KernelMapper {
 };
 
 /// Physical memory frame allocator used by all kernel contexts.
-///
-/// TODO: Change name to `KERNEL_PHYSICAL_ALLOCATOR`?
-pub(crate) static KERNEL_ALLOCATOR: LockedNaiveFreeMemoryBlockAllocator =
+pub(crate) static KERNEL_PHYSICAL_ALLOCATOR: LockedNaiveFreeMemoryBlockAllocator =
     LockedNaiveFreeMemoryBlockAllocator {
         mutex: Mutex::new(None),
     };
@@ -48,7 +46,7 @@ pub(crate) unsafe fn init(
         .replace(OffsetPageTable::new(level_4_table, physical_memory_offset));
 
     let allocator = NaiveFreeMemoryBlockAllocator::from_iter(usable_memory_regions);
-    KERNEL_ALLOCATOR.mutex.lock().replace(allocator);
+    KERNEL_PHYSICAL_ALLOCATOR.mutex.lock().replace(allocator);
 }
 
 /// Mutex wrapper around `OffsetPageTable`.
@@ -194,8 +192,8 @@ unsafe impl<S: PageSize> FrameAllocator<S> for NaiveFreeMemoryBlockAllocator {
 }
 
 /// Allocates a physical frame of memory for the given size.
-pub(crate) fn allocate_frame<S: PageSize>() -> Option<PhysFrame<S>> {
-    KERNEL_ALLOCATOR
+pub(crate) fn allocate_physical_frame<S: PageSize>() -> Option<PhysFrame<S>> {
+    KERNEL_PHYSICAL_ALLOCATOR
         .mutex
         .lock()
         .as_mut()
@@ -203,14 +201,16 @@ pub(crate) fn allocate_frame<S: PageSize>() -> Option<PhysFrame<S>> {
         .allocate_frame()
 }
 
-/// Allocates a physical page for the given virtual page of memory and maps the
-/// virtual page to the physical page.
+/// Allocates a physical frame for the given virtual page of memory and maps the
+/// virtual page to the physical frame in the page table. Useful for
+/// initializing a virtual region that is known not to be backed by memory, like
+/// initializing the kernel heap.
 pub(crate) fn allocate_and_map_page(
     page: Page,
     flags: PageTableFlags,
 ) -> Result<(), MapToError<Size4KiB>> {
-    let frame = allocate_frame::<Size4KiB>().ok_or(MapToError::FrameAllocationFailed)?;
-    KERNEL_ALLOCATOR.with_lock(|allocator| {
+    let frame = allocate_physical_frame::<Size4KiB>().ok_or(MapToError::FrameAllocationFailed)?;
+    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
         KERNEL_MAPPER.with_lock(|mapper| unsafe {
             mapper.map_to(page, frame, flags, allocator)?.flush();
             Ok(())
@@ -218,11 +218,11 @@ pub(crate) fn allocate_and_map_page(
     })
 }
 
-pub(crate) fn identity_map_frame(
+pub(crate) fn identity_map_physical_frame(
     frame: PhysFrame,
     flags: PageTableFlags,
 ) -> Result<(), MapToError<Size4KiB>> {
-    KERNEL_ALLOCATOR.with_lock(|allocator| {
+    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
         KERNEL_MAPPER.with_lock(|mapper| {
             let map_result = unsafe { mapper.identity_map(frame, flags, allocator) };
             match map_result {
@@ -298,15 +298,16 @@ pub(crate) enum AllocZeroedBufferError {
     AllocError(AllocError),
 }
 
-/// Useful utility wrapper around `Allocator.allocate_zeroed`.
-pub(crate) fn allocate_zeroed_buffer(
+/// Allocates a physically contiguous, zeroed buffer of the given size and
+/// alignment. Useful for IO buffers for e.g. VirtIO.
+pub(crate) fn allocate_physically_contiguous_zeroed_buffer(
     size: usize,
     alignment: usize,
-) -> Result<u64, AllocZeroedBufferError> {
+) -> Result<PhysAddr, AllocZeroedBufferError> {
     let layout =
         Layout::from_size_align(size, alignment).map_err(AllocZeroedBufferError::LayoutError)?;
-    let address = KERNEL_ALLOCATOR
+    let address = KERNEL_PHYSICAL_ALLOCATOR
         .allocate_zeroed(layout)
         .map_err(AllocZeroedBufferError::AllocError)?;
-    Ok(address.addr().get() as u64)
+    Ok(PhysAddr::new(address.addr().get() as u64))
 }

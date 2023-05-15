@@ -90,16 +90,31 @@ pub(crate) fn run_tests(
         serial_println!("{:?} -> {:?}", virt, phys);
     }
 
-    serial_println!("next 4KiB page: {:?}", memory::allocate_frame::<Size4KiB>());
-    serial_println!("next 2MiB page: {:?}", memory::allocate_frame::<Size2MiB>());
-    serial_println!("next 4KiB page: {:?}", memory::allocate_frame::<Size4KiB>());
-    serial_println!("next 2MiB page: {:?}", memory::allocate_frame::<Size2MiB>());
+    serial_println!(
+        "next 4KiB page: {:?}",
+        memory::allocate_physical_frame::<Size4KiB>()
+    );
+    serial_println!(
+        "next 2MiB page: {:?}",
+        memory::allocate_physical_frame::<Size2MiB>()
+    );
+    serial_println!(
+        "next 4KiB page: {:?}",
+        memory::allocate_physical_frame::<Size4KiB>()
+    );
+    serial_println!(
+        "next 2MiB page: {:?}",
+        memory::allocate_physical_frame::<Size2MiB>()
+    );
 
     for _ in 0..10000 {
-        memory::allocate_frame::<Size4KiB>();
+        memory::allocate_physical_frame::<Size4KiB>();
     }
 
-    serial_println!("far page: {:?}", memory::allocate_frame::<Size4KiB>());
+    serial_println!(
+        "far page: {:?}",
+        memory::allocate_physical_frame::<Size4KiB>()
+    );
 
     // Invoke a breakpoint exception and ensure we continue on
     serial_println!("interrupt");
@@ -121,7 +136,7 @@ pub(crate) fn run_tests(
     assert_eq!(vec.into_iter().sum::<u32>(), 45);
 
     // Create a Box value with the `Allocator` API
-    let my_box = Box::new_in(42, &memory::KERNEL_ALLOCATOR);
+    let my_box = Box::new_in(42, &memory::KERNEL_PHYSICAL_ALLOCATOR);
     serial_println!("Allocator alloc'ed my_box {:?} at {:p}", my_box, my_box);
 
     // Trigger a page fault, which should trigger a double fault if we don't

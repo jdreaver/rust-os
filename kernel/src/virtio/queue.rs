@@ -110,7 +110,11 @@ impl VirtqDescriptorTable {
             "Descriptor table size doesn't match the spec"
         );
 
-        let physical_address = memory::allocate_zeroed_buffer(mem_size, VIRTQ_DESC_ALIGN)?;
+        // VirtIO buffers must be physically contiguous, and they use physical
+        // addresses.
+        let physical_address =
+            memory::allocate_physically_contiguous_zeroed_buffer(mem_size, VIRTQ_DESC_ALIGN)?
+                .as_u64();
 
         let descriptors = VolatileArrayRW::new(physical_address as usize, queue_size);
 
@@ -240,7 +244,11 @@ impl VirtqAvailRing {
             "VirtqAvailRing size doesn't match the spec"
         );
 
-        let physical_address = memory::allocate_zeroed_buffer(struct_size, VIRTQ_AVAIL_ALIGN)?;
+        // VirtIO buffers must be physically contiguous, and they use physical
+        // addresses.
+        let physical_address =
+            memory::allocate_physically_contiguous_zeroed_buffer(struct_size, VIRTQ_AVAIL_ALIGN)?
+                .as_u64();
 
         let flags = RegisterRW::from_address(physical_address as usize + flags_offset);
         let idx = RegisterRW::from_address(physical_address as usize + idx_offset);
@@ -363,7 +371,11 @@ impl VirtqUsedRing {
             "VirtqUsedRing size doesn't match the spec"
         );
 
-        let physical_address = memory::allocate_zeroed_buffer(struct_size, VIRTQ_USED_ALIGN)?;
+        // VirtIO buffers must be physically contiguous, and they use physical
+        // addresses.
+        let physical_address =
+            memory::allocate_physically_contiguous_zeroed_buffer(struct_size, VIRTQ_USED_ALIGN)?
+                .as_u64();
 
         let flags = RegisterRW::from_address(physical_address as usize + flags_offset);
         let idx = RegisterRW::from_address(physical_address as usize + idx_offset);
