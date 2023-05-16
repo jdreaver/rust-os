@@ -78,6 +78,8 @@ make test
   - I really messed up my pointer math on some structs and now I'm scared. It
     would be _really_ nice to be able to rely on `#[repr(C)]` alignment rules,
     especially for VirtIO where they use C structs in the spec.
+- virtio-rng interrupt doesn't seem to fire with UEFI disabled (`make run UEFI=off`). Fix it.
+  - Keyboard interrupt still works, so IO/APIC seems fine?
 - Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
 - Filesystem support
   - Now that I have PCI working, attach a drive via QEMU and see what is looks like under PCI
