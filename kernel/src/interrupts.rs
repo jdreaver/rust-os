@@ -93,10 +93,7 @@ lazy_static!(
 );
 
 pub(crate) fn init_interrupts() {
-    unsafe {
-        IDT.load_unsafe();
-    };
-
+    IDT.load();
     disable_pic();
     x86_64::instructions::interrupts::enable();
 }
