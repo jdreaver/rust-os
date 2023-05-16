@@ -52,12 +52,10 @@ make test
 
 ## TODO
 
+- Multi-tasking (see resources below)
+  - Implement manual (`yield`) context switch (need to save all registers b/c Rust doesn't define "callee-saved"/"caller-saved" like C, unless we make this context switch function an `extern "C"`)
+  - Switch between to processes just doing printing
 - HPET for timing (apparently better than Local APIC timer?)
-- Multi-tasking
-  - <https://wiki.osdev.org/Brendan%27s_Multi-tasking_Tutorial>
-  - <https://www.reddit.com/r/osdev/comments/jf1wgy/multitasking_tutorial/>
-  - <https://wiki.osdev.org/Context_Switching>
-  - <https://wiki.osdev.org/Kernel_Multitasking>
 - `registers.rs` and macros
   - Consider moving `registers.rs` stuff into dedicated crate with unit tests
   - Also document `registers.rs` stuff
@@ -134,6 +132,15 @@ $ qemu-system-x86_64 -device virtio-rng-pci,help
 
 - <https://marz.utk.edu/my-courses/cosc562/qemu/>
 
+### Rust OS dev
+
+- Excellent documentation. Goes well beyond the Blog OS stuff <https://github.com/bendudson/EuraliOS>
+- <https://github.com/vinc/moros>
+- <https://osblog.stephenmarz.com/index.html>
+- <https://github.com/thepowersgang/rust_os>
+- <https://poplar.isaacwoods.dev/book/>
+  - <https://github.com/IsaacWoods/poplar>
+
 ### APIC and IO/APIC
 
 - <https://wiki.osdev.org/APIC>
@@ -203,3 +210,16 @@ Other higher-level Linux resources:
 - <https://linux-kernel-labs.github.io/refs/heads/master/lectures/interrupts.html>
 - <http://books.gigatux.nl/mirror/kerneldevelopment/0672327201/ch06lev1sec6.html>
 - <https://0xax.gitbooks.io/linux-insides/content/Interrupts/linux-interrupts-8.html>
+
+### Multi-tasking and context switching
+
+- <https://github.com/bendudson/EuraliOS/blob/main/doc/journal/01-interrupts-processes.org>
+- Excellent series of videos:
+  - [Thread implementation #4 - Context switch | cs370](https://www.youtube.com/watch?v=YY2VXuaLBVc)
+  - [Thread implementation #5 - Linux context switch | cs370](https://www.youtube.com/watch?v=3gOk3-X4y2U)
+- <https://wiki.osdev.org/Brendan%27s_Multi-tasking_Tutorial>
+- <https://www.reddit.com/r/osdev/comments/jf1wgy/multitasking_tutorial/>
+- <https://wiki.osdev.org/Context_Switching>
+- <https://wiki.osdev.org/Kernel_Multitasking>
+- <https://samwho.dev/blog/context-switching-on-x86/>
+  - Video that goes over this same xv6 code: [Operating Systems Lecture 25: Context switching in xv6](https://www.youtube.com/watch?v=fEnWqibCwo0)
