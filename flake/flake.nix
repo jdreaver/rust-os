@@ -44,6 +44,19 @@
         # By default some script goes and separates debug info from the
         # binaries. We don't want that.
         separateDebugInfo = false;
+
+        # Store all of the source artifacts so GDB can use them.
+        #
+        # Note that gdb expects us to be in the build/ sub-directory, and some
+        # paths are still absolute. See
+        # https://github.com/mesonbuild/meson/issues/10533 for possible
+        # alternatives like -fdebug-prefix-map. Also see
+        # https://alex.dzyoba.com/blog/gdb-source-path/
+        postFixup = (previousAttrs.postFixup or "") + ''
+          mkdir -p $out/raw
+          # In Meson we are in a build/ subdirectory
+          cp -r .. $out/raw/
+        '';
       });
     in
       with pkgs;
@@ -71,26 +84,6 @@
 
       packages.${system} = {
         inherit qemu-x86_64-debug;
-
-        # This package is so we can tell gdb where to look for source code
-        # information.
-        qemu-source-code = pkgs.stdenv.mkDerivation {
-          name = "qemu-source-code";
-          src = qemu-x86_64-debug.src;
-          dontConfigure = true;
-          dontBuild = true;
-          dontStrip = true;
-          dontPatch = true;
-          dontFixup = true;
-          installPhase = ''
-            cp -r . $out/
-
-            # qemu-x86_64-debug is built in a directory called /build/qemu-{version}/build.
-            # We need to create build/ so gdb can use it.
-            # See https://github.com/mesonbuild/meson/issues/10533 for possible alternatives.
-            mkdir $out/build
-          '';
-        };
 
         # Nix has an OVMF package, but it doesn't seem to include OVMF.fd. We
         # use the zip file that the limine barebones build uses

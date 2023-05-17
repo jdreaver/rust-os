@@ -3,7 +3,7 @@ HDD = kernel.hdd
 LIMINE = $(shell nix build ./flake#limine --print-out-paths --no-link)
 OVMF = $(shell nix build ./flake#OVMF --print-out-paths --no-link)/OVMF.fd
 QEMU_DEBUG_BIN = $(shell nix build ./flake#qemu-x86_64-debug --print-out-paths --no-link)/bin/qemu-system-x86_64
-QEMU_SOURCE_CODE = $(shell nix build ./flake#qemu-source-code --print-out-paths --no-link)
+QEMU_SOURCE_CODE = $(shell nix build ./flake#qemu-x86_64-debug --print-out-paths --no-link)/raw
 
 RUST_BUILD_MODE = debug
 RUST_BUILD_MODE_FLAG =
