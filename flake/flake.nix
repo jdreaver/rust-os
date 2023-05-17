@@ -62,7 +62,6 @@
 
           # For emulation
           qemu
-          # qemu-x86_64-debug
 
           # Build
           xorriso
@@ -71,6 +70,28 @@
       };
 
       packages.${system} = {
+        inherit qemu-x86_64-debug;
+
+        # This package is so we can tell gdb where to look for source code
+        # information.
+        qemu-source-code = pkgs.stdenv.mkDerivation {
+          name = "qemu-source-code";
+          src = qemu-x86_64-debug.src;
+          dontConfigure = true;
+          dontBuild = true;
+          dontStrip = true;
+          dontPatch = true;
+          dontFixup = true;
+          installPhase = ''
+            cp -r . $out/
+
+            # qemu-x86_64-debug is built in a directory called /build/qemu-{version}/build.
+            # We need to create build/ so gdb can use it.
+            # See https://github.com/mesonbuild/meson/issues/10533 for possible alternatives.
+            mkdir $out/build
+          '';
+        };
+
         # Nix has an OVMF package, but it doesn't seem to include OVMF.fd. We
         # use the zip file that the limine barebones build uses
         # https://github.com/limine-bootloader/limine-barebones/blob/e08f355a22fbefb27cfea4e3d890eb9551bdac1b/GNUmakefile#L28-L30

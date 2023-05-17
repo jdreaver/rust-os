@@ -2,6 +2,8 @@ KERNEL = kernel.elf
 HDD = kernel.hdd
 LIMINE = $(shell nix build ./flake#limine --print-out-paths --no-link)
 OVMF = $(shell nix build ./flake#OVMF --print-out-paths --no-link)/OVMF.fd
+QEMU_DEBUG_BIN = $(shell nix build ./flake#qemu-x86_64-debug --print-out-paths --no-link)/bin/qemu-system-x86_64
+QEMU_SOURCE_CODE = $(shell nix build ./flake#qemu-source-code --print-out-paths --no-link)
 
 RUST_BUILD_MODE = debug
 RUST_BUILD_MODE_FLAG =
@@ -19,6 +21,16 @@ ALL_CRATES = $(TEST_CRATES) kernel
 .PHONY: all
 all: $(HDD)
 
+QEMU=qemu-system-x86_64
+RUN_QEMU_GDB=no
+ifeq ($(RUN_QEMU_GDB),yes)
+  QEMU=gdb --directory $(QEMU_SOURCE_CODE)/build --args $(QEMU_DEBUG_BIN)
+else
+  # GTK is a much nicer display than SDL, but to compile QEMU with debug symbols
+  # in Nix, we had to disable the GTK wrappers.
+  QEMU_ARGS += -display gtk,zoom-to-fit=on
+endif
+
 # Good reference for QEMU options: https://wiki.gentoo.org/wiki/QEMU/Options
 UEFI = on
 ifeq ($(UEFI),on)
@@ -30,7 +42,6 @@ endif
 # Use virtio for the disk:
 QEMU_ARGS += -drive file=$(HDD),if=none,id=drive-virtio-disk0,format=raw -device virtio-blk-pci,scsi=off,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=0
 QEMU_ARGS += -smp 2 # Use 2 cores
-QEMU_ARGS += -display gtk,zoom-to-fit=on # Makes it so increasing screen size zooms in, useful for tiny fonts
 QEMU_ARGS += -vga virtio # More modern, better performance than default -vga std
 QEMU_ARGS += -M q35,accel=kvm # Use the q35 chipset. accel=kvm enables hardware acceleration, makes things way faster.
 QEMU_ARGS += -m 2G # More memory
@@ -39,7 +50,7 @@ QEMU_ARGS += -device virtio-rng-pci-non-transitional # RNG is the simplest virti
 
 .PHONY: run
 run: $(HDD)
-	qemu-system-x86_64 $(QEMU_ARGS)
+	$(QEMU) $(QEMU_ARGS)
 
 # N.B. Run `make run-debug` in one terminal, and `make gdb` in another.
 QEMU_DEBUG_ARGS += $(QEMU_ARGS)

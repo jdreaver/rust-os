@@ -22,7 +22,7 @@ UEFI disabled (use BIOS):
 $ make run UEFI=off
 ```
 
-## Debugging with GDB
+## Debugging kernel with GDB
 
 In one terminal:
 
@@ -35,6 +35,20 @@ In another terminal:
 ```
 make gdb
 ```
+
+## Debugging QEMU with GDB
+
+If you want to debug QEMU itself with GDB, you can run:
+
+```
+make run RUN_QEMU_GDB=yes
+```
+
+This can be very useful if you want to figure out why QEMU is doing something
+funky. (I originally created this to debug why QEMU reported `Invalid write at
+addr 0xFEE00000, size 4, region '(null)', reason: rejected` whenever MSI-X tried
+to write an interrupt to `0xFEE00000` only in legacy boot mode, but not in UEFI
+mode.)
 
 ## Tests
 
