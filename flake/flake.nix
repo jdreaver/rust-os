@@ -26,7 +26,20 @@
         # QEMU-specific flags to add debug info. See https://www.cnblogs.com/root-wang/p/8005212.html
         configureFlags = previousAttrs.configureFlags ++ [
           "--enable-debug"
-          "--extra-cflags=-g3" # --enable-debug uses -g, we want even more
+          # --enable-debug uses -g, we want even more debug info.
+          "--extra-cflags=-g3"
+          # -fdebug-prefix-map is needed to make sure the debug info is relative
+          # to the output directory. Otherwise it will be relative to the build
+          # directory, which is not what we want because that directory won't
+          # exist after the build, and GDB will get confused because the build
+          # uses absolute paths.
+          #
+          # NOTE: Nix package builds appear to build in a /build directory. I
+          # think the subdirectory under /build is dependent on the source you
+          # download, which in our case is qemu-{version}.tar.xz, which untars
+          # to qemu-{version}. I can't use $(pwd) because that gets escaped by
+          # something before it gets turned into CFLAGS.
+          "--extra-cflags=-fdebug-prefix-map=/build/qemu-${previousAttrs.version}=.."
           "--disable-pie"
         ];
 
