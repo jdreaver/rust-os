@@ -12,6 +12,39 @@
         overlays = [ rust-overlay.overlays.default ];
         config = { allowUnfree = true; };
       };
+
+      # Compile QEMU with debug symbols so we can run QEMU itself with GDB.
+      qemu-x86_64 = pkgs.qemu.override {
+        # We only need x86_64. This keeps compile times down.
+        hostCpuOnly = true;
+
+        # Wrapping the qemu-system-* binaries with the GTK wrapper in nixpkgs
+        # removes debug symbols.
+        gtkSupport = false;
+      };
+      qemu-x86_64-debug = qemu-x86_64.overrideAttrs (finalAttrs: previousAttrs: {
+        # QEMU-specific flags to add debug info. See https://www.cnblogs.com/root-wang/p/8005212.html
+        configureFlags = previousAttrs.configureFlags ++ [
+          "--enable-debug"
+          "--extra-cflags=-g3" # --enable-debug uses -g, we want even more
+          "--disable-pie"
+        ];
+
+        # Disable default hardening flags. These are very confusing when doing
+        # development and they break builds of packages/systems that don't
+        # expect these flags to be on. Automatically enables stuff like
+        # FORTIFY_SOURCE, -Werror=format-security, -fPIE, etc. See:
+        # - https://nixos.org/manual/nixpkgs/stable/#sec-hardening-in-nixpkgs
+        # - https://nixos.wiki/wiki/C#Hardening_flags
+        hardeningDisable = ["all"];
+
+        # Don't strip debug info from executables.
+        dontStrip = true;
+
+        # By default some script goes and separates debug info from the
+        # binaries. We don't want that.
+        separateDebugInfo = false;
+      });
     in
       with pkgs;
       {
@@ -29,6 +62,7 @@
 
           # For emulation
           qemu
+          # qemu-x86_64-debug
 
           # Build
           xorriso
