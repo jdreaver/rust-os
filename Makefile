@@ -1,4 +1,3 @@
-KERNEL = kernel.elf
 HDD = kernel.hdd
 LIMINE = $(shell nix build ./flake#limine --print-out-paths --no-link)
 OVMF = $(shell nix build ./flake#OVMF --print-out-paths --no-link)/OVMF.fd
@@ -10,6 +9,8 @@ RUST_BUILD_MODE_FLAG =
 ifeq ($(RUST_BUILD_MODE),release)
   RUST_BUILD_MODE_FLAG = --release
 endif
+
+KERNEL = kernel/target/x86_64-rust_os/$(RUST_BUILD_MODE)/rust-os
 
 # Not all crates support `cargo test`
 TEST_CRATES += crates/fat
@@ -62,12 +63,11 @@ run-debug: $(HDD)
 
 .PHONY: gdb
 gdb: # No deps because we don't want an accidental rebuild if `make debug` already ran.
-	gdb $(KERNEL) -ex "target remote :1234"
+	rust-gdb $(KERNEL) -ex "target remote :1234"
 
 .PHONY: kernel
 kernel:
 	cd kernel && cargo build $(RUST_BUILD_MODE_FLAG)
-	cp kernel/target/x86_64-rust_os/$(RUST_BUILD_MODE)/rust-os $(KERNEL)
 
 # Old ISO build. Run in QEMU with: -cdrom $(ISO)
 # ISO = kernel.iso
@@ -100,7 +100,8 @@ $(HDD): kernel
 	mkdir -p img_mount
 	sudo mount `cat loopback_dev`p1 img_mount
 	sudo mkdir -p img_mount/EFI/BOOT
-	sudo cp -v $(KERNEL) limine.cfg $(LIMINE)/limine.sys img_mount/
+	sudo cp -v $(KERNEL) img_mount/kernel.elf
+	sudo cp -v limine.cfg $(LIMINE)/limine.sys img_mount/
 	sudo cp -v $(LIMINE)/BOOTX64.EFI img_mount/EFI/BOOT/
 	sync img_mount
 	sudo umount img_mount
@@ -119,4 +120,4 @@ test:
 
 .PHONY: clean
 clean:
-	rm -rf target img_mount iso_root *.iso *.elf
+	rm -rf target img_mount iso_root *.iso *.elf *.hdd
