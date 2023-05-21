@@ -18,8 +18,6 @@ pub(crate) fn push_task(name: &'static str, start_fn: fn() -> ()) {
     let mut tasks = TASKS.lock();
     let task = Task::new(name, start_fn);
     tasks.as_mut().unwrap().push_back(task);
-
-    serial_println!("TASKS: {:x?}", tasks);
 }
 
 pub fn start_multitasking() {
@@ -30,20 +28,78 @@ pub fn start_multitasking() {
 
     // Create a dummy task that we can switch away from. We will never return
     // here, so the values don't matter.
+    //
+    // TODO: The dummy task stack that we have to create in a Box never gets
+    // dropped because we never return here. This is a memory leak.
     let current_task = Task::new("__START_MULTITASKING__", dummy_task_fn);
 
     // Just pick the next task in the queue and switch to it.
-    let next_task = TASKS
-        .lock()
-        .as_mut()
-        .expect("schedule not initialized!")
-        .pop_front()
-        .expect("no tasks to schedule!");
-    // switch_to_task(&current_task, &next_task);
-
+    let next_task_ptr = {
+        let lock = TASKS.lock();
+        let tasks = lock.as_ref().expect("scheduler not initialized!");
+        let next_task = tasks.front().expect("no tasks to schedule!");
+        next_task.kernel_stack_pointer.0
+    };
     let current_task_ptr = core::ptr::addr_of!(current_task.kernel_stack_pointer.0);
     unsafe {
-        switch_to_task(current_task_ptr, next_task.kernel_stack_pointer.0);
+        switch_to_task(current_task_ptr, next_task_ptr);
+    }
+}
+
+pub(crate) fn run_scheduler() {
+    // Disable interrupts while we mess around with the task queue.
+    let (prev_stack_ptr, next_stack_ptr) =
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            let mut lock = TASKS.lock();
+            let tasks = lock.as_mut().expect("scheduler not initialized!");
+
+            // The current task is in the front of the queue. Move it to the
+            // back.
+            //
+            // TODO: There should be a much better way to get the current task, like
+            // putting it at the beginning or end of the kernel stack.
+            let prev_task = tasks.pop_front().expect("no tasks in the task queue!");
+            tasks.push_back(prev_task);
+
+            // Now that the task has been moved, we can safely get the address
+            // of the location where it stores its kernel stack pointer and we
+            // can know it will be stable when we call `switch_to_task`.
+            let prev_stack_ptr = core::ptr::addr_of!(
+                tasks
+                    .back()
+                    .expect("SHOULDN'T HAPPEN we just pushed this")
+                    .kernel_stack_pointer
+                    .0
+            );
+
+            // The next task is at the new front of the queue.
+            let next_task = tasks
+                .front()
+                .expect("SHOULDN'T HAPPEN: no second task in the task queue!");
+            let next_stack_ptr = next_task.kernel_stack_pointer.0;
+            (prev_stack_ptr, next_stack_ptr)
+        });
+
+    // TODO: This causes a double fault for some reason. Why?
+    // {
+    //     let lock = TASKS.lock();
+    //     let tasks = lock.as_ref().expect("scheduler not initialized!");
+    //     serial_println!("TASKS: {:x?}", tasks);
+    // }
+
+    unsafe {
+        if *prev_stack_ptr == next_stack_ptr {
+            // We're already running the next task, so just return.
+            serial_println!("WARNING: Tried to switch to the same task!");
+            return;
+        }
+        serial_println!(
+            "Switching from {:#x?} (@ {:?}) to {:#x?}",
+            *prev_stack_ptr,
+            prev_stack_ptr,
+            next_stack_ptr
+        );
+        switch_to_task(prev_stack_ptr, next_stack_ptr);
     }
 }
 
@@ -95,7 +151,10 @@ pub(crate) struct TaskKernelStackPointer(pub(crate) usize);
 
 /// Architecture-specific assembly code to switch from one task to another.
 #[naked]
-unsafe extern "C" fn switch_to_task(previous_task_stack_pointer: *const usize, next_task_stack_pointer: usize) {
+unsafe extern "C" fn switch_to_task(
+    previous_task_stack_pointer: *const usize,
+    next_task_stack_pointer: usize,
+) {
     unsafe {
         asm!(
             // Save the previous task's general purpose registers by pushing
@@ -119,15 +178,12 @@ unsafe extern "C" fn switch_to_task(previous_task_stack_pointer: *const usize, n
             "push r13",
             "push r14",
             "push r15",
-
             // Save the previous task's stack pointer in the task struct. (First
             // param of this function is in rdi)
             "mov [rdi], rsp",
-
             // Restore the next task's stack pointer from the task struct.
             // (Second param of this function is in rsi)
             "mov rsp, rsi",
-
             // Pop the next task's saved general purpose registers. Remember,
             // the only way we could have gotten to this point in the old task
             // is if it called this function itself, so we know that the next
@@ -147,9 +203,7 @@ unsafe extern "C" fn switch_to_task(previous_task_stack_pointer: *const usize, n
             "pop rcx",
             "pop rbx",
             "pop rax",
-
             "ret",
-
             options(noreturn),
         );
     }

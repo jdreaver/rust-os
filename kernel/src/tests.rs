@@ -6,7 +6,7 @@ use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 use x86_64::structures::paging::{Size2MiB, Size4KiB};
 
-use crate::{acpi, boot_info, hlt_loop, memory, pci, scheduler, serial_println, virtio};
+use crate::{acpi, boot_info, memory, pci, scheduler, serial_println, virtio};
 
 pub(crate) fn run_tests(
     boot_info_data: &boot_info::BootInfo,
@@ -146,17 +146,21 @@ pub(crate) fn run_tests(
     // panic!("Some panic message");
 
     scheduler::push_task("task 1", task_1_test_task);
-    // scheduler::push_task("task 2", task_2_test_task);
+    scheduler::push_task("task 2", task_2_test_task);
 
     scheduler::start_multitasking();
 }
 
 fn task_1_test_task() {
-    serial_println!("task 1 is running!");
-    hlt_loop();
+    loop {
+        serial_println!("task 1 is running!");
+        scheduler::run_scheduler();
+    }
 }
 
 fn task_2_test_task() {
-    serial_println!("task 2 is running!");
-    hlt_loop();
+    loop {
+        serial_println!("task 2 is running!");
+        scheduler::run_scheduler();
+    }
 }
