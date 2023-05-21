@@ -66,6 +66,12 @@ make test
 
 ## TODO
 
+- Fix virtio-rng device deadlock with mutex + interrupt (I didn't fix it last time. RwLock can still deadlock, duh)
+  - How do real device drivers do this? Do they disable interrupts?
+  - My gut says we should be able to not need a lock to read from a virtqueue. We just need to lock the fact we are processing.
+    - We want something that looks like a RwLock, but readers can read even if writers are locked.
+    - Maybe we can create two types that point to the same virtqueue memory. One can do writes, uses `&mut`, and needs to be wrapped in a mutex. The other can only do reads, uses `&`, and doesn't need a mutex. We could convert `RegisterRW`/`VolatileArrayRW` to the `RO` versions.
+      - Perhaps the `RW` `registers.rs` _should_ indeed use `&mut self` under this same principle? Maybe, maybe not.
 - Serial printing:
   - Allow inline template variables like `hello {x}`
 - Multi-tasking (see resources below)
