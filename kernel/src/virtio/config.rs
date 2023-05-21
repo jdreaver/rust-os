@@ -106,25 +106,25 @@ impl VirtIODeviceConfig {
         })
     }
 
-    pub(crate) fn pci_config(&self) -> PCIDeviceConfig {
+    pub(super) fn pci_config(&self) -> PCIDeviceConfig {
         self.pci_config
     }
 
-    pub(crate) fn pci_type0_config(&self) -> PCIDeviceConfigType0 {
+    pub(super) fn pci_type0_config(&self) -> PCIDeviceConfigType0 {
         self.pci_type0_config
     }
 
-    pub(crate) fn common_virtio_config(&self) -> VirtIOPCICommonConfigRegisters {
+    pub(super) fn common_virtio_config(&self) -> VirtIOPCICommonConfigRegisters {
         self.common_virtio_config
     }
 
-    pub(crate) fn notify_config(&self) -> VirtIONotifyConfig {
+    pub(super) fn notify_config(&self) -> VirtIONotifyConfig {
         self.notify_config
     }
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct VirtIOPCICapabilityHeader {
+pub(super) struct VirtIOPCICapabilityHeader {
     /// The body of the PCID device for this VirtIO device.
     device_config_body: PCIDeviceConfigType0,
 
@@ -144,7 +144,7 @@ impl VirtIOPCICapabilityHeader {
     /// # Safety
     ///
     /// Caller must ensure that the capability header is from a VirtIO device.
-    pub(crate) unsafe fn from_pci_capability(
+    pub(super) unsafe fn from_pci_capability(
         device_config_body: PCIDeviceConfigType0,
         header: &PCIDeviceCapabilityHeader,
     ) -> Option<Self> {
@@ -198,7 +198,7 @@ impl VirtIOPCICapabilityHeader {
 
     /// Compute and map physical address for VirtIO capabilities that need to
     /// reach through a BAR to access their configuration.
-    pub(crate) fn compute_and_map_config_address(self) -> PhysAddr {
+    pub(super) fn compute_and_map_config_address(self) -> PhysAddr {
         let bar_idx = self.registers.bar().read();
         let physical_offset = self.registers.offset().read();
         let region_size = u64::from(self.registers.cap_len().read());
@@ -271,7 +271,7 @@ enum VirtIOConfig {
 
 register_struct!(
     /// 4.1.4.3 Common configuration structure layout
-    pub(crate) VirtIOPCICommonConfigRegisters {
+    pub(super) VirtIOPCICommonConfigRegisters {
         0x00 => device_feature_select: RegisterRW<u32>,
         0x04 => device_feature: RegisterRO<u32>,
         0x08 => driver_feature_select: RegisterRW<u32>,
@@ -296,22 +296,22 @@ register_struct!(
 
 #[bitfield(u8)]
 /// 2.1 Device Status Field
-pub(crate) struct VirtIOConfigStatus {
+pub(super) struct VirtIOConfigStatus {
     /// ACKNOWLEDGE (1) Indicates that the guest OS has found the device and
     /// recognized it as a valid virtio device.
-    pub(crate) acknowledge: bool,
+    pub(super) acknowledge: bool,
 
     /// DRIVER (2) Indicates that the guest OS knows how to drive the device.
-    pub(crate) driver: bool,
+    pub(super) driver: bool,
 
     /// DRIVER_OK (4) Indicates that the guest OS knows how to drive the device.
-    pub(crate) driver_ok: bool,
+    pub(super) driver_ok: bool,
 
     /// FEATURES_OK (8) Indicates that the features negotiated by the driver are
     /// acceptable to the device. This bit is optional since not all devices
     /// support feature negotiation, and some devices may accept any subset of
     /// the features offered by the driver.
-    pub(crate) features_ok: bool,
+    pub(super) features_ok: bool,
 
     __reserved: bool,
     __reserved: bool,
@@ -320,14 +320,14 @@ pub(crate) struct VirtIOConfigStatus {
     /// error from which it can’t recover. The device has stopped working. The
     /// driver should not send any further requests to the device, and should
     /// reset the device at the earliest convenience.
-    pub(crate) device_needs_reset: bool,
+    pub(super) device_needs_reset: bool,
 
     /// FAILED (128) Indicates that something went wrong in the guest, and it
     /// has given up on the device. This could be an internal error, or the
     /// driver didn’t like the device for some reason, or even a fatal error
     /// during device operation. The device should not be used any further
     /// without a reset.
-    pub(crate) failed: bool,
+    pub(super) failed: bool,
 }
 
 register_struct!(
@@ -339,7 +339,7 @@ register_struct!(
 
 #[bitfield(u32)]
 /// 4.1.4.5 ISR status capability
-pub(crate) struct VirtIOISRStatus {
+pub(super) struct VirtIOISRStatus {
     queue_interrupt: bool,
     device_config_interrupt: bool,
 
@@ -349,7 +349,7 @@ pub(crate) struct VirtIOISRStatus {
 
 /// 4.1.4.4 Notification structure layout
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct VirtIONotifyConfig {
+pub(super) struct VirtIONotifyConfig {
     /// Physical address for the configuration area for the Notify capability
     /// (BAR + offset has already been applied).
     config_addr: PhysAddr,
@@ -373,7 +373,7 @@ impl VirtIONotifyConfig {
     ///
     /// Caller must ensure that `queue_notify_offset` and `queue_index` are
     /// valid.
-    pub(crate) unsafe fn notify_device(&self, queue_notify_offset: u16, queue_index: u16) {
+    pub(super) unsafe fn notify_device(&self, queue_notify_offset: u16, queue_index: u16) {
         // 4.1.5.2 Available Buffer Notifications: When
         // VIRTIO_F_NOTIFICATION_DATA has not been negotiated, the driver sends
         // an available buffer notification to the device by writing the 16-bit

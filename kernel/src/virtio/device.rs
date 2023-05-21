@@ -7,7 +7,7 @@ use super::config::{VirtIOConfigStatus, VirtIODeviceConfig};
 use super::queue::{VirtQueue, VirtqAvailRing, VirtqDescriptorTable, VirtqUsedRing};
 
 #[derive(Debug)]
-pub(crate) struct VirtIOInitializedDevice {
+pub(super) struct VirtIOInitializedDevice {
     config: VirtIODeviceConfig,
     virtqueues: Vec<VirtQueue>,
 }
@@ -15,7 +15,7 @@ pub(crate) struct VirtIOInitializedDevice {
 impl VirtIOInitializedDevice {
     /// See "3 General Initialization And Device Operation" and "4.1.5
     /// PCI-specific Initialization And Device Operation"
-    pub(crate) fn new(device_config: VirtIODeviceConfig) -> Self {
+    pub(super) fn new(device_config: VirtIODeviceConfig) -> Self {
         let config = device_config.common_virtio_config();
 
         // Reset the VirtIO device by writing 0 to the status register (see
@@ -116,15 +116,15 @@ impl VirtIOInitializedDevice {
         }
     }
 
-    pub(crate) fn get_virtqueue(&self, index: u16) -> Option<&VirtQueue> {
+    pub(super) fn get_virtqueue(&self, index: u16) -> Option<&VirtQueue> {
         self.virtqueues.get(index as usize)
     }
 
-    pub(crate) fn get_virtqueue_mut(&mut self, index: u16) -> Option<&mut VirtQueue> {
+    pub(super) fn get_virtqueue_mut(&mut self, index: u16) -> Option<&mut VirtQueue> {
         self.virtqueues.get_mut(index as usize)
     }
 
-    pub(crate) fn install_virtqueue_msix_handler(
+    pub(super) fn install_virtqueue_msix_handler(
         &mut self,
         virtqueue_index: u16,
         msix_table_index: u16,

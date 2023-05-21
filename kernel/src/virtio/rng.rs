@@ -6,7 +6,9 @@ use x86_64::VirtAddr;
 use crate::interrupts::InterruptHandlerID;
 use crate::{apic, memory, serial_println};
 
-use super::{VirtIODeviceConfig, VirtIOInitializedDevice, VirtqDescriptorFlags};
+use super::device::VirtIOInitializedDevice;
+use super::queue::VirtqDescriptorFlags;
+use super::VirtIODeviceConfig;
 
 static VIRTIO_RNG: RwLock<Option<VirtIORNG>> = RwLock::new(None);
 

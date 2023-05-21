@@ -8,11 +8,11 @@ use crate::memory::AllocZeroedBufferError;
 use crate::memory;
 use crate::registers::{RegisterRW, VolatileArrayRW};
 
-use crate::virtio::config::VirtIONotifyConfig;
+use super::config::VirtIONotifyConfig;
 
 /// Wrapper around allocated virt queues for a an initialized VirtIO device.
 #[derive(Debug)]
-pub(crate) struct VirtQueue {
+pub(super) struct VirtQueue {
     /// The queue's index in the device's virtqueue array.
     index: u16,
 
@@ -30,7 +30,7 @@ pub(crate) struct VirtQueue {
 }
 
 impl VirtQueue {
-    pub(crate) fn new(
+    pub(super) fn new(
         index: u16,
         device_notify_config: VirtIONotifyConfig,
         notify_offset: u16,
@@ -49,7 +49,7 @@ impl VirtQueue {
     }
 
     /// See "2.7.13 Supplying Buffers to The Device"
-    pub(crate) fn add_buffer(
+    pub(super) fn add_buffer(
         &mut self,
         buffer_addr: u64,
         buffer_len: u32,
@@ -65,11 +65,11 @@ impl VirtQueue {
         };
     }
 
-    pub(crate) fn used_ring_index(&self) -> u16 {
+    pub(super) fn used_ring_index(&self) -> u16 {
         self.used_ring.idx.read()
     }
 
-    pub(crate) fn get_used_ring_entry(&self, index: u16) -> (VirtqUsedElem, VirtqDescriptor) {
+    pub(super) fn get_used_ring_entry(&self, index: u16) -> (VirtqUsedElem, VirtqDescriptor) {
         // Load the used element
         let used_elem = self.used_ring.get_used_elem(index);
 
@@ -86,7 +86,7 @@ const VIRTQ_AVAIL_ALIGN: usize = 2;
 const VIRTQ_USED_ALIGN: usize = 4;
 
 /// See 2.7.5 The Virtqueue Descriptor Table
-pub(crate) struct VirtqDescriptorTable {
+pub(super) struct VirtqDescriptorTable {
     /// The physical address for the queue's descriptor table.
     physical_address: u64,
 
@@ -98,7 +98,7 @@ pub(crate) struct VirtqDescriptorTable {
 }
 
 impl VirtqDescriptorTable {
-    pub(crate) unsafe fn allocate(queue_size: u16) -> Result<Self, AllocZeroedBufferError> {
+    pub(super) unsafe fn allocate(queue_size: u16) -> Result<Self, AllocZeroedBufferError> {
         let queue_size = queue_size as usize;
 
         let mem_size = mem::size_of::<VirtqDescriptor>() * queue_size;
@@ -125,7 +125,7 @@ impl VirtqDescriptorTable {
         })
     }
 
-    pub(crate) fn physical_address(&self) -> u64 {
+    pub(super) fn physical_address(&self) -> u64 {
         self.physical_address
     }
 
@@ -168,26 +168,26 @@ impl fmt::Debug for VirtqDescriptorTable {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub(crate) struct VirtqDescriptor {
+pub(super) struct VirtqDescriptor {
     /// Physical address for the buffer.
-    pub(crate) addr: u64,
+    pub(super) addr: u64,
     /// Length of the buffer, in bytes.
-    pub(crate) len: u32,
-    pub(crate) flags: VirtqDescriptorFlags,
+    pub(super) len: u32,
+    pub(super) flags: VirtqDescriptorFlags,
     /// Next field if flags & NEXT
-    pub(crate) next: u16,
+    pub(super) next: u16,
 }
 
 #[bitfield(u16)]
-pub(crate) struct VirtqDescriptorFlags {
+pub(super) struct VirtqDescriptorFlags {
     /// This marks a buffer as continuing via the next field.
-    pub(crate) next: bool,
+    pub(super) next: bool,
 
     /// This marks a buffer as device write-only (otherwise device read-only).
-    pub(crate) device_write: bool,
+    pub(super) device_write: bool,
 
     /// This means the buffer contains a list of buffer descriptors.
-    pub(crate) indirect: bool,
+    pub(super) indirect: bool,
 
     #[bits(13)]
     __padding: u16,
@@ -210,7 +210,7 @@ pub(crate) struct VirtqDescriptorFlags {
 ///             le16 used_event; /* Only if VIRTIO_F_EVENT_IDX: */
 ///     };
 /// ```
-pub(crate) struct VirtqAvailRing {
+pub(super) struct VirtqAvailRing {
     physical_address: u64,
 
     flags: RegisterRW<VirtqAvailRingFlags>,
@@ -226,7 +226,7 @@ pub(crate) struct VirtqAvailRing {
 }
 
 impl VirtqAvailRing {
-    pub(crate) unsafe fn allocate(queue_size: u16) -> Result<Self, AllocZeroedBufferError> {
+    pub(super) unsafe fn allocate(queue_size: u16) -> Result<Self, AllocZeroedBufferError> {
         let queue_size = queue_size as usize;
 
         // Compute sizes before we do allocations.
@@ -265,7 +265,7 @@ impl VirtqAvailRing {
         })
     }
 
-    pub(crate) fn physical_address(&self) -> u64 {
+    pub(super) fn physical_address(&self) -> u64 {
         self.physical_address
     }
 
@@ -292,7 +292,7 @@ impl fmt::Debug for VirtqAvailRing {
 }
 
 #[bitfield(u16)]
-pub(crate) struct VirtqAvailRingFlags {
+pub(super) struct VirtqAvailRingFlags {
     /// See 2.7.7 Used Buffer Notification Suppression
     no_interrupt: bool,
 
@@ -316,7 +316,7 @@ pub(crate) struct VirtqAvailRingFlags {
 ///         le16 avail_event; /* Only if VIRTIO_F_EVENT_IDX */
 /// };
 /// ```
-pub(crate) struct VirtqUsedRing {
+pub(super) struct VirtqUsedRing {
     physical_address: u64,
 
     flags: RegisterRW<VirtqUsedRingFlags>,
@@ -332,7 +332,7 @@ pub(crate) struct VirtqUsedRing {
 }
 
 #[bitfield(u16)]
-pub(crate) struct VirtqUsedRingFlags {
+pub(super) struct VirtqUsedRingFlags {
     /// See 2.7.10 Available Buffer Notification Suppression
     no_notify: bool,
 
@@ -343,17 +343,17 @@ pub(crate) struct VirtqUsedRingFlags {
 /// 2.7.8 The Virtqueue Used Ring
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub(crate) struct VirtqUsedElem {
+pub(super) struct VirtqUsedElem {
     /// Index of start of used descriptor chain.
-    pub(crate) id: u32,
+    pub(super) id: u32,
 
     /// The number of bytes written into the device writable portion of the
     /// buffer described by the descriptor chain.
-    pub(crate) len: u32,
+    pub(super) len: u32,
 }
 
 impl VirtqUsedRing {
-    pub(crate) unsafe fn allocate(queue_size: u16) -> Result<Self, AllocZeroedBufferError> {
+    pub(super) unsafe fn allocate(queue_size: u16) -> Result<Self, AllocZeroedBufferError> {
         let queue_size = queue_size as usize;
 
         // Compute sizes before we do allocations.
@@ -392,7 +392,7 @@ impl VirtqUsedRing {
         })
     }
 
-    pub(crate) fn physical_address(&self) -> u64 {
+    pub(super) fn physical_address(&self) -> u64 {
         self.physical_address
     }
 
