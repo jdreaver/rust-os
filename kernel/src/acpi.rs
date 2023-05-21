@@ -133,7 +133,7 @@ pub(crate) fn print_acpi_info(info: &ACPIInfo) {
     let mcfg_entries = mcfg_entries(&mcfg);
     serial_println!("MCFG entries:");
     for (i, entry) in mcfg_entries.iter().enumerate() {
-        serial_println!("  MCFG entry {}: {:#x?}", i, entry);
+        serial_println!("  MCFG entry {i}: {entry:#x?}");
     }
 }
 

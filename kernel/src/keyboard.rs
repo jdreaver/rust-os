@@ -51,9 +51,9 @@ fn keyboard_interrupt_handler(_vector: u8, _handler_id: InterruptHandlerID) {
         if let Some(key) = keyboard.process_keyevent(key_event) {
             match key {
                 DecodedKey::Unicode(character) => {
-                    serial_println!("FOUND UNICODE CHAR {}", character);
+                    serial_println!("FOUND UNICODE CHAR {character}");
                 }
-                DecodedKey::RawKey(key) => serial_println!("FOUND RAW CHAR {:?}", key),
+                DecodedKey::RawKey(key) => serial_println!("FOUND RAW CHAR {key:?}"),
             }
         }
     }

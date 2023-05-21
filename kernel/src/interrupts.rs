@@ -42,7 +42,7 @@ macro_rules! external_stub_interrupt_handler {
 ///   - [`DEFINE_IDTENTRY_IRQ` def](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/include/asm/idtentry.h#L191)
 ///
 fn common_external_interrupt_handler(vector: u8) {
-    serial_println!("DEBUG: Interrupt: vector: {}", vector);
+    serial_println!("DEBUG: Interrupt: vector: {vector}");
     let &(interrupt_id, handler) = EXTERNAL_INTERRUPT_HANDLERS
         .lock()
         .get(vector as usize)
@@ -144,7 +144,8 @@ pub(crate) fn install_interrupt(interrupt_id: InterruptHandlerID, handler: Inter
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
-    serial_println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
+    serial_println!("EXCEPTION: BREAKPOINT");
+    serial_println!("{stack_frame:#?}");
 }
 
 extern "x86-interrupt" fn page_fault_handler(
@@ -155,8 +156,8 @@ extern "x86-interrupt" fn page_fault_handler(
 
     serial_println!("EXCEPTION: PAGE FAULT");
     serial_println!("Accessed Address (CR2): {:x?}", Cr2::read_raw());
-    serial_println!("Error Code: {:?}", error_code);
-    serial_println!("{:#?}", stack_frame);
+    serial_println!("Error Code: {error_code:?}");
+    serial_println!("{stack_frame:#?}");
 
     loop {
         x86_64::instructions::hlt();
@@ -167,11 +168,9 @@ extern "x86-interrupt" fn general_protection_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: u64,
 ) {
-    serial_println!(
-        "EXCEPTION: GENERAL PROTECTION FAULT\nerror_code:{}\n{:#?}",
-        error_code,
-        stack_frame
-    );
+    serial_println!("EXCEPTION: GENERAL PROTECTION FAULT");
+    serial_println!("error_code: {error_code}");
+    serial_println!("{stack_frame:#?}");
 }
 
 extern "x86-interrupt" fn double_fault_handler(

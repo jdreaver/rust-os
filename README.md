@@ -66,8 +66,6 @@ make test
 
 ## TODO
 
-- Serial printing:
-  - Allow inline template variables like `hello {x}`
 - Multi-tasking (see resources below)
 - Detect kernel stack overflows. Guard pages? Some other mechanism?
   - I need a huge stack for debug mode apparently. I was seeing stack overflows with a 4096 byte stack when running in debug mode, so I quadrupled it

@@ -13,7 +13,7 @@ pub(crate) fn run_tests(
     acpi_info: &acpi::ACPIInfo,
     text_buffer: &'static mut TextBuffer,
 ) {
-    serial_println!("limine boot info:\n{:#x?}", boot_info_data);
+    serial_println!("limine boot info:\n{boot_info_data:#x?}");
     boot_info::print_limine_memory_map();
 
     if let Some(system_table_addr) = boot_info_data.efi_system_table_address {
@@ -28,7 +28,7 @@ pub(crate) fn run_tests(
             for entry in system_table.config_table() {
                 if entry.guid == uefi::table::cfg::ACPI2_GUID {
                     // This should match the limine RSDP address
-                    serial_println!("EFI config table ACPI2 entry: {:#X?}", entry);
+                    serial_println!("EFI config table ACPI2 entry: {entry:#X?}");
                 }
             }
         };
@@ -39,7 +39,7 @@ pub(crate) fn run_tests(
         VESAFramebuffer32Bit::from_limine_framebuffer(boot_info_data.framebuffer)
             .expect("failed to create VESAFramebuffer32Bit")
     };
-    serial_println!("framebuffer: {:#?}", framebuffer);
+    serial_println!("framebuffer: {framebuffer:#?}");
 
     writeln!(text_buffer, "Hello!").expect("failed to write to text buffer");
     writeln!(text_buffer, "World!").expect("failed to write to text buffer");
@@ -51,7 +51,7 @@ pub(crate) fn run_tests(
 
     // Iterate over PCI devices
     pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
-        serial_println!("Found PCI device: {:#x?}", device);
+        serial_println!("Found PCI device: {device:#x?}");
     });
 
     // Find VirtIO devices
@@ -117,7 +117,7 @@ pub(crate) fn run_tests(
 
     // Allocate a number on the heap
     let heap_value = Box::new(41);
-    serial_println!("heap_value at {:p}", heap_value);
+    serial_println!("heap_value at {heap_value:p}");
     assert_eq!(*heap_value, 41);
 
     // create a dynamically sized vector
@@ -125,12 +125,12 @@ pub(crate) fn run_tests(
     for i in 0..10 {
         vec.push(i);
     }
-    serial_println!("vec at {:p}: {:?}", vec.as_slice(), vec);
+    serial_println!("vec at {:p}: {vec:?}", vec.as_slice());
     assert_eq!(vec.into_iter().sum::<u32>(), 45);
 
     // Create a Box value with the `Allocator` API
     let my_box = Box::new_in(42, &memory::KERNEL_PHYSICAL_ALLOCATOR);
-    serial_println!("Allocator alloc'ed my_box {:?} at {:p}", my_box, my_box);
+    serial_println!("Allocator alloc'ed my_box {my_box:?} at {my_box:p}");
 
     // Trigger a page fault, which should trigger a double fault if we don't
     // have a page fault handler.

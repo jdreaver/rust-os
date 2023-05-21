@@ -75,7 +75,7 @@ pub fn start() -> ! {
     apic::init_local_apic(&acpi_info);
 
     let ioapic = apic::IOAPIC::from_acpi_info(&acpi_info);
-    serial_println!("IO APIC: {:#x?}", ioapic);
+    serial_println!("IO APIC: {ioapic:#x?}");
 
     keyboard::init_keyboard(&ioapic);
 
@@ -87,7 +87,7 @@ pub fn start() -> ! {
 }
 
 pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
-    serial_println!("PANIC: {}", info);
+    serial_println!("PANIC: {info}");
     hlt_loop()
 }
 
