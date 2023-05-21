@@ -81,7 +81,7 @@ pub(crate) fn run_scheduler() {
                 .expect("SHOULDN'T HAPPEN: no second task in the task queue!");
             let next_stack_ptr = next_task.kernel_stack_pointer.0;
 
-            // // TODO: This causes a double fault for some reason. Why?
+            // TODO: This causes a double fault for some reason. Why?
             // serial_println!("TASKS: {:x?}", tasks);
 
             (prev_stack_ptr, next_stack_ptr)
@@ -93,15 +93,12 @@ pub(crate) fn run_scheduler() {
                 serial_println!("WARNING: Tried to switch to the same task!");
                 return;
             }
-            // TODO: We can't print here because serial_println! disables
-            // interrupts when it is done! We have to fix that.
-            //
-            // serial_println!(
-            //     "Switching from {:#x?} (@ {:?}) to {:#x?}",
-            //     *prev_stack_ptr,
-            //     prev_stack_ptr,
-            //     next_stack_ptr
-            // );
+            serial_println!(
+                "SCHEDULER: Switching from {:#x?} (@ {:?}) to {:#x?}",
+                *prev_stack_ptr,
+                prev_stack_ptr,
+                next_stack_ptr
+            );
             switch_to_task(prev_stack_ptr, next_stack_ptr);
         }
     });

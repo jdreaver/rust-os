@@ -70,7 +70,8 @@ make test
   - Allow inline template variables like `hello {x}`
 - Multi-tasking (see resources below)
 - Debug why printing TASKS after first context switch causes double fault (when task name is printed, apparently)
-  - Is it because `serial_println!` re-enables interrupts, but we are already in an interrupt handler so that is bad?
+  - `name` is getting corrupted somehow. When I manually try and print it, it blows up and prints garbage.
+    - Is the write to `kernel_stack_pointer` not correct?
   - Double fault seems to be during printing the page fault
   - Does this have to do with the TSS?
 - HPET for timing (apparently better than Local APIC timer?)
