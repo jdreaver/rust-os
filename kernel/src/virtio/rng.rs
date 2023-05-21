@@ -37,11 +37,18 @@ pub(crate) fn try_init_virtio_rng(device_config: VirtIODeviceConfig) {
 }
 
 pub(crate) fn request_random_numbers() {
-    VIRTIO_RNG
-        .lock()
-        .as_mut()
-        .expect("VirtIO RNG not initialized")
-        .request_random_numbers();
+    // Disable interrupts so the interrupt handler doesn't try to take this same
+    // lock while we are still in the critical section, resulting in a deadlock.
+    //
+    // TODO: Use separate locks and/or RWLocks so we don't need to take the
+    // exact same mutex between writing to the virtq and reading from it.
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        VIRTIO_RNG
+            .lock()
+            .as_mut()
+            .expect("VirtIO RNG not initialized")
+            .request_random_numbers();
+    });
 }
 
 /// See "5.4 Entropy Device" in the VirtIO spec. The virtio entropy device
