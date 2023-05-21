@@ -75,11 +75,8 @@ make test
 - Serial printing:
   - Allow inline template variables like `hello {x}`
 - Multi-tasking (see resources below)
-- Debug why printing TASKS after first context switch causes double fault (when task name is printed, apparently)
-  - `name` is getting corrupted somehow. When I manually try and print it, it blows up and prints garbage.
-    - Is the write to `kernel_stack_pointer` not correct?
-  - Double fault seems to be during printing the page fault
-  - Does this have to do with the TSS?
+- Detect kernel stack overflows. Guard pages? Some other mechanism?
+  - I need a huge stack for debug mode apparently. I was seeing stack overflows with a 4096 byte stack when running in debug mode, so I quadrupled it
 - HPET for timing (apparently better than Local APIC timer?)
 - `registers.rs` and macros
   - Consider moving `registers.rs` stuff into dedicated crate with unit tests

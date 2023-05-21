@@ -81,9 +81,6 @@ pub(crate) fn run_scheduler() {
                 .expect("SHOULDN'T HAPPEN: no second task in the task queue!");
             let next_stack_ptr = next_task.kernel_stack_pointer.0;
 
-            // TODO: This causes a double fault for some reason. Why?
-            // serial_println!("TASKS: {:x?}", tasks);
-
             (prev_stack_ptr, next_stack_ptr)
         };
 
@@ -113,7 +110,10 @@ pub(crate) struct Task {
 }
 
 /// All kernel stacks have the same, constant size.
-const KERNEL_STACK_SIZE: usize = 4096;
+///
+/// TODO: This is quite large, but it is necessary even for extremely simple
+/// tasks because in debug mode we apparently use the stack a ton.
+const KERNEL_STACK_SIZE: usize = 4096 * 4;
 
 impl Task {
     /// Create a new task with the given ID and kernel stack pointer.
