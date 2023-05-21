@@ -47,9 +47,12 @@ pub fn start_multitasking() {
 }
 
 pub(crate) fn run_scheduler() {
-    // Disable interrupts while we mess around with the task queue.
-    let (prev_stack_ptr, next_stack_ptr) =
-        x86_64::instructions::interrupts::without_interrupts(|| {
+    // Disable interrupts while we mess around with the task queue. Note that
+    // switch_to_task re-enables them as well.
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let (prev_stack_ptr, next_stack_ptr) = {
+            // We only need to lock the task queue while we rearrange it.
+
             let mut lock = TASKS.lock();
             let tasks = lock.as_mut().expect("scheduler not initialized!");
 
@@ -77,30 +80,31 @@ pub(crate) fn run_scheduler() {
                 .front()
                 .expect("SHOULDN'T HAPPEN: no second task in the task queue!");
             let next_stack_ptr = next_task.kernel_stack_pointer.0;
+
+            // // TODO: This causes a double fault for some reason. Why?
+            // serial_println!("TASKS: {:x?}", tasks);
+
             (prev_stack_ptr, next_stack_ptr)
-        });
+        };
 
-    // TODO: This causes a double fault for some reason. Why?
-    // {
-    //     let lock = TASKS.lock();
-    //     let tasks = lock.as_ref().expect("scheduler not initialized!");
-    //     serial_println!("TASKS: {:x?}", tasks);
-    // }
-
-    unsafe {
-        if *prev_stack_ptr == next_stack_ptr {
-            // We're already running the next task, so just return.
-            serial_println!("WARNING: Tried to switch to the same task!");
-            return;
+        unsafe {
+            if *prev_stack_ptr == next_stack_ptr {
+                // We're already running the next task, so just return.
+                serial_println!("WARNING: Tried to switch to the same task!");
+                return;
+            }
+            // TODO: We can't print here because serial_println! disables
+            // interrupts when it is done! We have to fix that.
+            //
+            // serial_println!(
+            //     "Switching from {:#x?} (@ {:?}) to {:#x?}",
+            //     *prev_stack_ptr,
+            //     prev_stack_ptr,
+            //     next_stack_ptr
+            // );
+            switch_to_task(prev_stack_ptr, next_stack_ptr);
         }
-        serial_println!(
-            "Switching from {:#x?} (@ {:?}) to {:#x?}",
-            *prev_stack_ptr,
-            prev_stack_ptr,
-            next_stack_ptr
-        );
-        switch_to_task(prev_stack_ptr, next_stack_ptr);
-    }
+    });
 }
 
 /// A `Task` is a unit of work that can be scheduled, like a thread or a process.
@@ -203,6 +207,11 @@ unsafe extern "C" fn switch_to_task(
             "pop rcx",
             "pop rbx",
             "pop rax",
+            // Re-enable interrupts before returning
+            //
+            // TODO: Is this always correct? What if interrupts are supposed to
+            // be disabled in the new task?
+            "sti",
             "ret",
             options(noreturn),
         );

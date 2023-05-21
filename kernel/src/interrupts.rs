@@ -154,7 +154,7 @@ extern "x86-interrupt" fn page_fault_handler(
     use x86_64::registers::control::Cr2;
 
     serial_println!("EXCEPTION: PAGE FAULT");
-    serial_println!("Accessed Address: {:?}", Cr2::read());
+    serial_println!("Accessed Address (CR2): {:x?}", Cr2::read_raw());
     serial_println!("Error Code: {:?}", error_code);
     serial_println!("{:#?}", stack_frame);
 

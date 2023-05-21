@@ -66,9 +66,12 @@ make test
 
 ## TODO
 
+- Serial printing: figure out how to do this without disabling interrupts or taking locks. We can't print in many contexts because this re-enables interrupts.
 - Multi-tasking (see resources below)
 - Debug why printing TASKS after first context switch causes double fault (when task name is printed, apparently)
-  - Also, we get a double fault when we type on the keyboard during while the tasks are switching back and forth
+  - Is it because `serial_println!` re-enables interrupts, but we are already in an interrupt handler so that is bad?
+  - Double fault seems to be during printing the page fault
+  - Does this have to do with the TSS?
 - HPET for timing (apparently better than Local APIC timer?)
 - `registers.rs` and macros
   - Consider moving `registers.rs` stuff into dedicated crate with unit tests
@@ -239,3 +242,4 @@ Other higher-level Linux resources:
 - <https://samwho.dev/blog/context-switching-on-x86/>
   - Video that goes over this same xv6 code: [Operating Systems Lecture 25: Context switching in xv6](https://www.youtube.com/watch?v=fEnWqibCwo0)
 - <https://stackoverflow.com/questions/12630214/context-switch-internals>
+- Excellent history of `switch_to` in Linux over the years <https://www.maizure.org/projects/evolution_x86_context_switch_linux/>
