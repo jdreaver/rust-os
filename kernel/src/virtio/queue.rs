@@ -1,11 +1,11 @@
 use core::fmt;
 use core::mem;
+use core::sync::atomic::AtomicU16;
 
 use bitfield_struct::bitfield;
 
-use crate::memory::AllocZeroedBufferError;
-
 use crate::memory;
+use crate::memory::AllocZeroedBufferError;
 use crate::registers::{RegisterRW, VolatileArrayRW};
 
 use super::config::VirtIONotifyConfig;
@@ -50,7 +50,7 @@ impl VirtQueue {
 
     /// See "2.7.13 Supplying Buffers to The Device"
     pub(super) fn add_buffer(
-        &mut self,
+        &self,
         buffer_addr: u64,
         buffer_len: u32,
         flags: VirtqDescriptorFlags,
@@ -86,12 +86,15 @@ const VIRTQ_AVAIL_ALIGN: usize = 2;
 const VIRTQ_USED_ALIGN: usize = 4;
 
 /// See 2.7.5 The Virtqueue Descriptor Table
+#[derive(Debug)]
 pub(super) struct VirtqDescriptorTable {
     /// The physical address for the queue's descriptor table.
     physical_address: u64,
 
     /// Index into the next open descriptor slot.
-    next_index: u16,
+    ///
+    /// This is atomic so multiple writes can safely use the virtqueue.
+    raw_next_index: AtomicU16,
 
     /// Array of descriptors.
     descriptors: VolatileArrayRW<VirtqDescriptor>,
@@ -120,7 +123,7 @@ impl VirtqDescriptorTable {
 
         Ok(Self {
             physical_address,
-            next_index: 0,
+            raw_next_index: AtomicU16::new(0),
             descriptors,
         })
     }
@@ -129,15 +132,26 @@ impl VirtqDescriptorTable {
         self.physical_address
     }
 
+    /// Atomically increments the internal index and performs the necessary wrapping.
+    fn next_index(&self) -> u16 {
+        let index = self
+            .raw_next_index
+            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        // N.B. Assumes that the queue size is a power of 2, which is in the
+        // virtio spec. Specifically, when we do fetch_add above, it performs a
+        // wraparound when we max out u16, and this modulo logic only works in
+        // conjunction with that when the queue size is a power of 2.
+        index % self.descriptors.len() as u16
+    }
+
     fn add_descriptor(
-        &mut self,
+        &self,
         buffer_addr: u64,
         buffer_len: u32,
         flags: VirtqDescriptorFlags,
     ) -> u16 {
         // 2.7.13.1 Placing Buffers Into The Descriptor Table
-        let desc_index = self.next_index;
-        self.next_index = (self.next_index + 1) % self.descriptors.len() as u16;
+        let desc_index = self.next_index();
 
         let descriptor = VirtqDescriptor {
             addr: buffer_addr,
@@ -153,16 +167,6 @@ impl VirtqDescriptorTable {
 
     fn get_descriptor(&self, index: u16) -> VirtqDescriptor {
         self.descriptors.read(index as usize)
-    }
-}
-
-impl fmt::Debug for VirtqDescriptorTable {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("VirtqDescriptorTable")
-            .field("physical_address", &self.physical_address)
-            .field("next_index", &self.next_index)
-            .field("descriptors", &self.descriptors)
-            .finish()
     }
 }
 
@@ -210,6 +214,7 @@ pub(super) struct VirtqDescriptorFlags {
 ///             le16 used_event; /* Only if VIRTIO_F_EVENT_IDX: */
 ///     };
 /// ```
+#[derive(Debug)]
 pub(super) struct VirtqAvailRing {
     physical_address: u64,
 
@@ -269,25 +274,13 @@ impl VirtqAvailRing {
         self.physical_address
     }
 
-    fn add_entry(&mut self, desc_index: u16) {
+    fn add_entry(&self, desc_index: u16) {
         // 2.7.13.2 Updating The Available Ring
         let idx = self.idx.read();
         self.ring.write(idx as usize, desc_index);
 
         // 2.7.13.3 Updating idx
         self.idx.modify(|idx| idx.wrapping_add(1));
-    }
-}
-
-impl fmt::Debug for VirtqAvailRing {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("VirtqAvailRing")
-            .field("physical_address", &self.physical_address)
-            .field("flags", &self.flags)
-            .field("idx", &self.idx)
-            .field("ring", &self.ring)
-            .field("used_event", &self.used_event)
-            .finish()
     }
 }
 
@@ -316,6 +309,7 @@ pub(super) struct VirtqAvailRingFlags {
 ///         le16 avail_event; /* Only if VIRTIO_F_EVENT_IDX */
 /// };
 /// ```
+#[derive(Debug)]
 pub(super) struct VirtqUsedRing {
     physical_address: u64,
 
@@ -398,17 +392,5 @@ impl VirtqUsedRing {
 
     fn get_used_elem(&self, idx: u16) -> VirtqUsedElem {
         self.ring.read(idx as usize)
-    }
-}
-
-impl fmt::Debug for VirtqUsedRing {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("VirtqUsedRing")
-            .field("physical_address", &self.physical_address)
-            .field("flags", &self.flags)
-            .field("idx", &self.idx)
-            .field("ring", &self.ring)
-            .field("avail_event", &self.avail_event)
-            .finish()
     }
 }

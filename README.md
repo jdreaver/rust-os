@@ -66,18 +66,17 @@ make test
 
 ## TODO
 
-- Fix virtio-rng device deadlock with mutex + interrupt (I didn't fix it last time. RwLock can still deadlock, duh)
-  - How do real device drivers do this? Do they disable interrupts?
-  - My gut says we should be able to not need a lock to read from a virtqueue. We just need to lock the fact we are processing.
-    - We want something that looks like a RwLock, but readers can read even if writers are locked.
-    - Maybe we can create two types that point to the same virtqueue memory. One can do writes, uses `&mut`, and needs to be wrapped in a mutex. The other can only do reads, uses `&`, and doesn't need a mutex. We could convert `RegisterRW`/`VolatileArrayRW` to the `RO` versions.
-      - Perhaps the `RW` `registers.rs` _should_ indeed use `&mut self` under this same principle? Maybe, maybe not.
 - Serial printing:
   - Allow inline template variables like `hello {x}`
 - Multi-tasking (see resources below)
 - Detect kernel stack overflows. Guard pages? Some other mechanism?
   - I need a huge stack for debug mode apparently. I was seeing stack overflows with a 4096 byte stack when running in debug mode, so I quadrupled it
 - HPET for timing (apparently better than Local APIC timer?)
+- VirtIO improvements:
+  - Locking: we need to lock writes (I think?), but we should be able to read from the queue without locking. This should be ergonomic. I don't necessarily want to bury a mutex deep in the code.
+    - Investigate how Linux or other OS virtio drivers do locking
+  - Ensure we don't accidentally reuse descriptors while we are waiting for a response from the device. Don't automatically just wrap around! This is what might require a mutex rather than just atomic integers?
+  - I think there is a race condition with the interrupts with the current non-locking mechanism. Ensure that if there are concurrent writes while an interrupt, then an interrupt won't miss a read (e.g. there will at least be a followup interrupt)
 - `registers.rs` and macros
   - Consider moving `registers.rs` stuff into dedicated crate with unit tests
   - Also document `registers.rs` stuff

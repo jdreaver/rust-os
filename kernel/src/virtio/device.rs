@@ -120,10 +120,6 @@ impl VirtIOInitializedDevice {
         self.virtqueues.get(index as usize)
     }
 
-    pub(super) fn get_virtqueue_mut(&mut self, index: u16) -> Option<&mut VirtQueue> {
-        self.virtqueues.get_mut(index as usize)
-    }
-
     pub(super) fn install_virtqueue_msix_handler(
         &mut self,
         virtqueue_index: u16,

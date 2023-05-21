@@ -54,7 +54,7 @@ struct VirtIORNG {
     /// behind a RwLock because we need to be able to write to it to request
     /// random numbers, and the interrupt handler needs to be able to read from
     /// it, potentially concurrently.
-    initialized_device: RwLock<VirtIOInitializedDevice>,
+    initialized_device: VirtIOInitializedDevice,
 
     /// How far into the used ring we've processed entries. Only used when
     /// reading from the RNG device and processing entries.
@@ -76,7 +76,7 @@ impl VirtIORNG {
         let initialized_device = VirtIOInitializedDevice::new(device_config);
 
         Self {
-            initialized_device: RwLock::new(initialized_device),
+            initialized_device,
             processed_used_index: Mutex::new(0),
         }
     }
@@ -84,20 +84,20 @@ impl VirtIORNG {
     fn enable_msix(&mut self, processor_id: u8) {
         let msix_table_id = 0;
         let handler_id = 1; // If we had multiple RNG devices, we could disambiguate them
-        self.initialized_device
-            .write()
-            .install_virtqueue_msix_handler(
-                Self::QUEUE_INDEX,
-                msix_table_id,
-                processor_id,
-                handler_id,
-                virtio_rng_interrupt,
-            );
+        self.initialized_device.install_virtqueue_msix_handler(
+            Self::QUEUE_INDEX,
+            msix_table_id,
+            processor_id,
+            handler_id,
+            virtio_rng_interrupt,
+        );
     }
 
     fn request_random_numbers(&self) {
-        let mut lock = self.initialized_device.write();
-        let virtq = lock.get_virtqueue_mut(Self::QUEUE_INDEX).unwrap();
+        let virtq = self
+            .initialized_device
+            .get_virtqueue(Self::QUEUE_INDEX)
+            .unwrap();
         let buffer_virt_addr = VirtAddr::new(ptr::addr_of!(VIRTIO_RNG_BUFFER) as u64);
         let buffer_phys_addr = memory::translate_addr(buffer_virt_addr)
             .expect("failed to get VirtIO RNG buffer physical address");
@@ -118,9 +118,11 @@ fn virtio_rng_interrupt(vector: u8, handler_id: InterruptHandlerID) {
 
     let rng_lock = VIRTIO_RNG.read();
     let rng = rng_lock.as_ref().expect("VirtIO RNG not initialized");
-    let device = rng.initialized_device.read();
 
-    let virtq = device.get_virtqueue(VirtIORNG::QUEUE_INDEX).unwrap();
+    let virtq = rng
+        .initialized_device
+        .get_virtqueue(VirtIORNG::QUEUE_INDEX)
+        .unwrap();
     let used_index = virtq.used_ring_index() - 1;
 
     let mut used_index_lock = rng.processed_used_index.lock();
