@@ -15,7 +15,6 @@ pc-keyboard = "0.5"
 pic8259 = "0.10"
 seq-macro = "0.3"
 spin = "0.9"
-uart_16550 = "0.2"
 uefi = "0.20"
 vesa_framebuffer = { path = "../crates/vesa_framebuffer" }
 x86_64 = "0.14"

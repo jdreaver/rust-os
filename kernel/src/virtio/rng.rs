@@ -23,7 +23,10 @@ pub(crate) fn try_init_virtio_rng(device_config: VirtIODeviceConfig) {
         return;
     }
 
-    assert!(!VIRTIO_RNG.read().is_some(), "VirtIO RNG already initialized");
+    assert!(
+        !VIRTIO_RNG.read().is_some(),
+        "VirtIO RNG already initialized"
+    );
 
     let mut virtio_rng = VirtIORNG::from_device(device_config);
     virtio_rng.enable_msix(0);

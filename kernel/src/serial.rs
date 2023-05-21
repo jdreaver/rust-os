@@ -1,55 +1,106 @@
 use core::fmt::Write;
 
 use lazy_static::lazy_static;
-use spin::Mutex;
-use uart_16550::SerialPort;
-use x86_64::instructions::interrupts;
+use x86_64::instructions::port::{PortRead, PortWrite};
 
-/// Simple wrapper around a serial port that implements the `Write` trait.
-/// Useful for use with the `write!` macro. We can't implement `Write` for
-/// `SerialPort` or `Mutex<SerialPort>` directly because we don't own those
-/// types.
-pub(crate) struct SerialWriter(Option<&'static Mutex<SerialPort>>);
+/// Serial port that can be written to, but not read from. This is useful for
+/// printing to the host from the guest without having to worry about
+/// synchronization, disabling interrupts, locking, etc.
+///
+/// See <https://wiki.osdev.org/Serial_Ports>
+struct WriteOnlySerialPort {
+    // data is technically read/write, but we only use it for writing
+    data: u16,
+    int_en: u16,
+    fifo_ctrl: u16,
+    line_ctrl: u16,
+    modem_ctrl: u16,
+    line_sts: u16,
+}
 
-impl Write for SerialWriter {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        let Some(writer) = self.0 else {
-            return Err(core::fmt::Error);
-        };
+impl WriteOnlySerialPort {
+    const COM1_PORT: u16 = 0x3F8;
 
-        // Disable interrupts while taking mutex lock so we don't deadlock if an
-        // interrupt occurs and the interrupt handler tries to take the same lock.
-        interrupts::without_interrupts(|| writer.lock().write_str(s))
+    const fn new() -> Self {
+        Self {
+            data: Self::COM1_PORT,
+            int_en: Self::COM1_PORT + 1,
+            fifo_ctrl: Self::COM1_PORT + 2,
+            line_ctrl: Self::COM1_PORT + 3,
+            modem_ctrl: Self::COM1_PORT + 4,
+            line_sts: Self::COM1_PORT + 5,
+        }
+    }
+
+    /// See <https://wiki.osdev.org/Serial_Ports> for init options
+    fn init(&self) {
+        unsafe {
+            // Disable interrupts
+            u8::write_to_port(self.int_en, 0x00);
+
+            // Enable DLAB
+            u8::write_to_port(self.line_ctrl, 0x80);
+
+            // Set maximum speed to 38400 bps by configuring DLL and DLM
+            u8::write_to_port(self.data, 0x03); // Low byte
+            u8::write_to_port(self.int_en, 0x00); // High byte
+
+            // Disable DLAB and set data word length to 8 bits, no parity, one
+            // stop bit
+            u8::write_to_port(self.line_ctrl, 0x03);
+
+            // Enable FIFO, clear them, with 14-byte threshold
+            u8::write_to_port(self.fifo_ctrl, 0xC7);
+
+            // Mark data terminal ready, signal request to send
+            // and enable auxilliary output #2 (used as interrupt line for CPU)
+            u8::write_to_port(self.modem_ctrl, 0x0B);
+
+            // Enable interrupts
+            //
+            // TODO: Do we even need interrupts?
+            u8::write_to_port(self.int_en, 0x01);
+        }
+    }
+
+    fn is_transmit_empty(&self) -> bool {
+        unsafe { u8::read_from_port(self.line_sts) & 0x20 != 0 }
+    }
+
+    fn write(&self, byte: u8) {
+        // Wait for line to clear
+        while !self.is_transmit_empty() {
+            core::hint::spin_loop();
+        }
+
+        unsafe {
+            u8::write_to_port(self.data, byte);
+        }
+    }
+
+    fn write_str(&self, s: &str) {
+        for byte in s.bytes() {
+            self.write(byte);
+        }
     }
 }
 
-// N.B. The only reason this is mutable is to satisfy the `Write` trait
-// implementation. Under the hood SERIAL1 is wrapping in a mutex.
-static mut SERIAL1_WRITER: SerialWriter = SerialWriter(None);
+/// This type exists just so we can use the `Write` trait. Useful for use with
+/// the `write!` macro. We don't want to implement `Write` directly on
+/// `WriteOnlySerialPort` because we don't want to have to make a global mutable
+/// reference to it.
+pub(crate) struct SerialWriter();
 
-/// Fetch the global serial writer for use in `write!` macros.
-///
-/// # Examples
-///
-/// ```
-/// writeln!(serial1_writer(), "Hello, world!");
-/// ```
-pub(crate) fn serial1_writer() -> &'static mut SerialWriter {
-    // This is safe because SerialWriter wraps a Mutex<SerialPort>. The only
-    // reason we do this is so we can use this in `write!` macros because the
-    // `Write` trait methods require a mutable reference.
-    unsafe { &mut SERIAL1_WRITER }
-}
-
-pub(crate) fn init_serial_writer() {
-    unsafe {
-        SERIAL1_WRITER = SerialWriter(Some(&SERIAL1));
+impl Write for SerialWriter {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        SERIAL1.write_str(s);
+        Ok(())
     }
 }
 
 lazy_static! {
-    static ref SERIAL1: Mutex<SerialPort> = {
-        let mut serial_port = unsafe { SerialPort::new(0x3F8) };
+    static ref SERIAL1: WriteOnlySerialPort = {
+        let serial_port = WriteOnlySerialPort::new();
         serial_port.init();
 
         // When running in UEFI, the OVMF firmware prints a ton of crap
@@ -71,19 +122,28 @@ lazy_static! {
         // - `[0m` resets all styles and colors
         // - `[H` moves the cursor to the top left
         // - `[J` clears the screen from the cursor down
-        serial_port.write_str("\x1B[0m\x1B[H\x1B[J").expect("Failed to set colors");
+        serial_port.write_str("\x1B[0m\x1B[H\x1B[J");
 
-        Mutex::new(serial_port)
+        serial_port
     };
+}
+
+/// Fetch the global serial writer for use in `write!` macros.
+///
+/// # Examples
+///
+/// ```
+/// writeln!(serial1_writer(), "Hello, world!");
+/// ```
+pub(crate) fn serial1_writer() -> SerialWriter {
+    SerialWriter()
 }
 
 #[doc(hidden)]
 pub(crate) fn _print(args: ::core::fmt::Arguments) {
-    unsafe {
-        SERIAL1_WRITER
-            .write_fmt(args)
-            .expect("Printing to serial failed");
-    }
+    serial1_writer()
+        .write_fmt(args)
+        .expect("Printing to serial failed");
 }
 
 /// Prints to the host through the serial interface.

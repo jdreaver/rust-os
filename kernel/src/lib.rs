@@ -49,8 +49,6 @@ use vesa_framebuffer::TextBuffer;
 static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
 
 pub fn start() -> ! {
-    serial::init_serial_writer();
-
     boot_info::init_boot_info();
     let boot_info_data = boot_info::boot_info();
 

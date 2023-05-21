@@ -66,7 +66,8 @@ make test
 
 ## TODO
 
-- Serial printing: figure out how to do this without disabling interrupts or taking locks. We can't print in many contexts because this re-enables interrupts.
+- Serial printing:
+  - Allow inline template variables like `hello {x}`
 - Multi-tasking (see resources below)
 - Debug why printing TASKS after first context switch causes double fault (when task name is printed, apparently)
   - Is it because `serial_println!` re-enables interrupts, but we are already in an interrupt handler so that is bad?
