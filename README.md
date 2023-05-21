@@ -36,6 +36,10 @@ In another terminal:
 make gdb
 ```
 
+Make sure to read resource section below on using GDB with QEMU! In particular,
+use `hbreak` instead of `break` to set a breakpoint before the kernel starts and
+has page tables set up.
+
 ## Debugging QEMU with GDB
 
 If you want to debug QEMU itself with GDB, you can run:
@@ -151,6 +155,13 @@ $ qemu-system-x86_64 -device virtio-rng-pci,help
 ```
 
 - <https://marz.utk.edu/my-courses/cosc562/qemu/>
+
+### GDB/Debugging
+
+- Using `break` in GDB doesn't work when QEMU first starts because the kernel has a higher-half mapping, and the addresses aren't mapped yet. Instead, use `hbreak`.
+  - <https://forum.osdev.org/viewtopic.php?f=13&t=39998>
+- <https://airbus-seclab.github.io/qemu_blog/brk.html>
+- <https://qemu-project.gitlab.io/qemu/system/gdb.html>
 
 ### Rust OS dev
 
