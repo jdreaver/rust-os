@@ -1,6 +1,7 @@
 #![no_std]
 #![feature(abi_x86_interrupt)]
 #![feature(allocator_api)]
+#![feature(naked_functions)]
 #![feature(strict_provenance)]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 #![allow(
@@ -37,6 +38,7 @@ pub(crate) mod memory;
 pub(crate) mod pci;
 #[allow(dead_code)] // This could be its own crate
 pub(crate) mod registers;
+pub(crate) mod scheduler;
 pub(crate) mod serial;
 pub(crate) mod strings;
 pub(crate) mod tests;
@@ -63,6 +65,10 @@ pub fn start() -> ! {
         );
     };
     heap::init().expect("failed to initialize heap");
+
+    unsafe {
+        scheduler::init();
+    };
 
     // N.B. Probing ACPI must happen after heap initialization because the Rust
     // `acpi` crate uses alloc. It would be nice to not need that...

@@ -29,34 +29,37 @@ ifeq ($(RUN_QEMU_GDB),yes)
 else
   # GTK is a much nicer display than SDL, but to compile QEMU with debug symbols
   # in Nix, we had to disable the GTK wrappers.
-  QEMU_ARGS += -display gtk,zoom-to-fit=on
+  QEMU_COMMON_ARGS += -display gtk,zoom-to-fit=on
 endif
 
 # Good reference for QEMU options: https://wiki.gentoo.org/wiki/QEMU/Options
 UEFI = on
 ifeq ($(UEFI),on)
   $(info UEFI is enabled)
-  QEMU_ARGS += -bios $(OVMF)
+  QEMU_COMMON_ARGS += -bios $(OVMF)
 else
   $(info UEFI is disabled)
 endif
 # Use virtio for the disk:
-QEMU_ARGS += -drive file=$(HDD),if=none,id=drive-virtio-disk0,format=raw -device virtio-blk-pci,scsi=off,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=0
-QEMU_ARGS += -smp 2 # Use 2 cores
-QEMU_ARGS += -vga virtio # More modern, better performance than default -vga std
+QEMU_COMMON_ARGS += -drive file=$(HDD),if=none,id=drive-virtio-disk0,format=raw -device virtio-blk-pci,scsi=off,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=0
+QEMU_COMMON_ARGS += -smp 2 # Use 2 cores
+QEMU_COMMON_ARGS += -vga virtio # More modern, better performance than default -vga std
+QEMU_COMMON_ARGS += -m 2G # More memory
+QEMU_COMMON_ARGS += -serial stdio # Add serial output to terminal
+QEMU_COMMON_ARGS += -device virtio-rng-pci-non-transitional # RNG is the simplest virtio device. Good for testing.
+
+QEMU_ARGS += $(QEMU_COMMON_ARGS)
 QEMU_ARGS += -M q35,accel=kvm # Use the q35 chipset. accel=kvm enables hardware acceleration, makes things way faster.
-QEMU_ARGS += -m 2G # More memory
-QEMU_ARGS += -serial stdio # Add serial output to terminal
-QEMU_ARGS += -device virtio-rng-pci-non-transitional # RNG is the simplest virtio device. Good for testing.
 
 .PHONY: run
 run: $(HDD)
 	$(QEMU) $(QEMU_ARGS)
 
 # N.B. Run `make run-debug` in one terminal, and `make gdb` in another.
-QEMU_DEBUG_ARGS += $(QEMU_ARGS)
+QEMU_DEBUG_ARGS += $(QEMU_COMMON_ARGS)
+QEMU_DEBUG_ARGS += -M q35 # Use the q35 chipset, but don't use kvm acceleration for debug mode because it makes logging interrupts give less info.
 QEMU_DEBUG_ARGS += -d int,cpu_reset,guest_errors # Log some unexpected things. Run qemu-system-x86_64 -d help to see more.
-# QEMU_DEBUG_ARGS += -M q35,accel=tcg # Disable hardware acceleration which makes logging interrupts give more info.
+
 .PHONY: run-debug
 run-debug: $(HDD)
 	qemu-system-x86_64 $(QEMU_DEBUG_ARGS) -s -S

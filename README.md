@@ -238,3 +238,4 @@ Other higher-level Linux resources:
 - <https://wiki.osdev.org/Kernel_Multitasking>
 - <https://samwho.dev/blog/context-switching-on-x86/>
   - Video that goes over this same xv6 code: [Operating Systems Lecture 25: Context switching in xv6](https://www.youtube.com/watch?v=fEnWqibCwo0)
+- <https://stackoverflow.com/questions/12630214/context-switch-internals>

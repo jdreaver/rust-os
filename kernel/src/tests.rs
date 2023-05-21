@@ -6,7 +6,7 @@ use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 use x86_64::structures::paging::{Size2MiB, Size4KiB};
 
-use crate::{acpi, boot_info, memory, pci, serial_println, virtio};
+use crate::{acpi, boot_info, hlt_loop, memory, pci, scheduler, serial_println, virtio};
 
 pub(crate) fn run_tests(
     boot_info_data: &boot_info::BootInfo,
@@ -57,13 +57,6 @@ pub(crate) fn run_tests(
     // Find VirtIO devices
     pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
         let Some(device_config) = virtio::VirtIODeviceConfig::from_pci_config(device) else { return; };
-        serial_println!("Found VirtIO device, initializing");
-
-        // let initialized_device =
-        //     virtio::VirtIOInitializedDevice::new(device_config, frame_allocator);
-        // serial_println!("VirtIO device initialized: {:#x?}", initialized_device);
-
-        // Try to hook up the RNG device
         virtio::try_init_virtio_rng(device_config);
     });
 
@@ -151,4 +144,19 @@ pub(crate) fn run_tests(
 
     // Test custom panic handler
     // panic!("Some panic message");
+
+    scheduler::push_task("task 1", task_1_test_task);
+    // scheduler::push_task("task 2", task_2_test_task);
+
+    scheduler::start_multitasking();
+}
+
+fn task_1_test_task() {
+    serial_println!("task 1 is running!");
+    hlt_loop();
+}
+
+fn task_2_test_task() {
+    serial_println!("task 2 is running!");
+    hlt_loop();
 }
