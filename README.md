@@ -68,6 +68,7 @@ make test
 
 - Multi-tasking (see resources below)
 - Debug why printing TASKS after first context switch causes double fault (when task name is printed, apparently)
+  - Also, we get a double fault when we type on the keyboard during while the tasks are switching back and forth
 - HPET for timing (apparently better than Local APIC timer?)
 - `registers.rs` and macros
   - Consider moving `registers.rs` stuff into dedicated crate with unit tests

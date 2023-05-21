@@ -116,6 +116,10 @@ impl VirtIOInitializedDevice {
         }
     }
 
+    pub(crate) fn get_virtqueue(&self, index: u16) -> Option<&VirtQueue> {
+        self.virtqueues.get(index as usize)
+    }
+
     pub(crate) fn get_virtqueue_mut(&mut self, index: u16) -> Option<&mut VirtQueue> {
         self.virtqueues.get_mut(index as usize)
     }
