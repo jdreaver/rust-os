@@ -278,3 +278,13 @@ Other higher-level Linux resources:
   - Video that goes over this same xv6 code: [Operating Systems Lecture 25: Context switching in xv6](https://www.youtube.com/watch?v=fEnWqibCwo0)
 - <https://stackoverflow.com/questions/12630214/context-switch-internals>
 - Excellent history of `switch_to` in Linux over the years <https://www.maizure.org/projects/evolution_x86_context_switch_linux/>
+
+### Clock sources and time
+
+- <https://www.kernel.org/doc/Documentation/virtual/kvm/timekeeping.txt>
+- <https://wiki.osdev.org/HPET>
+- <https://wiki.osdev.org/Timer_Interrupt_Sources>
+- <https://wiki.osdev.org/Time_And_Date>
+- <https://blog.trailofbits.com/2019/10/03/tsc-frequency-for-all-better-profiling-and-benchmarking/>
+- <https://en.wikipedia.org/wiki/Time_Stamp_Counter>
+- <https://en.wikipedia.org/wiki/High_Precision_Event_Timer>

@@ -32,6 +32,7 @@ pub(crate) mod apic;
 pub(crate) mod boot_info;
 pub(crate) mod gdt;
 pub(crate) mod heap;
+pub(crate) mod hpet;
 pub(crate) mod interrupts;
 pub(crate) mod keyboard;
 pub(crate) mod memory;
@@ -76,6 +77,10 @@ pub fn start() -> ! {
 
     let ioapic = apic::IOAPIC::from_acpi_info(&acpi_info);
     serial_println!("IO APIC: {ioapic:#x?}");
+
+    unsafe {
+        hpet::init(acpi_info.hpet_info().base_address);
+    };
 
     keyboard::init_keyboard(&ioapic);
 

@@ -2,7 +2,7 @@ use core::ptr::NonNull;
 
 use acpi::mcfg::{Mcfg, McfgEntry};
 use acpi::platform::interrupt::Apic;
-use acpi::{AcpiHandler, AcpiTable, AcpiTables, PhysicalMapping};
+use acpi::{AcpiHandler, AcpiTable, AcpiTables, HpetInfo, PhysicalMapping};
 use x86_64::PhysAddr;
 
 use crate::serial_println;
@@ -93,6 +93,10 @@ impl ACPIInfo {
             _ => panic!("truly unknown interrupt model {interrupt_model:?}"),
         }
     }
+
+    pub(crate) fn hpet_info(&self) -> HpetInfo {
+        HpetInfo::new(&self.tables).expect("failed to get HPET info")
+    }
 }
 
 pub(crate) fn print_acpi_info(info: &ACPIInfo) {
@@ -121,6 +125,9 @@ pub(crate) fn print_acpi_info(info: &ACPIInfo) {
 
     serial_println!("ACPI DSDT: {:#x?}", acpi_tables.dsdt);
     serial_println!("ACPI SSDTs: {:#x?}", acpi_tables.ssdts);
+
+    let hpet_info = info.hpet_info();
+    serial_println!("HPET info: {:#x?}", hpet_info);
 
     // This is another way of getting pci_config_region_base_address, kinda. I
     // don't know why this isn't exposed from the acpi crate.
