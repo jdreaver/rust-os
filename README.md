@@ -22,6 +22,27 @@ UEFI disabled (use BIOS):
 $ make run UEFI=off
 ```
 
+Add VGA graphics:
+
+```
+$ make run GRAPHICS=on
+```
+
+### QEMU interaction
+
+I tend to prefer
+[`-nographic`](https://www.qemu.org/docs/master/system/qemu-manpage.html#hxtool-3)
+mode (`GRAPHICS=off` in the Makefile, the default) because it is easier to
+interact with the QEMU monitor and there isn't a distracting window. Once I have
+actual graphics besides hello world VGA text I'll prefer the graphical window.
+
+Keybindings:
+- `-nographic` mode: <https://www.qemu.org/docs/master/system/mux-chardev.html>
+  - Specifically, press `Ctrl-a h` to see help
+- Graphical frontend: <https://www.qemu.org/docs/master/system/keys.html>
+  - Specifically, press `Ctrl+Alt+2` to get to QEMU monitor, and `Ctrl+Alt+1` to go back to OS's VGA output
+  - `Ctrl+Alt+g` to release captured mouse and keyboard
+
 ## Debugging kernel with GDB
 
 In one terminal:
@@ -70,10 +91,11 @@ make test
 
 ## TODO
 
+- HPET for timing (apparently better than Local APIC timer?)
 - Multi-tasking (see resources below)
+- Make a simple shell that runs hard-coded program names (not separate processes yet! Just inline code on the current thread)
 - Detect kernel stack overflows. Guard pages? Some other mechanism?
   - I need a huge stack for debug mode apparently. I was seeing stack overflows with a 4096 byte stack when running in debug mode, so I quadrupled it
-- HPET for timing (apparently better than Local APIC timer?)
 - VirtIO improvements:
   - Locking: we need to lock writes (I think?), but we should be able to read from the queue without locking. This should be ergonomic. I don't necessarily want to bury a mutex deep in the code.
     - Investigate how Linux or other OS virtio drivers do locking
