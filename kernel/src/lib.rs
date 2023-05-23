@@ -66,10 +66,6 @@ pub fn start() -> ! {
     };
     heap::init().expect("failed to initialize heap");
 
-    unsafe {
-        scheduler::init();
-    };
-
     // N.B. Probing ACPI must happen after heap initialization because the Rust
     // `acpi` crate uses alloc. It would be nice to not need that...
     let acpi_info = unsafe { acpi::ACPIInfo::from_rsdp(boot_info_data.rsdp_physical_addr()) };

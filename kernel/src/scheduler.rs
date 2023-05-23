@@ -6,18 +6,43 @@ use spin::Mutex;
 
 use crate::{hlt_loop, serial_println};
 
-static TASKS: Mutex<Option<VecDeque<Task>>> = Mutex::new(None);
+static RUN_QUEUE: Mutex<RunQueue> = Mutex::new(RunQueue::new());
 
-/// Initialize the scheduling subsystem.
-pub(crate) unsafe fn init() {
-    TASKS.lock().replace(VecDeque::new());
+struct RunQueue {
+    running_task: Option<Task>,
+    pending_tasks: VecDeque<Task>,
+}
+
+impl RunQueue {
+    const fn new() -> Self {
+        Self {
+            running_task: None,
+            pending_tasks: VecDeque::new(),
+        }
+    }
+
+    /// Moves the currently running task to the back of the queue (if it
+    /// exists). Returns the previously running tasks and next task to run.
+    fn set_next_pending_task_running(&mut self) -> (Option<&Task>, &Task) {
+        let prev_task = self.running_task.take();
+        let next_task = self
+            .pending_tasks
+            .pop_front()
+            .expect("no tasks to schedule!");
+        if let Some(prev_task) = prev_task {
+            self.pending_tasks.push_back(prev_task);
+        }
+        self.running_task.replace(next_task);
+        let prev_task = self.pending_tasks.back();
+        let next_task = self.running_task.as_ref().expect("no running task!");
+        (prev_task, next_task)
+    }
 }
 
 /// Pushes a task onto the task queue.
 pub(crate) fn push_task(name: &'static str, start_fn: fn() -> ()) {
-    let mut tasks = TASKS.lock();
     let task = Task::new(name, start_fn);
-    tasks.as_mut().unwrap().push_back(task);
+    RUN_QUEUE.lock().pending_tasks.push_back(task);
 }
 
 pub fn start_multitasking() {
@@ -35,9 +60,10 @@ pub fn start_multitasking() {
 
     // Just pick the next task in the queue and switch to it.
     let next_task_ptr = {
-        let lock = TASKS.lock();
-        let tasks = lock.as_ref().expect("scheduler not initialized!");
-        let next_task = tasks.front().expect("no tasks to schedule!");
+        // This lock must be dropped before we call `switch_to_task` or else
+        // we'll deadlock.
+        let mut queue = RUN_QUEUE.lock();
+        let (_, next_task) = queue.set_next_pending_task_running();
         next_task.kernel_stack_pointer.0
     };
     let current_task_ptr = core::ptr::addr_of!(current_task.kernel_stack_pointer.0);
@@ -51,39 +77,20 @@ pub(crate) fn run_scheduler() {
     // switch_to_task re-enables them as well.
     x86_64::instructions::interrupts::without_interrupts(|| {
         let (prev_stack_ptr, prev_name, next_stack_ptr, next_name) = {
-            // We only need to lock the task queue while we rearrange it.
-
-            let mut lock = TASKS.lock();
-            let tasks = lock.as_mut().expect("scheduler not initialized!");
-
-            // The current task is in the front of the queue. Move it to the
-            // back.
-            //
-            // TODO: There should be a much better way to get the current task, like
-            // putting it at the beginning or end of the kernel stack.
-            let prev_task = tasks.pop_front().expect("no tasks in the task queue!");
-            let prev_name = prev_task.name;
-            tasks.push_back(prev_task);
-
-            // Now that the task has been moved, we can safely get the address
-            // of the location where it stores its kernel stack pointer and we
-            // can know it will be stable when we call `switch_to_task`.
-            let prev_stack_ptr = core::ptr::addr_of!(
-                tasks
-                    .back()
-                    .expect("SHOULDN'T HAPPEN we just pushed this")
-                    .kernel_stack_pointer
-                    .0
-            );
-
-            // The next task is at the new front of the queue.
-            let next_task = tasks
-                .front()
-                .expect("SHOULDN'T HAPPEN: no second task in the task queue!");
-            let next_name = next_task.name;
+            // We only need to lock the task queue while we rearrange it. We
+            // must release this lock before we call `switch_to_task` or else it
+            // will never be released.
+            let mut queue = RUN_QUEUE.lock();
+            let (prev_task, next_task) = queue.set_next_pending_task_running();
+            let prev_task = prev_task.expect("no previous task");
+            let prev_stack_ptr = core::ptr::addr_of!(prev_task.kernel_stack_pointer.0);
             let next_stack_ptr = next_task.kernel_stack_pointer.0;
-
-            (prev_stack_ptr, prev_name, next_stack_ptr, next_name)
+            (
+                prev_stack_ptr,
+                prev_task.name,
+                next_stack_ptr,
+                next_task.name,
+            )
         };
 
         unsafe {

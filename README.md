@@ -100,6 +100,9 @@ make test
   - <https://docs.kernel.org/core-api/genericirq.html> mentions that a generic handler is hard b/c of APIC , IO/APIC, etc ACKs, which is why `__do_IRQ` no longer exists
 - Multi-tasking (see resources below)
 - Make a simple shell that runs hard-coded program names (not separate processes yet! Just inline code on the current thread)
+  - List PCI devices
+  - Show register values, internal structures, etc
+  - Run all tests, or run a subset of tests (maybe make testing its own little CLI sub command)
 - Detect kernel stack overflows. Guard pages? Some other mechanism?
   - I need a huge stack for debug mode apparently. I was seeing stack overflows with a 4096 byte stack when running in debug mode, so I quadrupled it
 - VirtIO improvements:
@@ -165,8 +168,8 @@ In the QEMU monitor (Ctrl+Alt+2 in a QEMU graphical window), these are useful
 for looking at devices:
 
 ```
-$ info pci
-$ info qtree
+(qemu) info pci
+(qemu) info qtree
 ```
 
 Finding QEMU device help
