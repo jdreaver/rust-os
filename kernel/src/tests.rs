@@ -162,6 +162,8 @@ pub(crate) fn run_tests(
 fn task_1_test_task() {
     loop {
         serial_println!("task 1 is running!");
+        let p = naive_nth_prime(2500);
+        serial_println!("Task 1 DONE: 2500th prime: {}", p);
         scheduler::run_scheduler();
     }
 }
@@ -169,7 +171,37 @@ fn task_1_test_task() {
 fn task_2_test_task() {
     loop {
         serial_println!("task 2 is running!");
+        let p = naive_nth_prime(3000);
+        serial_println!("Task 2 DONE: 3000th prime: {}", p);
         scheduler::run_scheduler();
+    }
+}
+
+fn naive_nth_prime(n: usize) -> usize {
+    fn is_prime(x: usize) -> bool {
+        for i in 2..x {
+            if x % i == 0 {
+                return false;
+            }
+        }
+        true
+    }
+
+    let mut i = 2;
+    let mut found_primes = 0;
+    loop {
+        i += 1;
+        if is_prime(i) {
+            found_primes += 1;
+            if found_primes == n {
+                return i;
+            }
+        }
+
+        // Temporarily insert a point where we yield
+        if found_primes % 500 == 0 {
+            scheduler::run_scheduler();
+        }
     }
 }
 
