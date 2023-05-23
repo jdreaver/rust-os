@@ -91,7 +91,10 @@ make test
 
 ## TODO
 
-- HPET for timing (apparently better than Local APIC timer?)
+- HPET
+  - Make IOAPIC a global after an `init()` so keyboard and HPET don't need it passed in
+  - Make HPET a global after `init()`
+  - Make function to hook up HPET handler with given milliseconds (convert to femtoseconds, make newtype for milliseconds)
 - Multi-tasking (see resources below)
 - Make a simple shell that runs hard-coded program names (not separate processes yet! Just inline code on the current thread)
 - Detect kernel stack overflows. Guard pages? Some other mechanism?
@@ -288,3 +291,4 @@ Other higher-level Linux resources:
 - <https://blog.trailofbits.com/2019/10/03/tsc-frequency-for-all-better-profiling-and-benchmarking/>
 - <https://en.wikipedia.org/wiki/Time_Stamp_Counter>
 - <https://en.wikipedia.org/wiki/High_Precision_Event_Timer>
+- <https://0xax.gitbooks.io/linux-insides/content/Timers/linux-timers-6.html>

@@ -79,7 +79,7 @@ pub fn start() -> ! {
     serial_println!("IO APIC: {ioapic:#x?}");
 
     unsafe {
-        hpet::init(acpi_info.hpet_info().base_address);
+        hpet::init(acpi_info.hpet_info().base_address, &ioapic);
     };
 
     keyboard::init_keyboard(&ioapic);

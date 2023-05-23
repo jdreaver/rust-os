@@ -1,14 +1,46 @@
 use bitfield_struct::bitfield;
 
+use crate::interrupts::InterruptHandlerID;
 use crate::registers::{RegisterRO, RegisterRW};
-use crate::{register_struct, serial_println};
+use crate::{apic, interrupts, register_struct, serial_println};
 
-pub(crate) unsafe fn init(hpet_apic_base_address: usize) {
+pub(crate) unsafe fn init(hpet_apic_base_address: usize, ioapic: &apic::IOAPIC) {
     let hpet = unsafe { HPET::from_base_address(hpet_apic_base_address) };
     serial_println!("HPET: {:#x?}", hpet);
 
+    // Set up the test handler to tick periodically
+    let test_timer_irq = interrupts::install_interrupt(123, test_hpet_interrupt_handler);
+    let test_timer_ioredtbl = apic::IOAPICRedirectionTableRegister::new()
+        .with_interrupt_vector(test_timer_irq)
+        .with_interrupt_mask(false)
+        .with_delivery_mode(0) // Fixed
+        .with_destination_mode(false) // Physical
+        .with_delivery_status(false)
+        .with_destination_field(ioapic.ioapic_id().id());
+
+    ioapic.write_ioredtbl(TEST_HPET_TIMER_IOAPIC_REDTBL_INDEX, test_timer_ioredtbl);
+    serial_println!(
+        "Test timer IOREDTBL: {:#x?}",
+        ioapic.read_ioredtbl(TEST_HPET_TIMER_IOAPIC_REDTBL_INDEX)
+    );
+
+    let interval_femtoseconds = 1_000_000_000_000_000; // 1000 milliseconds in femtoseconds
+    hpet.enable_periodic_timer(
+        0,
+        TEST_HPET_TIMER_IOAPIC_REDTBL_INDEX,
+        interval_femtoseconds,
+    );
+
     let first_timer = hpet.timer_registers(0);
     serial_println!("Timer 0: {:#x?}", first_timer);
+}
+
+/// Arbitrary IO/APIC interrupt number for the test HPET timer
+const TEST_HPET_TIMER_IOAPIC_REDTBL_INDEX: u8 = 9;
+
+fn test_hpet_interrupt_handler(_vector: u8, _handler_id: InterruptHandlerID) {
+    serial_println!("HPET interrupt fired");
+    apic::end_of_interrupt();
 }
 
 /// High Precision Event Timer. See <https://wiki.osdev.org/HPET>
@@ -38,6 +70,46 @@ impl HPET {
     fn timer_registers(&self, timer_number: u8) -> TimerRegisters {
         let offset: usize = 0x100 + timer_number as usize * 0x20;
         unsafe { TimerRegisters::from_address(self.registers.address + offset) }
+    }
+
+    /// Enables the given timer to fire interrupts periodically to the given
+    /// IO/APIC interrupt number with the given interval.
+    fn enable_periodic_timer(
+        &self,
+        timer_number: u8,
+        ioapic_interrupt_number: u8,
+        interval_femtoseconds: u64,
+    ) {
+        let hpet_caps = self.registers.general_capabilities_and_id().read();
+
+        let num_timers = hpet_caps.number_of_timers();
+        assert!(
+            timer_number < hpet_caps.number_of_timers(),
+            "HPET only has {num_timers} timers but got timer number {timer_number}"
+        );
+
+        // Ensure HPET is enabled
+        self.registers.general_configuration().modify_mut(|conf| {
+            conf.set_enabled(true);
+        });
+
+        // Configure timer
+
+        let timer = self.timer_registers(timer_number);
+        timer.config_and_cap().modify_mut(|conf| {
+            assert!(
+                conf.periodic_interrupt_capable(),
+                "tried to enable_periodic_timer on timer {timer_number} but it does not support periodic mode"
+            );
+
+            conf.set_is_periodic(true);
+            conf.set_interrupt_enabled(true);
+            conf.set_interrupt_route(ioapic_interrupt_number);
+        });
+
+        let hpet_period = hpet_caps.counter_clock_period();
+        let comparator_value = interval_femtoseconds / u64::from(hpet_period);
+        timer.comparator_value().write(comparator_value);
     }
 }
 
