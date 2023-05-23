@@ -1,3 +1,5 @@
+use core::fmt;
+
 use bitfield_struct::bitfield;
 use spin::RwLock;
 
@@ -43,6 +45,32 @@ impl Milliseconds {
     fn femtoseconds(&self) -> u64 {
         self.0 * 1_000_000_000_000
     }
+
+    fn from_femtoseconds(femtoseconds: u64) -> Self {
+        Self(femtoseconds / 1_000_000_000_000)
+    }
+}
+
+impl fmt::Display for Milliseconds {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}ms", self.0)
+    }
+}
+
+/// Returns the number of milliseconds since the HPET was initialized.
+///
+/// TODO: We should probably ensure the HPET can't be reset if we are relying on
+/// this.
+pub(crate) fn elapsed_milliseconds() -> Milliseconds {
+    let lock = HPET.read();
+    let hpet = lock.as_ref().expect("HPET not initialized");
+
+    let caps = hpet.registers.general_capabilities_and_id().read();
+    let interval_femtoseconds = caps.counter_clock_period();
+
+    let tick = hpet.registers.main_counter_value().read();
+
+    Milliseconds::from_femtoseconds(tick * u64::from(interval_femtoseconds))
 }
 
 /// High Precision Event Timer. See <https://wiki.osdev.org/HPET>
