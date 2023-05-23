@@ -75,21 +75,19 @@ pub fn start() -> ! {
     let acpi_info = unsafe { acpi::ACPIInfo::from_rsdp(boot_info_data.rsdp_physical_addr()) };
 
     apic::init_local_apic(&acpi_info);
-
-    let ioapic = ioapic::IOAPIC::from_acpi_info(&acpi_info);
-    serial_println!("IO APIC: {ioapic:#x?}");
+    ioapic::init(&acpi_info);
 
     unsafe {
         hpet::init(acpi_info.hpet_info().base_address);
     };
 
-    keyboard::init_keyboard(&ioapic);
+    keyboard::init_keyboard();
 
     // TODO: Initialize TEXT_BUFFER better so we don't need unsafe.
     let text_buffer = unsafe { &mut TEXT_BUFFER };
     tests::run_tests(boot_info_data, &acpi_info, text_buffer);
 
-    hpet::init_test_timer(&ioapic);
+    hpet::init_test_timer();
 
     hlt_loop()
 }

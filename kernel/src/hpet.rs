@@ -13,22 +13,10 @@ pub(crate) unsafe fn init(hpet_apic_base_address: usize) {
     HPET.write().replace(hpet);
 }
 
-pub(crate) fn init_test_timer(ioapic: &ioapic::IOAPIC) {
+pub(crate) fn init_test_timer() {
     // Set up the test handler to tick periodically
-    let test_timer_irq = interrupts::install_interrupt(123, test_hpet_interrupt_handler);
-    let test_timer_ioredtbl = ioapic::IOAPICRedirectionTableRegister::new()
-        .with_interrupt_vector(test_timer_irq)
-        .with_interrupt_mask(false)
-        .with_delivery_mode(0) // Fixed
-        .with_destination_mode(false) // Physical
-        .with_delivery_status(false)
-        .with_destination_field(ioapic.ioapic_id().id());
-
-    ioapic.write_ioredtbl(TEST_HPET_TIMER_IOAPIC_REDTBL_INDEX, test_timer_ioredtbl);
-    serial_println!(
-        "Test timer IOREDTBL: {:#x?}",
-        ioapic.read_ioredtbl(TEST_HPET_TIMER_IOAPIC_REDTBL_INDEX)
-    );
+    let interrupt_vector = interrupts::install_interrupt(123, test_hpet_interrupt_handler);
+    ioapic::install_irq(interrupt_vector, TEST_HPET_TIMER_IOAPIC_REDTBL_INDEX);
 
     let lock = HPET.read();
     let hpet = lock.as_ref().expect("HPET not initialized");

@@ -6,21 +6,9 @@ use x86_64::instructions::port::Port;
 use crate::interrupts::InterruptHandlerID;
 use crate::{apic, interrupts, ioapic, serial_println};
 
-pub(crate) fn init_keyboard(ioapic: &ioapic::IOAPIC) {
-    let kbd_irq = interrupts::install_interrupt(1, keyboard_interrupt_handler);
-    let kbd_ioredtbl = ioapic::IOAPICRedirectionTableRegister::new()
-        .with_interrupt_vector(kbd_irq)
-        .with_interrupt_mask(false)
-        .with_delivery_mode(0) // Fixed
-        .with_destination_mode(false) // Physical
-        .with_delivery_status(false)
-        .with_destination_field(ioapic.ioapic_id().id());
-
-    ioapic.write_ioredtbl(KEYBOARD_IOAPIC_REDTBL_INDEX, kbd_ioredtbl);
-    serial_println!(
-        "Keyboard IOREDTBL: {:#x?}",
-        ioapic.read_ioredtbl(KEYBOARD_IOAPIC_REDTBL_INDEX)
-    );
+pub(crate) fn init_keyboard() {
+    let interrupt_vector = interrupts::install_interrupt(1, keyboard_interrupt_handler);
+    ioapic::install_irq(interrupt_vector, KEYBOARD_IOAPIC_REDTBL_INDEX);
 }
 
 /// Assumes that the keyboard IRQ for the IOAPIC is 1, which is the same as if

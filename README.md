@@ -94,7 +94,6 @@ make test
 - Make clippy happy again
 - Have APIC handlers automatically call `apic::end_of_interrupt();`
 - HPET
-  - Make IOAPIC a global after an `init()` so keyboard and HPET don't need it passed in
   - Make IOAPIC IRQ numbers an enum for better safety
   - Throw an error if IOAPIC enum assigned to twice
   - Make function to hook up HPET handler with given milliseconds (convert to femtoseconds, make newtype for milliseconds)

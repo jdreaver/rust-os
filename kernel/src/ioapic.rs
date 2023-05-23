@@ -1,21 +1,46 @@
 use core::fmt;
 
 use bitfield_struct::bitfield;
+use spin::RwLock;
 
 use crate::acpi::ACPIInfo;
-use crate::register_struct;
 use crate::registers::RegisterRW;
+use crate::{register_struct, serial_println};
+
+static IOAPIC: RwLock<Option<IOAPIC>> = RwLock::new(None);
+
+pub(crate) fn init(acpi_info: &ACPIInfo) {
+    let ioapic = IOAPIC::from_acpi_info(acpi_info);
+    serial_println!("IO APIC: {ioapic:#x?}");
+    IOAPIC.write().replace(ioapic);
+}
+
+pub(crate) fn install_irq(interrupt_vector: u8, irq_entry: u8) {
+    let lock = IOAPIC.read();
+    let ioapic = lock.as_ref().expect("IOAPIC not initialized!");
+
+    ioapic.write_ioredtbl(
+        irq_entry,
+        IOAPICRedirectionTableRegister::new()
+            .with_interrupt_vector(interrupt_vector)
+            .with_interrupt_mask(false)
+            .with_delivery_mode(0) // Fixed
+            .with_destination_mode(false) // Physical
+            .with_delivery_status(false)
+            .with_destination_field(ioapic.ioapic_id().id()),
+    );
+}
 
 /// See <https://wiki.osdev.org/IOAPIC>
 #[derive(Clone)]
-pub(crate) struct IOAPIC {
+struct IOAPIC {
     id: u8,
     global_system_interrupt_base: u32,
     registers: IOAPICRegisters,
 }
 
 impl IOAPIC {
-    pub(crate) fn from_acpi_info(acpi_info: &ACPIInfo) -> Self {
+    fn from_acpi_info(acpi_info: &ACPIInfo) -> Self {
         let apic_info = acpi_info.apic_info();
         let io_apic = apic_info
             .io_apics
@@ -63,19 +88,19 @@ impl IOAPIC {
     /// a write to the APICID Register (same data is loaded into both). This
     /// register must be programmed with the correct ID value before using the
     /// IOAPIC for message transmission.
-    pub(crate) fn ioapic_id(&self) -> IOAPICID {
+    fn ioapic_id(&self) -> IOAPICID {
         let raw = self.read_32_bit_register(IOAPIC_ID_REGISTER_OFFSET);
         IOAPICID::from(raw)
     }
 
     /// See "3.2.2. IOAPICVER—IOAPIC VERSION REGISTER"
-    pub(crate) fn ioapic_version(&self) -> IOAPICVersion {
+    fn ioapic_version(&self) -> IOAPICVersion {
         let raw = self.read_32_bit_register(IOAPIC_VERSION_REGISTER_OFFSET);
         IOAPICVersion::from(raw)
     }
 
     /// See "3.2.4. 82093AA (IOAPIC) IOREDTBL[23:0]—I/O REDIRECTION TABLE REGISTERS"
-    pub(crate) fn read_ioredtbl(&self, entry: u8) -> IOAPICRedirectionTableRegister {
+    fn read_ioredtbl(&self, entry: u8) -> IOAPICRedirectionTableRegister {
         // Intel IOAPIC only has 24 entries
         assert!(entry < 24, "Intel IOAPIC only has 24 entries!");
         let offset = IOAPIC_REDIRECTION_TABLE_REGISTER_OFFSET + (entry * 2);
@@ -84,7 +109,7 @@ impl IOAPIC {
     }
 
     /// See "3.2.4. 82093AA (IOAPIC) IOREDTBL[23:0]—I/O REDIRECTION TABLE REGISTERS"
-    pub(crate) fn write_ioredtbl(&self, entry: u8, value: IOAPICRedirectionTableRegister) {
+    fn write_ioredtbl(&self, entry: u8, value: IOAPICRedirectionTableRegister) {
         // Intel IOAPIC only has 24 entries
         assert!(entry < 24, "Intel IOAPIC only has 24 entries!");
         let offset = IOAPIC_REDIRECTION_TABLE_REGISTER_OFFSET + (entry * 2);
@@ -109,7 +134,7 @@ impl fmt::Debug for IOAPIC {
 register_struct!(
     /// See <https://wiki.osdev.org/IOAPIC> and "82093AA I/O ADVANCED
     /// PROGRAMMABLE INTERRUPT CONTROLLER (IOAPIC) (1996)"
-    pub(crate) IOAPICRegisters {
+    IOAPICRegisters {
         0x00 => io_register_select: RegisterRW<u8>,
         0x10 => io_window: RegisterRW<u32>,
     }
@@ -119,11 +144,11 @@ const IOAPIC_ID_REGISTER_OFFSET: u8 = 0x00;
 
 #[bitfield(u32)]
 /// See "3.2.1.IOAPICID—IOAPIC IDENTIFICATION REGISTER"
-pub(crate) struct IOAPICID {
+struct IOAPICID {
     #[bits(24)]
     __reserved: u32,
     #[bits(4)]
-    pub(crate) id: u8,
+    id: u8,
     #[bits(4)]
     __reserved: u8,
 }
@@ -132,7 +157,7 @@ const IOAPIC_VERSION_REGISTER_OFFSET: u8 = 0x01;
 
 #[bitfield(u32)]
 /// See "3.2.2. IOAPICVER—IOAPIC VERSION REGISTER"
-pub(crate) struct IOAPICVersion {
+struct IOAPICVersion {
     version: u8,
     __reserved: u8,
     max_redirection_entry: u8,
@@ -143,17 +168,17 @@ const IOAPIC_REDIRECTION_TABLE_REGISTER_OFFSET: u8 = 0x10;
 
 #[bitfield(u64)]
 /// See "3.2.4. 82093AA (IOAPIC) IOREDTBL[23:0]—I/O REDIRECTION TABLE REGISTERS"
-pub(crate) struct IOAPICRedirectionTableRegister {
-    pub(crate) interrupt_vector: u8,
+struct IOAPICRedirectionTableRegister {
+    interrupt_vector: u8,
     #[bits(3)]
-    pub(crate) delivery_mode: u8,
-    pub(crate) destination_mode: bool,
-    pub(crate) delivery_status: bool,
-    pub(crate) interrupt_input_pin_polarity: bool,
-    pub(crate) remote_irr: bool,
-    pub(crate) trigger_mode: bool,
-    pub(crate) interrupt_mask: bool,
+    delivery_mode: u8,
+    destination_mode: bool,
+    delivery_status: bool,
+    interrupt_input_pin_polarity: bool,
+    remote_irr: bool,
+    trigger_mode: bool,
+    interrupt_mask: bool,
     #[bits(39)]
     __reserved: u64,
-    pub(crate) destination_field: u8,
+    destination_field: u8,
 }
