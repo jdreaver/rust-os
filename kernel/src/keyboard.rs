@@ -4,11 +4,11 @@ use spin::Mutex;
 use x86_64::instructions::port::Port;
 
 use crate::interrupts::InterruptHandlerID;
-use crate::{apic, interrupts, serial_println};
+use crate::{apic, interrupts, ioapic, serial_println};
 
-pub(crate) fn init_keyboard(ioapic: &apic::IOAPIC) {
+pub(crate) fn init_keyboard(ioapic: &ioapic::IOAPIC) {
     let kbd_irq = interrupts::install_interrupt(1, keyboard_interrupt_handler);
-    let kbd_ioredtbl = apic::IOAPICRedirectionTableRegister::new()
+    let kbd_ioredtbl = ioapic::IOAPICRedirectionTableRegister::new()
         .with_interrupt_vector(kbd_irq)
         .with_interrupt_mask(false)
         .with_delivery_mode(0) // Fixed

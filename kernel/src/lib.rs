@@ -34,6 +34,7 @@ pub(crate) mod gdt;
 pub(crate) mod heap;
 pub(crate) mod hpet;
 pub(crate) mod interrupts;
+pub(crate) mod ioapic;
 pub(crate) mod keyboard;
 pub(crate) mod memory;
 pub(crate) mod pci;
@@ -75,7 +76,7 @@ pub fn start() -> ! {
 
     apic::init_local_apic(&acpi_info);
 
-    let ioapic = apic::IOAPIC::from_acpi_info(&acpi_info);
+    let ioapic = ioapic::IOAPIC::from_acpi_info(&acpi_info);
     serial_println!("IO APIC: {ioapic:#x?}");
 
     unsafe {

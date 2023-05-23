@@ -3,7 +3,7 @@ use spin::RwLock;
 
 use crate::interrupts::InterruptHandlerID;
 use crate::registers::{RegisterRO, RegisterRW};
-use crate::{apic, interrupts, register_struct, serial_println};
+use crate::{apic, interrupts, ioapic, register_struct, serial_println};
 
 static HPET: RwLock<Option<HPET>> = RwLock::new(None);
 
@@ -13,10 +13,10 @@ pub(crate) unsafe fn init(hpet_apic_base_address: usize) {
     HPET.write().replace(hpet);
 }
 
-pub(crate) fn init_test_timer(ioapic: &apic::IOAPIC) {
+pub(crate) fn init_test_timer(ioapic: &ioapic::IOAPIC) {
     // Set up the test handler to tick periodically
     let test_timer_irq = interrupts::install_interrupt(123, test_hpet_interrupt_handler);
-    let test_timer_ioredtbl = apic::IOAPICRedirectionTableRegister::new()
+    let test_timer_ioredtbl = ioapic::IOAPICRedirectionTableRegister::new()
         .with_interrupt_vector(test_timer_irq)
         .with_interrupt_mask(false)
         .with_delivery_mode(0) // Fixed
