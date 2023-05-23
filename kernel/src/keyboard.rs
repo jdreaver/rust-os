@@ -45,6 +45,4 @@ fn keyboard_interrupt_handler(_vector: u8, _handler_id: InterruptHandlerID) {
             }
         }
     }
-
-    apic::end_of_interrupt();
 }

@@ -37,7 +37,6 @@ const TEST_HPET_TIMER_IOAPIC_REDTBL_INDEX: u8 = 9;
 
 fn test_hpet_interrupt_handler(_vector: u8, _handler_id: InterruptHandlerID) {
     serial_println!("HPET interrupt fired");
-    apic::end_of_interrupt();
 }
 
 /// High Precision Event Timer. See <https://wiki.osdev.org/HPET>

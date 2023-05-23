@@ -147,6 +147,4 @@ fn virtio_rng_interrupt(vector: u8, handler_id: InterruptHandlerID) {
     }
 
     *used_index_lock = used_index;
-
-    apic::end_of_interrupt();
 }

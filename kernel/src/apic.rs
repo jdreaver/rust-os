@@ -1,5 +1,5 @@
 use bitfield_struct::bitfield;
-use spin::Mutex;
+use spin::RwLock;
 
 use crate::acpi::ACPIInfo;
 use crate::interrupts::SPURIOUS_INTERRUPT_VECTOR_INDEX;
@@ -12,21 +12,21 @@ use crate::registers::{RegisterRO, RegisterRW, RegisterWO};
 /// It might seem weird to have a single global static because there is a
 /// local APIC per CPU. However, since we never remap the local APIC
 /// address, the address is the same for all CPUs.
-static LOCAL_APIC: Mutex<Option<LocalAPIC>> = Mutex::new(None);
+static LOCAL_APIC: RwLock<Option<LocalAPIC>> = RwLock::new(None);
 
 pub(crate) fn init_local_apic(acpi_info: &ACPIInfo) {
     let mut local_apic = LocalAPIC::from_acpi_info(acpi_info);
     local_apic.enable();
-    LOCAL_APIC.lock().replace(local_apic);
+    LOCAL_APIC.write().replace(local_apic);
 
-    crate::serial_println!("DEBUG: Local APIC: {:#x?}", LOCAL_APIC.lock());
+    crate::serial_println!("DEBUG: Local APIC: {:#x?}", LOCAL_APIC.read());
 }
 
 /// See "11.8.5 Signaling Interrupt Servicing Completion" in the Intel 64 Manual
 /// Volume 3.
 pub(crate) fn end_of_interrupt() {
     LOCAL_APIC
-        .lock()
+        .read()
         .as_ref()
         .expect("Local APIC not initialized")
         .end_of_interrupt();

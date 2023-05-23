@@ -92,7 +92,6 @@ make test
 ## TODO
 
 - Make clippy happy again
-- Have APIC handlers automatically call `apic::end_of_interrupt();`
 - HPET
   - Make IOAPIC IRQ numbers an enum for better safety
   - Throw an error if IOAPIC enum assigned to twice

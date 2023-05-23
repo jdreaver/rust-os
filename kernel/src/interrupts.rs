@@ -4,7 +4,7 @@ use seq_macro::seq;
 use spin::Mutex;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
-use crate::{gdt, serial_println};
+use crate::{apic, gdt, serial_println};
 
 /// CPU exception interrupt vectors stop at 32.
 const FIRST_EXTERNAL_INTERRUPT_VECTOR: usize = 32;
@@ -48,6 +48,7 @@ fn common_external_interrupt_handler(vector: u8) {
         .get(vector as usize)
         .expect("Invalid interrupt vector");
     handler(vector, interrupt_id);
+    apic::end_of_interrupt();
 }
 
 fn default_external_interrupt_handler(vector: u8, interrupt_id: InterruptHandlerID) {
@@ -58,6 +59,8 @@ fn default_external_interrupt_handler(vector: u8, interrupt_id: InterruptHandler
 /// using the same function.
 pub(crate) type InterruptHandlerID = u32;
 
+/// Function called by `common_external_interrupt_handler`. Installed with
+/// `install_interrupt`.
 pub(crate) type InterruptHandler = fn(vector: u8, InterruptHandlerID);
 
 /// Holds the interrupt handlers for external interrupts. This is a static
