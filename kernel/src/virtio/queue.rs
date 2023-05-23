@@ -1,4 +1,3 @@
-use core::fmt;
 use core::mem;
 use core::sync::atomic::AtomicU16;
 
@@ -218,7 +217,7 @@ pub(super) struct VirtqDescriptorFlags {
 pub(super) struct VirtqAvailRing {
     physical_address: u64,
 
-    flags: RegisterRW<VirtqAvailRingFlags>,
+    _flags: RegisterRW<VirtqAvailRingFlags>,
 
     /// idx field indicates where the driver would put the next descriptor entry
     /// in the ring (modulo the queue size). This starts at 0, and increases.
@@ -227,7 +226,7 @@ pub(super) struct VirtqAvailRing {
     ring: VolatileArrayRW<u16>,
 
     /// Only if VIRTIO_F_EVENT_IDX
-    used_event: RegisterRW<u16>,
+    _used_event: RegisterRW<u16>,
 }
 
 impl VirtqAvailRing {
@@ -263,10 +262,10 @@ impl VirtqAvailRing {
 
         Ok(Self {
             physical_address,
-            flags,
+            _flags: flags,
             idx,
             ring,
-            used_event,
+            _used_event: used_event,
         })
     }
 
@@ -313,7 +312,7 @@ pub(super) struct VirtqAvailRingFlags {
 pub(super) struct VirtqUsedRing {
     physical_address: u64,
 
-    flags: RegisterRW<VirtqUsedRingFlags>,
+    _flags: RegisterRW<VirtqUsedRingFlags>,
 
     /// idx field indicates where the device would put the next descriptor entry
     /// in the ring (modulo the queue size). This starts at 0, and increases.
@@ -322,7 +321,7 @@ pub(super) struct VirtqUsedRing {
     ring: VolatileArrayRW<VirtqUsedElem>,
 
     /// Only if VIRTIO_F_EVENT_IDX
-    avail_event: RegisterRW<u16>,
+    _avail_event: RegisterRW<u16>,
 }
 
 #[bitfield(u16)]
@@ -379,10 +378,10 @@ impl VirtqUsedRing {
 
         Ok(Self {
             physical_address,
-            flags,
+            _flags: flags,
             idx,
             ring,
-            avail_event,
+            _avail_event: avail_event,
         })
     }
 

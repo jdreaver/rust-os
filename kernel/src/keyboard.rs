@@ -4,7 +4,7 @@ use spin::Mutex;
 use x86_64::instructions::port::Port;
 
 use crate::interrupts::InterruptHandlerID;
-use crate::{apic, interrupts, ioapic, serial_println};
+use crate::{interrupts, ioapic, serial_println};
 
 pub(crate) fn init_keyboard() {
     let interrupt_vector = interrupts::install_interrupt(1, keyboard_interrupt_handler);

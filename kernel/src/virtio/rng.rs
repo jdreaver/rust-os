@@ -4,7 +4,7 @@ use spin::{Mutex, RwLock};
 use x86_64::VirtAddr;
 
 use crate::interrupts::InterruptHandlerID;
-use crate::{apic, memory, serial_println};
+use crate::{memory, serial_println};
 
 use super::device::VirtIOInitializedDevice;
 use super::queue::VirtqDescriptorFlags;

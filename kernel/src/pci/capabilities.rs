@@ -214,10 +214,6 @@ impl MSIXTable {
         }
     }
 
-    pub(super) fn table_size(&self) -> u16 {
-        self.table_size
-    }
-
     pub(super) fn entry(&self, index: usize) -> MSIXTableEntry {
         assert!(
             index < self.table_size as usize,
@@ -322,12 +318,17 @@ pub(crate) struct MSIXVectorControl {
     pub(crate) st_upper: u8,
 }
 
+// MSIXPBA isn't used for anything yet, but it's here for completeness.
+//
+// TODO: Remove the #[allow(dead_code)] here and on the impl when we use it.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub(super) struct MSIXPBA {
     address: usize,
     pba_size: u16,
 }
 
+#[allow(dead_code)]
 impl MSIXPBA {
     pub(super) unsafe fn new(address: usize, pba_size: u16) -> Self {
         Self { address, pba_size }

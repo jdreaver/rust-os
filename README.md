@@ -91,7 +91,6 @@ make test
 
 ## TODO
 
-- Make clippy happy again
 - IOAPIC: Make IOAPIC IRQ numbers an enum for better safety, and throw an error if IOAPIC enum assigned to twice
   - Or, perhaps we dynamically assign these for the ones that don't need to be well-known, like the keyboard one
 - Investigate if we should be doing `apic::end_of_interrupt` for handlers on their behalf or not.
@@ -137,9 +136,6 @@ make test
     - I'm pretty sure there is just one SATA controller for multiple drives
   - Example <https://github.com/rafalh/rust-fatfs>
   - <https://wiki.osdev.org/FAT>
-- Serial print deadlock during interrupt: if we hit an interrupt while we are in
-  the middle of printing to the serial port, and the interrupt needs to print to
-  the serial port, we can deadlock.
 - Allocator designs <https://os.phil-opp.com/allocator-designs/>
 - UEFI. I have it kind of set up, but I should poke at it more, and also investigate the Limine UEFI system table stuff
 - Tests
@@ -297,3 +293,5 @@ Other higher-level Linux resources:
 - <https://en.wikipedia.org/wiki/Time_Stamp_Counter>
 - <https://en.wikipedia.org/wiki/High_Precision_Event_Timer>
 - <https://0xax.gitbooks.io/linux-insides/content/Timers/linux-timers-6.html>
+- <https://stackoverflow.com/questions/51919219/determine-tsc-frequency-on-linux>
+- <https://stackoverflow.com/questions/13772567/how-to-get-the-cpu-cycle-count-in-x86-64-from-c/51907627#51907627>

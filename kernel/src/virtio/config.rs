@@ -22,7 +22,7 @@ pub(crate) struct VirtIODeviceConfig {
     pci_type0_config: PCIDeviceConfigType0,
 
     common_virtio_config: VirtIOPCICommonConfigRegisters,
-    isr: VirtIOPCIISRRegisters,
+    _isr: VirtIOPCIISRRegisters,
     notify_config: VirtIONotifyConfig,
 }
 
@@ -101,7 +101,7 @@ impl VirtIODeviceConfig {
             pci_config,
             pci_type0_config,
             common_virtio_config,
-            isr,
+            _isr: isr,
             notify_config,
         })
     }

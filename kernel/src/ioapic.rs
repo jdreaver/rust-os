@@ -61,6 +61,7 @@ impl IOAPIC {
     }
 
     /// Reads a 64 IOAPIC register by reading two 32 bit registers.
+    #[allow(dead_code)] // TODO: Remove once used
     fn read_64_bit_register(&self, register: u8) -> u64 {
         let low = self.read_32_bit_register(register);
         let high = self.read_32_bit_register(register + 1);
@@ -100,6 +101,7 @@ impl IOAPIC {
     }
 
     /// See "3.2.4. 82093AA (IOAPIC) IOREDTBL[23:0]—I/O REDIRECTION TABLE REGISTERS"
+    #[allow(dead_code)] // TODO: Remove once used
     fn read_ioredtbl(&self, entry: u8) -> IOAPICRedirectionTableRegister {
         // Intel IOAPIC only has 24 entries
         assert!(entry < 24, "Intel IOAPIC only has 24 entries!");

@@ -50,7 +50,7 @@ pub(crate) fn run_scheduler() {
     // Disable interrupts while we mess around with the task queue. Note that
     // switch_to_task re-enables them as well.
     x86_64::instructions::interrupts::without_interrupts(|| {
-        let (prev_stack_ptr, next_stack_ptr) = {
+        let (prev_stack_ptr, prev_name, next_stack_ptr, next_name) = {
             // We only need to lock the task queue while we rearrange it.
 
             let mut lock = TASKS.lock();
@@ -62,6 +62,7 @@ pub(crate) fn run_scheduler() {
             // TODO: There should be a much better way to get the current task, like
             // putting it at the beginning or end of the kernel stack.
             let prev_task = tasks.pop_front().expect("no tasks in the task queue!");
+            let prev_name = prev_task.name;
             tasks.push_back(prev_task);
 
             // Now that the task has been moved, we can safely get the address
@@ -79,9 +80,10 @@ pub(crate) fn run_scheduler() {
             let next_task = tasks
                 .front()
                 .expect("SHOULDN'T HAPPEN: no second task in the task queue!");
+            let next_name = next_task.name;
             let next_stack_ptr = next_task.kernel_stack_pointer.0;
 
-            (prev_stack_ptr, next_stack_ptr)
+            (prev_stack_ptr, prev_name, next_stack_ptr, next_name)
         };
 
         unsafe {
@@ -91,7 +93,7 @@ pub(crate) fn run_scheduler() {
                 return;
             }
             serial_println!(
-                "SCHEDULER: Switching from {:#x?} (@ {:?}) to {:#x?}",
+                "SCHEDULER: Switching from '{prev_name}' SP: {:#x?} (@ {:?}) to '{next_name}' SP: {:#x?}",
                 *prev_stack_ptr,
                 prev_stack_ptr,
                 next_stack_ptr
@@ -106,7 +108,7 @@ pub(crate) fn run_scheduler() {
 pub(crate) struct Task {
     name: &'static str,
     kernel_stack_pointer: TaskKernelStackPointer,
-    kernel_stack: Box<[u8; KERNEL_STACK_SIZE]>,
+    _kernel_stack: Box<[u8; KERNEL_STACK_SIZE]>,
 }
 
 /// All kernel stacks have the same, constant size.
@@ -141,7 +143,7 @@ impl Task {
         Self {
             name,
             kernel_stack_pointer,
-            kernel_stack,
+            _kernel_stack: kernel_stack,
         }
     }
 }

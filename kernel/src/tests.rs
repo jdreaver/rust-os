@@ -177,5 +177,6 @@ fn task_2_test_task() {
 const TEST_HPET_TIMER_IOAPIC_IRQ_NUMBER: u8 = 9;
 
 fn test_hpet_interrupt_handler(_vector: u8, _handler_id: interrupts::InterruptHandlerID) {
-    serial_println!("Test HPET interrupt fired");
+    let ms_since_boot = hpet::elapsed_milliseconds();
+    serial_println!("Test HPET interrupt fired. Time since boot: {ms_since_boot}");
 }

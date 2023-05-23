@@ -11,11 +11,11 @@ static mut BOOT_INFO: Option<BootInfo> = None;
 
 #[derive(Debug)]
 pub(crate) struct BootInfo {
-    pub(crate) info_name: &'static str,
-    pub(crate) info_version: &'static str,
+    pub(crate) _info_name: &'static str,
+    pub(crate) _info_version: &'static str,
     pub(crate) higher_half_direct_map_offset: VirtAddr,
-    pub(crate) kernel_address_physical_base: PhysAddr,
-    pub(crate) kernel_address_virtual_base: VirtAddr,
+    pub(crate) _kernel_address_physical_base: PhysAddr,
+    pub(crate) _kernel_address_virtual_base: VirtAddr,
     pub(crate) efi_system_table_address: Option<VirtAddr>,
     rsdp_address: Option<VirtAddr>,
     pub(crate) framebuffer: &'static mut limine::LimineFramebuffer,
@@ -53,11 +53,11 @@ pub(crate) fn init_boot_info() {
     let framebuffer = limine_framebuffer();
 
     let boot_info = BootInfo {
-        info_name,
-        info_version,
+        _info_name: info_name,
+        _info_version: info_version,
         higher_half_direct_map_offset,
-        kernel_address_physical_base: PhysAddr::new(kernel_address.physical_base),
-        kernel_address_virtual_base: VirtAddr::new(kernel_address.virtual_base),
+        _kernel_address_physical_base: PhysAddr::new(kernel_address.physical_base),
+        _kernel_address_virtual_base: VirtAddr::new(kernel_address.virtual_base),
         efi_system_table_address: limine_efi_system_table_address(),
         rsdp_address: limine_rsdp_address(),
         framebuffer,

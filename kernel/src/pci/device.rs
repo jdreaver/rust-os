@@ -505,7 +505,7 @@ impl<const N: usize> fmt::Debug for BARAddresses<N> {
 pub(crate) struct MSIXConfig {
     capability: MSIXCapability,
     table: MSIXTable,
-    pba: MSIXPBA,
+    _pba: MSIXPBA,
 }
 
 impl MSIXConfig {
@@ -537,7 +537,7 @@ impl MSIXConfig {
         Self {
             capability,
             table,
-            pba,
+            _pba: pba,
         }
     }
 
@@ -548,10 +548,6 @@ impl MSIXConfig {
             .modify_mut(|control| {
                 control.set_enable(true);
             });
-    }
-
-    pub(crate) fn table_size(&self) -> u16 {
-        self.table.table_size()
     }
 
     pub(crate) fn table_entry(&self, index: usize) -> MSIXTableEntry {
