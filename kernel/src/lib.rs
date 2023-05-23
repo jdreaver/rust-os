@@ -79,7 +79,7 @@ pub fn start() -> ! {
     serial_println!("IO APIC: {ioapic:#x?}");
 
     unsafe {
-        hpet::init(acpi_info.hpet_info().base_address, &ioapic);
+        hpet::init(acpi_info.hpet_info().base_address);
     };
 
     keyboard::init_keyboard(&ioapic);
@@ -87,6 +87,8 @@ pub fn start() -> ! {
     // TODO: Initialize TEXT_BUFFER better so we don't need unsafe.
     let text_buffer = unsafe { &mut TEXT_BUFFER };
     tests::run_tests(boot_info_data, &acpi_info, text_buffer);
+
+    hpet::init_test_timer(&ioapic);
 
     hlt_loop()
 }

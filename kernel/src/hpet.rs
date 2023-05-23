@@ -1,13 +1,19 @@
 use bitfield_struct::bitfield;
+use spin::RwLock;
 
 use crate::interrupts::InterruptHandlerID;
 use crate::registers::{RegisterRO, RegisterRW};
 use crate::{apic, interrupts, register_struct, serial_println};
 
-pub(crate) unsafe fn init(hpet_apic_base_address: usize, ioapic: &apic::IOAPIC) {
+static HPET: RwLock<Option<HPET>> = RwLock::new(None);
+
+pub(crate) unsafe fn init(hpet_apic_base_address: usize) {
     let hpet = unsafe { HPET::from_base_address(hpet_apic_base_address) };
     serial_println!("HPET: {:#x?}", hpet);
+    HPET.write().replace(hpet);
+}
 
+pub(crate) fn init_test_timer(ioapic: &apic::IOAPIC) {
     // Set up the test handler to tick periodically
     let test_timer_irq = interrupts::install_interrupt(123, test_hpet_interrupt_handler);
     let test_timer_ioredtbl = apic::IOAPICRedirectionTableRegister::new()
@@ -23,6 +29,9 @@ pub(crate) unsafe fn init(hpet_apic_base_address: usize, ioapic: &apic::IOAPIC) 
         "Test timer IOREDTBL: {:#x?}",
         ioapic.read_ioredtbl(TEST_HPET_TIMER_IOAPIC_REDTBL_INDEX)
     );
+
+    let lock = HPET.read();
+    let hpet = lock.as_ref().expect("HPET not initialized");
 
     let interval_femtoseconds = 1_000_000_000_000_000; // 1000 milliseconds in femtoseconds
     hpet.enable_periodic_timer(
