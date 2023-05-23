@@ -1,9 +1,9 @@
 use bitfield_struct::bitfield;
 use spin::RwLock;
 
-use crate::interrupts::InterruptHandlerID;
+use crate::interrupts::{InterruptHandler, InterruptHandlerID};
 use crate::registers::{RegisterRO, RegisterRW};
-use crate::{apic, interrupts, ioapic, register_struct, serial_println};
+use crate::{interrupts, ioapic, register_struct, serial_println};
 
 static HPET: RwLock<Option<HPET>> = RwLock::new(None);
 
@@ -13,30 +13,36 @@ pub(crate) unsafe fn init(hpet_apic_base_address: usize) {
     HPET.write().replace(hpet);
 }
 
-pub(crate) fn init_test_timer() {
-    // Set up the test handler to tick periodically
-    let interrupt_vector = interrupts::install_interrupt(123, test_hpet_interrupt_handler);
-    ioapic::install_irq(interrupt_vector, TEST_HPET_TIMER_IOAPIC_REDTBL_INDEX);
+pub(crate) fn enable_periodic_timer_handler(
+    handler_id: InterruptHandlerID,
+    handler: InterruptHandler,
+    ioapic_irq_number: u8,
+    timer_number: u8,
+    interval: &Milliseconds,
+) {
+    let interrupt_vector = interrupts::install_interrupt(handler_id, handler);
+    ioapic::install_irq(interrupt_vector, ioapic_irq_number);
 
     let lock = HPET.read();
     let hpet = lock.as_ref().expect("HPET not initialized");
 
-    let interval_femtoseconds = 1_000_000_000_000_000; // 1000 milliseconds in femtoseconds
-    hpet.enable_periodic_timer(
-        0,
-        TEST_HPET_TIMER_IOAPIC_REDTBL_INDEX,
-        interval_femtoseconds,
-    );
+    let interval_femtoseconds = interval.femtoseconds();
+    hpet.enable_periodic_timer(timer_number, ioapic_irq_number, interval_femtoseconds);
 
-    let first_timer = hpet.timer_registers(0);
-    serial_println!("Timer 0: {:#x?}", first_timer);
+    let timer = hpet.timer_registers(timer_number);
+    serial_println!("intalled HPET timer {timer_number}: {timer:#x?}");
 }
 
-/// Arbitrary IO/APIC interrupt number for the test HPET timer
-const TEST_HPET_TIMER_IOAPIC_REDTBL_INDEX: u8 = 9;
+pub(crate) struct Milliseconds(u64);
 
-fn test_hpet_interrupt_handler(_vector: u8, _handler_id: InterruptHandlerID) {
-    serial_println!("HPET interrupt fired");
+impl Milliseconds {
+    pub(crate) fn new(milliseconds: u64) -> Self {
+        Self(milliseconds)
+    }
+
+    fn femtoseconds(&self) -> u64 {
+        self.0 * 1_000_000_000_000
+    }
 }
 
 /// High Precision Event Timer. See <https://wiki.osdev.org/HPET>
@@ -84,7 +90,7 @@ impl HPET {
             "HPET only has {num_timers} timers but got timer number {timer_number}"
         );
 
-        // Ensure HPET is enabled
+        // Ensure HPET is enabled (TODO: Should we do this on `init()`?)
         self.registers.general_configuration().modify_mut(|conf| {
             conf.set_enabled(true);
         });

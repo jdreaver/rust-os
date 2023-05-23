@@ -87,8 +87,6 @@ pub fn start() -> ! {
     let text_buffer = unsafe { &mut TEXT_BUFFER };
     tests::run_tests(boot_info_data, &acpi_info, text_buffer);
 
-    hpet::init_test_timer();
-
     hlt_loop()
 }
 

@@ -92,10 +92,13 @@ make test
 ## TODO
 
 - Make clippy happy again
-- HPET
-  - Make IOAPIC IRQ numbers an enum for better safety
-  - Throw an error if IOAPIC enum assigned to twice
-  - Make function to hook up HPET handler with given milliseconds (convert to femtoseconds, make newtype for milliseconds)
+- IOAPIC: Make IOAPIC IRQ numbers an enum for better safety, and throw an error if IOAPIC enum assigned to twice
+  - Or, perhaps we dynamically assign these for the ones that don't need to be well-known, like the keyboard one
+- Investigate if we should be doing `apic::end_of_interrupt` for handlers on their behalf or not.
+  - Consider the timer when we do scheduling. I think we want to call EOI _before_ the end of the timer handler, because we will be calling `schedule()` and we will be off to a new process
+    - This is what Linux does. It calls `schedule()` in the "exit" part of an interrupt handler. Maybe that is where we should put it: in the common handler routing after ACK'ing the interrupt.
+  - Linux uses spin locks for each IRQ, as well as masking interrupts but telling the APIC it got the interrupt <https://www.oreilly.com/library/view/understanding-the-linux/0596005652/ch04s06.html>
+  - <https://docs.kernel.org/core-api/genericirq.html> mentions that a generic handler is hard b/c of APIC , IO/APIC, etc ACKs, which is why `__do_IRQ` no longer exists
 - Multi-tasking (see resources below)
 - Make a simple shell that runs hard-coded program names (not separate processes yet! Just inline code on the current thread)
 - Detect kernel stack overflows. Guard pages? Some other mechanism?
@@ -260,6 +263,7 @@ How linux does things:
   - [`DEFINE_IDTENTRY_IRQ` def](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/include/asm/idtentry.h#L191)
 
 Other higher-level Linux resources:
+- Great overview <https://www.kernel.org/doc/html/latest/core-api/genericirq.html>
 - <https://github.com/torvalds/linux/blob/bb7c241fae6228e89c0286ffd6f249b3b0dea225/arch/x86/include/asm/irq_vectors.h>
   - They _statically_ define what each IDT entry will do (though some are generic, like 32..127 being for device interrupts)
   - `SPURIOUS_APIC_VECTOR = 0xff`, they do this too <https://github.com/torvalds/linux/blob/bb7c241fae6228e89c0286ffd6f249b3b0dea225/arch/x86/include/asm/irq_vectors.h#L53-L61>
