@@ -75,6 +75,13 @@ pub fn start() -> ! {
 
     keyboard::init_keyboard();
 
+    // Try to init VirtIO RNG device, if it exists
+    let pci_config_region_base_address = acpi_info.pci_config_region_base_address();
+    pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
+        let Some(device_config) = virtio::VirtIODeviceConfig::from_pci_config(device) else { return; };
+        virtio::try_init_virtio_rng(device_config);
+    });
+
     shell::run_serial_shell();
 }
 

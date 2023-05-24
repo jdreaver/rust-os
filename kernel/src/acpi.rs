@@ -119,7 +119,9 @@ impl AcpiHandler for IdentityMapAcpiHandler {
     }
 }
 
-pub(crate) fn print_acpi_info(info: &ACPIInfo) {
+pub(crate) fn print_acpi_info() {
+    let info = acpi_info();
+
     let acpi_tables = &info.tables;
     let platform_info = acpi_tables
         .platform_info()

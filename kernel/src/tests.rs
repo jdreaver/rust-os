@@ -6,7 +6,7 @@ use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 use x86_64::structures::paging::{Size2MiB, Size4KiB};
 
-use crate::{acpi, boot_info, hpet, interrupts, memory, pci, scheduler, serial_println, virtio};
+use crate::{boot_info, hpet, interrupts, memory, scheduler, serial_println, virtio};
 
 static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
 
@@ -48,21 +48,6 @@ pub(crate) fn run_tests() {
     writeln!(text_buffer, "World!").expect("failed to write to text buffer");
 
     text_buffer.flush(&mut framebuffer);
-
-    let acpi_info = acpi::acpi_info();
-    acpi::print_acpi_info(acpi_info);
-    let pci_config_region_base_address = acpi_info.pci_config_region_base_address();
-
-    // Iterate over PCI devices
-    pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
-        serial_println!("Found PCI device: {device:#x?}");
-    });
-
-    // Find VirtIO devices
-    pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
-        let Some(device_config) = virtio::VirtIODeviceConfig::from_pci_config(device) else { return; };
-        virtio::try_init_virtio_rng(device_config);
-    });
 
     // Request some VirtIO RNG bytes
     virtio::request_random_numbers();

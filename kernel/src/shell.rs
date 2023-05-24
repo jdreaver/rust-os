@@ -1,6 +1,6 @@
 use spin::Mutex;
 
-use crate::{serial, serial_print, serial_println, tests};
+use crate::{acpi, pci, serial, serial_print, serial_println, tests, virtio};
 
 static NEXT_COMMAND_BUFFER: Mutex<ShellBuffer<64>> = Mutex::new(ShellBuffer::new());
 
@@ -109,6 +109,9 @@ fn reset_terminal_line() {
 enum Command<'a> {
     Help,
     Tests,
+    ListPCI,
+    PrintACPI,
+    RNG,
     Invalid,
     Unknown(&'a str),
 }
@@ -121,6 +124,9 @@ fn next_command(buffer: &mut [u8]) -> Option<Command> {
         "" => None,
         "help" => Some(Command::Help),
         "tests" => Some(Command::Tests),
+        "list-pci" => Some(Command::ListPCI),
+        "print-acpi" => Some(Command::PrintACPI),
+        "rng" => Some(Command::RNG),
         s => Some(Command::Unknown(s)),
     }
 }
@@ -136,6 +142,22 @@ fn run_command(command: &Command) {
         }
         Command::Invalid => {
             serial_println!("Invalid command");
+        }
+        Command::ListPCI => {
+            serial_println!("Listing PCI devices...");
+            let acpi_info = acpi::acpi_info();
+            let pci_config_region_base_address = acpi_info.pci_config_region_base_address();
+            pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
+                serial_println!("Found PCI device: {device:#x?}");
+            });
+        }
+        Command::PrintACPI => {
+            serial_println!("Printing ACPI info...");
+            acpi::print_acpi_info();
+        }
+        Command::RNG => {
+            serial_println!("Generating random numbers...");
+            virtio::request_random_numbers();
         }
         Command::Unknown(command) => {
             serial_println!("Unknown command: {}", command);

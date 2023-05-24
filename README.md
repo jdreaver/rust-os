@@ -91,6 +91,7 @@ make test
 
 ## TODO
 
+- RNG: Adding `rng` command to shell uncovered bug where interrupt doesn't fire twice. Do we need to reset something somewhere? MSI-X? ACK something?
 - IOAPIC: Make IOAPIC IRQ numbers an enum for better safety, and throw an error if IOAPIC enum assigned to twice
   - Or, perhaps we dynamically assign these for the ones that don't need to be well-known, like the keyboard one
 - Investigate if we should be doing `apic::end_of_interrupt` for handlers on their behalf or not.
@@ -100,11 +101,10 @@ make test
   - <https://docs.kernel.org/core-api/genericirq.html> mentions that a generic handler is hard b/c of APIC , IO/APIC, etc ACKs, which is why `__do_IRQ` no longer exists
 - Multi-tasking (see resources below)
 - Make a simple shell that runs hard-coded program names (not separate processes yet! Just inline code on the current thread)
-  - List PCI devices
   - Integrate with multi-tasking. Make a new task for the thing being run, and the shell's task simply waits for the sub-task to complete.
   - Show register values, internal structures, etc
   - Have help be meaningful
-  - Split up tests
+  - Split up tests and have subcommands like `test all` (all can be optional) `test interrupts`, `test memory-mappings`, etc
 - Detect kernel stack overflows. Guard pages? Some other mechanism?
   - I need a huge stack for debug mode apparently. I was seeing stack overflows with a 4096 byte stack when running in debug mode, so I quadrupled it
 - VirtIO improvements:
