@@ -2,6 +2,7 @@ use core::mem;
 use core::sync::atomic::AtomicU16;
 
 use bitfield_struct::bitfield;
+use x86_64::PhysAddr;
 
 use crate::memory;
 use crate::memory::AllocZeroedBufferError;
@@ -56,7 +57,7 @@ impl VirtQueue {
     /// See "2.7.13 Supplying Buffers to The Device"
     pub(super) fn add_buffer(
         &self,
-        buffer_addr: u64,
+        buffer_addr: PhysAddr,
         buffer_len: u32,
         flags: VirtqDescriptorFlags,
     ) {
@@ -94,7 +95,7 @@ const VIRTQ_USED_ALIGN: usize = 4;
 #[derive(Debug)]
 pub(super) struct VirtqDescriptorTable {
     /// The physical address for the queue's descriptor table.
-    physical_address: u64,
+    physical_address: PhysAddr,
 
     /// Index into the next open descriptor slot.
     ///
@@ -121,10 +122,9 @@ impl VirtqDescriptorTable {
         // VirtIO buffers must be physically contiguous, and they use physical
         // addresses.
         let physical_address =
-            memory::allocate_physically_contiguous_zeroed_buffer(mem_size, VIRTQ_DESC_ALIGN)?
-                .as_u64();
+            memory::allocate_physically_contiguous_zeroed_buffer(mem_size, VIRTQ_DESC_ALIGN)?;
 
-        let descriptors = VolatileArrayRW::new(physical_address as usize, queue_size);
+        let descriptors = VolatileArrayRW::new(physical_address.as_u64() as usize, queue_size);
 
         Ok(Self {
             physical_address,
@@ -133,7 +133,7 @@ impl VirtqDescriptorTable {
         })
     }
 
-    pub(super) fn physical_address(&self) -> u64 {
+    pub(super) fn physical_address(&self) -> PhysAddr {
         self.physical_address
     }
 
@@ -151,7 +151,7 @@ impl VirtqDescriptorTable {
 
     fn add_descriptor(
         &self,
-        buffer_addr: u64,
+        buffer_addr: PhysAddr,
         buffer_len: u32,
         flags: VirtqDescriptorFlags,
     ) -> u16 {
@@ -179,7 +179,7 @@ impl VirtqDescriptorTable {
 #[repr(C)]
 pub(super) struct VirtqDescriptor {
     /// Physical address for the buffer.
-    pub(super) addr: u64,
+    pub(super) addr: PhysAddr,
     /// Length of the buffer, in bytes.
     pub(super) len: u32,
     pub(super) flags: VirtqDescriptorFlags,
@@ -221,7 +221,7 @@ pub(super) struct VirtqDescriptorFlags {
 /// ```
 #[derive(Debug)]
 pub(super) struct VirtqAvailRing {
-    physical_address: u64,
+    physical_address: PhysAddr,
 
     _flags: RegisterRW<VirtqAvailRingFlags>,
 
@@ -257,14 +257,14 @@ impl VirtqAvailRing {
         // VirtIO buffers must be physically contiguous, and they use physical
         // addresses.
         let physical_address =
-            memory::allocate_physically_contiguous_zeroed_buffer(struct_size, VIRTQ_AVAIL_ALIGN)?
-                .as_u64();
+            memory::allocate_physically_contiguous_zeroed_buffer(struct_size, VIRTQ_AVAIL_ALIGN)?;
 
-        let flags = RegisterRW::from_address(physical_address as usize + flags_offset);
-        let idx = RegisterRW::from_address(physical_address as usize + idx_offset);
-        let ring_address = physical_address as usize + ring_offset;
+        let phys_addr_usize = physical_address.as_u64() as usize;
+        let flags = RegisterRW::from_address(phys_addr_usize + flags_offset);
+        let idx = RegisterRW::from_address(phys_addr_usize + idx_offset);
+        let ring_address = phys_addr_usize + ring_offset;
         let ring = VolatileArrayRW::new(ring_address, queue_size);
-        let used_event = RegisterRW::from_address(physical_address as usize + used_event_offset);
+        let used_event = RegisterRW::from_address(phys_addr_usize + used_event_offset);
 
         Ok(Self {
             physical_address,
@@ -275,7 +275,7 @@ impl VirtqAvailRing {
         })
     }
 
-    pub(super) fn physical_address(&self) -> u64 {
+    pub(super) fn physical_address(&self) -> PhysAddr {
         self.physical_address
     }
 
@@ -320,7 +320,7 @@ pub(super) struct VirtqAvailRingFlags {
 /// ```
 #[derive(Debug)]
 pub(super) struct VirtqUsedRing {
-    physical_address: u64,
+    physical_address: PhysAddr,
 
     _flags: RegisterRW<VirtqUsedRingFlags>,
 
@@ -377,14 +377,14 @@ impl VirtqUsedRing {
         // VirtIO buffers must be physically contiguous, and they use physical
         // addresses.
         let physical_address =
-            memory::allocate_physically_contiguous_zeroed_buffer(struct_size, VIRTQ_USED_ALIGN)?
-                .as_u64();
+            memory::allocate_physically_contiguous_zeroed_buffer(struct_size, VIRTQ_USED_ALIGN)?;
 
-        let flags = RegisterRW::from_address(physical_address as usize + flags_offset);
-        let idx = RegisterRW::from_address(physical_address as usize + idx_offset);
-        let ring_address = physical_address as usize + ring_offset;
+        let phys_addr_usize = physical_address.as_u64() as usize;
+        let flags = RegisterRW::from_address(phys_addr_usize + flags_offset);
+        let idx = RegisterRW::from_address(phys_addr_usize + idx_offset);
+        let ring_address = phys_addr_usize + ring_offset;
         let ring = VolatileArrayRW::new(ring_address, queue_size);
-        let avail_event = RegisterRW::from_address(physical_address as usize + avail_event_offset);
+        let avail_event = RegisterRW::from_address(phys_addr_usize + avail_event_offset);
 
         Ok(Self {
             physical_address,
@@ -395,7 +395,7 @@ impl VirtqUsedRing {
         })
     }
 
-    pub(super) fn physical_address(&self) -> u64 {
+    pub(super) fn physical_address(&self) -> PhysAddr {
         self.physical_address
     }
 

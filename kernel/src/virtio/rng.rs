@@ -103,7 +103,7 @@ impl VirtIORNG {
             .expect("failed to get VirtIO RNG buffer physical address");
         let buffer_size = core::mem::size_of_val(&VIRTIO_RNG_BUFFER);
         let flags = VirtqDescriptorFlags::new().with_device_write(true);
-        virtq.add_buffer(buffer_phys_addr.as_u64(), buffer_size as u32, flags);
+        virtq.add_buffer(buffer_phys_addr, buffer_size as u32, flags);
     }
 }
 
@@ -136,7 +136,7 @@ fn virtio_rng_interrupt(vector: u8, handler_id: InterruptHandlerID) {
         // created, but let's pretend we didn't know that.
         let buffer = unsafe {
             core::slice::from_raw_parts(
-                descriptor.addr as *const u8,
+                descriptor.addr.as_u64() as *const u8,
                 // NOTE: Using the length from the used entry, not the buffer
                 // length, b/c the RNG device might not have written the whole
                 // thing!

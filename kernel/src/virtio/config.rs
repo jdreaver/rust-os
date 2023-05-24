@@ -294,9 +294,9 @@ register_struct!(
         0x1A => queue_msix_vector: RegisterRW<u16>,
         0x1C => queue_enable: RegisterRW<u16>,
         0x1E => queue_notify_off: RegisterRO<u16>,
-        0x20 => queue_desc: RegisterRW<u64>,
-        0x28 => queue_driver: RegisterRW<u64>,
-        0x30 => queue_device: RegisterRW<u64>,
+        0x20 => queue_desc: RegisterRW<PhysAddr>,
+        0x28 => queue_driver: RegisterRW<PhysAddr>,
+        0x30 => queue_device: RegisterRW<PhysAddr>,
         0x38 => queue_notify_data: RegisterRO<u16>,
         0x3A => queue_reset: RegisterRW<u16>,
     }
