@@ -13,7 +13,7 @@ use super::config::VirtIONotifyConfig;
 #[derive(Debug)]
 pub(super) struct VirtQueue {
     /// The queue's location in the device's virtqueue array.
-    index: u16,
+    index: VirtQueueIndex,
 
     /// Device's notification config, inlined here to compute the notification
     /// address. See "4.1.4.4 Notification structure layout".
@@ -28,9 +28,15 @@ pub(super) struct VirtQueue {
     used_ring: VirtqUsedRing,
 }
 
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+/// The virtqueue's index within a device's virtqueue array. That is, the
+/// virtqueue "number" for that device.
+pub(super) struct VirtQueueIndex(pub(super) u16);
+
 impl VirtQueue {
     pub(super) fn new(
-        index: u16,
+        index: VirtQueueIndex,
         device_notify_config: VirtIONotifyConfig,
         notify_offset: u16,
         descriptors: VirtqDescriptorTable,

@@ -7,7 +7,7 @@ use crate::interrupts::InterruptHandlerID;
 use crate::{memory, serial_println};
 
 use super::device::VirtIOInitializedDevice;
-use super::queue::VirtqDescriptorFlags;
+use super::queue::{VirtQueueIndex, VirtqDescriptorFlags};
 use super::VirtIODeviceConfig;
 
 static VIRTIO_RNG: RwLock<Option<VirtIORNG>> = RwLock::new(None);
@@ -63,7 +63,7 @@ struct VirtIORNG {
 
 impl VirtIORNG {
     // There is just a single virtqueue
-    const QUEUE_INDEX: u16 = 0;
+    const QUEUE_INDEX: VirtQueueIndex = VirtQueueIndex(0);
     const VENDOR_IDS: [u16; 2] = [0x1005, 0x1044];
 
     fn from_device(device_config: VirtIODeviceConfig) -> Self {

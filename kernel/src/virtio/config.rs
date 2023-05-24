@@ -11,6 +11,8 @@ use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW};
 use crate::serial_println;
 
+use super::queue::VirtQueueIndex;
+
 /// Holds the configuration for a VirtIO device.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct VirtIODeviceConfig {
@@ -287,7 +289,7 @@ register_struct!(
         0x14 => device_status: RegisterRW<VirtIOConfigStatus>,
         0x15 => config_generation: RegisterRO<u8>,
 
-        0x16 => queue_select: RegisterRW<u16>,
+        0x16 => queue_select: RegisterRW<VirtQueueIndex>,
         0x18 => queue_size: RegisterRW<u16>,
         0x1A => queue_msix_vector: RegisterRW<u16>,
         0x1C => queue_enable: RegisterRW<u16>,
@@ -379,7 +381,11 @@ impl VirtIONotifyConfig {
     ///
     /// Caller must ensure that `queue_notify_offset` and `queue_index` are
     /// valid.
-    pub(super) unsafe fn notify_device(&self, queue_notify_offset: u16, queue_index: u16) {
+    pub(super) unsafe fn notify_device(
+        &self,
+        queue_notify_offset: u16,
+        queue_index: VirtQueueIndex,
+    ) {
         // TODO: Check if VIRTIO_F_NOTIFICATION_DATA has been negotiated or not.
         // This function currently assumes it has been negotiated.
 
@@ -388,7 +394,7 @@ impl VirtIONotifyConfig {
         // an available buffer notification to the device by writing the 16-bit
         // virtqueue index of this virtqueue to the Queue Notify address.
         let notify_addr = self.queue_notify_address(queue_notify_offset);
-        let notify_ptr = notify_addr.as_u64() as *mut u16;
+        let notify_ptr = notify_addr.as_u64() as *mut VirtQueueIndex;
         unsafe {
             notify_ptr.write_volatile(queue_index);
         }

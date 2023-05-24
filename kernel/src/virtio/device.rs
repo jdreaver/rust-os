@@ -4,7 +4,9 @@ use crate::interrupts::{InterruptHandler, InterruptHandlerID};
 use crate::{interrupts, serial_println};
 
 use super::config::{VirtIOConfigStatus, VirtIODeviceConfig};
-use super::queue::{VirtQueue, VirtqAvailRing, VirtqDescriptorTable, VirtqUsedRing};
+use super::queue::{
+    VirtQueue, VirtQueueIndex, VirtqAvailRing, VirtqDescriptorTable, VirtqUsedRing,
+};
 
 #[derive(Debug)]
 pub(super) struct VirtIOInitializedDevice {
@@ -81,7 +83,8 @@ impl VirtIOInitializedDevice {
         let num_queues = config.num_queues().read();
         let mut virtqueues = Vec::with_capacity(num_queues as usize);
         for i in 0..num_queues {
-            config.queue_select().write(i);
+            let idx = VirtQueueIndex(i);
+            config.queue_select().write(idx);
 
             let queue_size = config.queue_size().read();
 
@@ -105,7 +108,7 @@ impl VirtIOInitializedDevice {
             config.queue_enable().write(1);
 
             virtqueues.push(VirtQueue::new(
-                i,
+                idx,
                 device_config.notify_config(),
                 config.queue_notify_off().read(),
                 descriptors,
@@ -127,13 +130,13 @@ impl VirtIOInitializedDevice {
         }
     }
 
-    pub(super) fn get_virtqueue(&self, index: u16) -> Option<&VirtQueue> {
-        self.virtqueues.get(index as usize)
+    pub(super) fn get_virtqueue(&self, index: VirtQueueIndex) -> Option<&VirtQueue> {
+        self.virtqueues.get(index.0 as usize)
     }
 
     pub(super) fn install_virtqueue_msix_handler(
         &mut self,
-        virtqueue_index: u16,
+        virtqueue_index: VirtQueueIndex,
         msix_table_index: u16,
         processor_number: u8,
         handler_id: InterruptHandlerID,
