@@ -91,7 +91,12 @@ make test
 
 ## TODO
 
-- Use newtypes way, way more aggressively. Bare `u8`, `u16`, are no good and have caused a lot of bugs.
+- Multi-tasking (see resources below)
+- Make a simple shell that runs hard-coded program names (not separate processes yet! Just inline code on the current thread)
+  - Integrate with multi-tasking. Make a new task for the thing being run, and the shell's task simply waits for the sub-task to complete.
+  - Show register values, internal structures, etc
+  - Have help be meaningful
+  - Split up tests and have subcommands like `test all` (all can be optional) `test interrupts`, `test memory-mappings`, etc
 - IOAPIC: Make IOAPIC IRQ numbers an enum for better safety, and throw an error if IOAPIC enum assigned to twice
   - Or, perhaps we dynamically assign these for the ones that don't need to be well-known, like the keyboard one
 - Investigate if we should be doing `apic::end_of_interrupt` for handlers on their behalf or not.
@@ -99,12 +104,6 @@ make test
     - This is what Linux does. It calls `schedule()` in the "exit" part of an interrupt handler. Maybe that is where we should put it: in the common handler routing after ACK'ing the interrupt.
   - Linux uses spin locks for each IRQ, as well as masking interrupts but telling the APIC it got the interrupt <https://www.oreilly.com/library/view/understanding-the-linux/0596005652/ch04s06.html>
   - <https://docs.kernel.org/core-api/genericirq.html> mentions that a generic handler is hard b/c of APIC , IO/APIC, etc ACKs, which is why `__do_IRQ` no longer exists
-- Multi-tasking (see resources below)
-- Make a simple shell that runs hard-coded program names (not separate processes yet! Just inline code on the current thread)
-  - Integrate with multi-tasking. Make a new task for the thing being run, and the shell's task simply waits for the sub-task to complete.
-  - Show register values, internal structures, etc
-  - Have help be meaningful
-  - Split up tests and have subcommands like `test all` (all can be optional) `test interrupts`, `test memory-mappings`, etc
 - Detect kernel stack overflows. Guard pages? Some other mechanism?
   - I need a huge stack for debug mode apparently. I was seeing stack overflows with a 4096 byte stack when running in debug mode, so I quadrupled it
 - VirtIO improvements:
