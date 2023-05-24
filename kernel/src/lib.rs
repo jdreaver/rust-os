@@ -42,6 +42,7 @@ pub(crate) mod pci;
 pub(crate) mod registers;
 pub(crate) mod scheduler;
 pub(crate) mod serial;
+pub(crate) mod shell;
 pub(crate) mod strings;
 pub(crate) mod tests;
 pub(crate) mod virtio;
@@ -83,7 +84,7 @@ pub fn start() -> ! {
     let text_buffer = unsafe { &mut TEXT_BUFFER };
     tests::run_tests(boot_info_data, &acpi_info, text_buffer);
 
-    hlt_loop()
+    shell::run_serial_shell();
 }
 
 pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {

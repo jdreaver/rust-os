@@ -21,6 +21,9 @@ struct WriteOnlySerialPort {
 impl WriteOnlySerialPort {
     const COM1_PORT: u16 = 0x3F8;
 
+    const LINE_STATUS_DATA_READY: u8 = 1 << 0;
+    const LINE_STATUS_TRANSMITTER_EMPTY: u8 = 1 << 5;
+
     const fn new() -> Self {
         Self {
             data: Self::COM1_PORT,
@@ -64,7 +67,7 @@ impl WriteOnlySerialPort {
     }
 
     fn is_transmit_empty(&self) -> bool {
-        unsafe { u8::read_from_port(self.line_sts) & 0x20 != 0 }
+        unsafe { u8::read_from_port(self.line_sts) & Self::LINE_STATUS_TRANSMITTER_EMPTY != 0 }
     }
 
     fn write(&self, byte: u8) {
@@ -82,6 +85,18 @@ impl WriteOnlySerialPort {
         for byte in s.bytes() {
             self.write(byte);
         }
+    }
+
+    fn is_data_ready(&self) -> bool {
+        unsafe { u8::read_from_port(self.line_sts) & Self::LINE_STATUS_DATA_READY != 0 }
+    }
+
+    fn read(&self) -> u8 {
+        while !self.is_data_ready() {
+            core::hint::spin_loop();
+        }
+
+        unsafe { u8::read_from_port(self.data) }
     }
 }
 
@@ -174,4 +189,13 @@ macro_rules! serial_println {
             $crate::serial_print!("\n");
         }
     };
+}
+
+pub(crate) fn serial1_write_byte(byte: u8) {
+    SERIAL1.write(byte);
+}
+
+/// Read the next byte from the serial port.
+pub(crate) fn serial1_read_byte() -> u8 {
+    SERIAL1.read()
 }
