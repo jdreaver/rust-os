@@ -1,3 +1,4 @@
+use core::cell::UnsafeCell;
 use core::ptr::NonNull;
 
 use acpi::mcfg::{Mcfg, McfgEntry};
@@ -7,45 +8,28 @@ use x86_64::PhysAddr;
 
 use crate::serial_println;
 
-/// We need to implement `acpi::AcpiHandler` to use the `acpi` crate. This is
-/// needed so we can map physical regions of memory to virtual regions. Luckily,
-/// we do identity mapping for the first ~4 GiB of memory thanks to limine, so
-/// this is easy; we don't actually have to modify page tables.
-#[derive(Debug, Clone)]
-pub struct IdentityMapAcpiHandler;
+static mut ACPI_INFO: UnsafeCell<Option<ACPIInfo>> = UnsafeCell::new(None);
 
-impl AcpiHandler for IdentityMapAcpiHandler {
-    /// # Safety
-    ///
-    /// Caller must ensure page tables are set up for identity mapping for any
-    /// memory that could be used to access ACPI tables.
-    unsafe fn map_physical_region<T>(
-        &self,
-        physical_address: usize,
-        size: usize,
-    ) -> PhysicalMapping<Self, T> {
-        let physical_start = physical_address;
-        let virtual_start = NonNull::new_unchecked(physical_address as *mut T);
-        let region_length = size;
-        let mapped_length = size;
-        let handler = self.clone();
-        PhysicalMapping::new(
-            physical_start,
-            virtual_start,
-            region_length,
-            mapped_length,
-            handler,
-        )
-    }
+pub(crate) unsafe fn init(rsdp_addr: PhysAddr) {
+    ACPI_INFO
+        .get()
+        .replace(Some(ACPIInfo::from_rsdp(rsdp_addr)));
+}
 
-    fn unmap_physical_region<T>(_region: &PhysicalMapping<Self, T>) {
-        // Nothing to do here.
+pub(crate) fn acpi_info() -> &'static ACPIInfo {
+    unsafe {
+        ACPI_INFO
+            .get()
+            .as_ref()
+            .expect("failed to convert ACPI_INFO to reference")
+            .as_ref()
+            .expect("ACPI_INFO not initialized")
     }
 }
 
 /// Holds important Advanced Configuration and Power Interface (ACPI)
 /// information needed to start the kernel.
-pub struct ACPIInfo {
+pub(crate) struct ACPIInfo {
     tables: AcpiTables<IdentityMapAcpiHandler>,
 }
 
@@ -55,7 +39,7 @@ impl ACPIInfo {
     /// Caller must ensure RSDP address is valid, and that page tables are set
     /// up for identity mapping for any memory that could be used to access ACPI
     /// tables (e.g. identity mapping physical memory).
-    pub(crate) unsafe fn from_rsdp(rsdp_addr: PhysAddr) -> Self {
+    unsafe fn from_rsdp(rsdp_addr: PhysAddr) -> Self {
         let handler = IdentityMapAcpiHandler;
         let rsdp_addr = rsdp_addr.as_u64() as usize;
         let tables = unsafe {
@@ -96,6 +80,42 @@ impl ACPIInfo {
 
     pub(crate) fn hpet_info(&self) -> HpetInfo {
         HpetInfo::new(&self.tables).expect("failed to get HPET info")
+    }
+}
+
+/// We need to implement `acpi::AcpiHandler` to use the `acpi` crate. This is
+/// needed so we can map physical regions of memory to virtual regions. Luckily,
+/// we do identity mapping for the first ~4 GiB of memory thanks to limine, so
+/// this is easy; we don't actually have to modify page tables.
+#[derive(Debug, Clone)]
+pub struct IdentityMapAcpiHandler;
+
+impl AcpiHandler for IdentityMapAcpiHandler {
+    /// # Safety
+    ///
+    /// Caller must ensure page tables are set up for identity mapping for any
+    /// memory that could be used to access ACPI tables.
+    unsafe fn map_physical_region<T>(
+        &self,
+        physical_address: usize,
+        size: usize,
+    ) -> PhysicalMapping<Self, T> {
+        let physical_start = physical_address;
+        let virtual_start = NonNull::new_unchecked(physical_address as *mut T);
+        let region_length = size;
+        let mapped_length = size;
+        let handler = self.clone();
+        PhysicalMapping::new(
+            physical_start,
+            virtual_start,
+            region_length,
+            mapped_length,
+            handler,
+        )
+    }
+
+    fn unmap_physical_region<T>(_region: &PhysicalMapping<Self, T>) {
+        // Nothing to do here.
     }
 }
 

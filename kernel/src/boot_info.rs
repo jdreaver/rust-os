@@ -1,3 +1,5 @@
+use spin::Once;
+
 use limine::{
     LimineBootInfoRequest, LimineEfiSystemTableRequest, LimineFramebufferRequest,
     LimineHhdmRequest, LimineKernelAddressRequest, LimineMemmapRequest, LimineMemoryMapEntryType,
@@ -7,7 +9,7 @@ use x86_64::{PhysAddr, VirtAddr};
 
 use crate::{memory, serial_println, strings};
 
-static mut BOOT_INFO: Option<BootInfo> = None;
+static BOOT_INFO_ONCE: Once<BootInfo> = Once::new();
 
 #[derive(Debug)]
 pub(crate) struct BootInfo {
@@ -20,6 +22,11 @@ pub(crate) struct BootInfo {
     rsdp_address: Option<VirtAddr>,
     pub(crate) framebuffer: &'static mut limine::LimineFramebuffer,
 }
+
+// We need to implement Send for BootInfo so it can be used with `Once`.
+// `LimineFramebuffer` uses `core::ptr::NonNull` which is not `Send`.
+#[allow(clippy::non_send_fields_in_send_ty)]
+unsafe impl Send for BootInfo {}
 
 impl BootInfo {
     /// Physical address for the Root System Description Pointer (RSDP). See <https://wiki.osdev.org/RSDP>
@@ -40,32 +47,30 @@ static KERNEL_ADDRESS_REQUEST: LimineKernelAddressRequest = LimineKernelAddressR
 static MEMORY_MAP_REQUEST: LimineMemmapRequest = LimineMemmapRequest::new(0);
 static RSDP_REQUEST: LimineRsdpRequest = LimineRsdpRequest::new(0);
 
-pub(crate) fn init_boot_info() {
-    let (info_name, info_version) = limine_boot_info();
+pub(crate) fn boot_info() -> &'static BootInfo {
+    BOOT_INFO_ONCE.call_once(|| -> BootInfo {
+        let (info_name, info_version) = limine_boot_info();
 
-    let higher_half_direct_map_offset = limine_higher_half_offset();
+        let higher_half_direct_map_offset = limine_higher_half_offset();
 
-    let kernel_address = KERNEL_ADDRESS_REQUEST
-        .get_response()
-        .get()
-        .expect("failed to get limine kernel address request");
+        let kernel_address = KERNEL_ADDRESS_REQUEST
+            .get_response()
+            .get()
+            .expect("failed to get limine kernel address request");
 
-    let framebuffer = limine_framebuffer();
+        let framebuffer = limine_framebuffer();
 
-    let boot_info = BootInfo {
-        _info_name: info_name,
-        _info_version: info_version,
-        higher_half_direct_map_offset,
-        _kernel_address_physical_base: PhysAddr::new(kernel_address.physical_base),
-        _kernel_address_virtual_base: VirtAddr::new(kernel_address.virtual_base),
-        efi_system_table_address: limine_efi_system_table_address(),
-        rsdp_address: limine_rsdp_address(),
-        framebuffer,
-    };
-
-    unsafe {
-        BOOT_INFO = Some(boot_info);
-    }
+        BootInfo {
+            _info_name: info_name,
+            _info_version: info_version,
+            higher_half_direct_map_offset,
+            _kernel_address_physical_base: PhysAddr::new(kernel_address.physical_base),
+            _kernel_address_virtual_base: VirtAddr::new(kernel_address.virtual_base),
+            efi_system_table_address: limine_efi_system_table_address(),
+            rsdp_address: limine_rsdp_address(),
+            framebuffer,
+        }
+    })
 }
 
 fn limine_boot_info() -> (&'static str, &'static str) {
@@ -107,10 +112,6 @@ fn limine_rsdp_address() -> Option<VirtAddr> {
     let Some(rsdp) = RSDP_REQUEST.get_response().get() else { return None; };
     let Some(address_ptr) = rsdp.address.as_ptr() else { return None; };
     Some(VirtAddr::from_ptr(address_ptr))
-}
-
-pub(crate) fn boot_info() -> &'static BootInfo {
-    unsafe { BOOT_INFO.as_ref().expect("boot info not initialized") }
 }
 
 fn limine_framebuffer() -> &'static mut limine::LimineFramebuffer {

@@ -8,11 +8,11 @@ use x86_64::structures::paging::{Size2MiB, Size4KiB};
 
 use crate::{acpi, boot_info, hpet, interrupts, memory, pci, scheduler, serial_println, virtio};
 
-pub(crate) fn run_tests(
-    boot_info_data: &boot_info::BootInfo,
-    acpi_info: &acpi::ACPIInfo,
-    text_buffer: &'static mut TextBuffer,
-) {
+static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
+
+pub(crate) fn run_tests() {
+    let boot_info_data = boot_info::boot_info();
+
     serial_println!("limine boot info:\n{boot_info_data:#x?}");
     boot_info::print_limine_memory_map();
 
@@ -41,11 +41,15 @@ pub(crate) fn run_tests(
     };
     serial_println!("framebuffer: {framebuffer:#?}");
 
+    // TODO: Initialize TEXT_BUFFER better so we don't need unsafe.
+    let text_buffer = unsafe { &mut TEXT_BUFFER };
+
     writeln!(text_buffer, "Hello!").expect("failed to write to text buffer");
     writeln!(text_buffer, "World!").expect("failed to write to text buffer");
 
     text_buffer.flush(&mut framebuffer);
 
+    let acpi_info = acpi::acpi_info();
     acpi::print_acpi_info(acpi_info);
     let pci_config_region_base_address = acpi_info.pci_config_region_base_address();
 

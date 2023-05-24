@@ -47,17 +47,11 @@ pub(crate) mod strings;
 pub(crate) mod tests;
 pub(crate) mod virtio;
 
-use vesa_framebuffer::TextBuffer;
-
-static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
-
 pub fn start() -> ! {
-    boot_info::init_boot_info();
-    let boot_info_data = boot_info::boot_info();
-
     gdt::init();
     interrupts::init_interrupts();
 
+    let boot_info_data = boot_info::boot_info();
     let limine_usable_memory = boot_info::limine_usable_memory_regions();
     unsafe {
         memory::init(
@@ -69,10 +63,11 @@ pub fn start() -> ! {
 
     // N.B. Probing ACPI must happen after heap initialization because the Rust
     // `acpi` crate uses alloc. It would be nice to not need that...
-    let acpi_info = unsafe { acpi::ACPIInfo::from_rsdp(boot_info_data.rsdp_physical_addr()) };
+    unsafe { acpi::init(boot_info_data.rsdp_physical_addr()) };
 
-    apic::init_local_apic(&acpi_info);
-    ioapic::init(&acpi_info);
+    let acpi_info = acpi::acpi_info();
+    apic::init_local_apic(acpi_info);
+    ioapic::init(acpi_info);
 
     unsafe {
         hpet::init(acpi_info.hpet_info().base_address);
@@ -80,9 +75,7 @@ pub fn start() -> ! {
 
     keyboard::init_keyboard();
 
-    // TODO: Initialize TEXT_BUFFER better so we don't need unsafe.
-    let text_buffer = unsafe { &mut TEXT_BUFFER };
-    tests::run_tests(boot_info_data, &acpi_info, text_buffer);
+    tests::run_tests();
 
     shell::run_serial_shell();
 }
