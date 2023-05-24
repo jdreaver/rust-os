@@ -43,16 +43,27 @@ impl VirtIOInitializedDevice {
             config.device_feature_select().write(i);
 
             // Read the device feature bits
-            let device_features = config.device_feature().read();
+            let mut device_features = config.device_feature().read();
             serial_println!(
                 "VirtIO device feature bits ({}): {:#034b}",
                 i,
                 device_features
             );
 
+            // Disable VIRTIO_F_EVENT_IDX so we don't need to mess with
+            // `used_event` in avail ring. TODO: Do this properly.
+            if i == 0 {
+                device_features &= !(1 << 29);
+            }
+
             // Write the features we want to enable (TODO: actually pick
             // features, don't just write them all back)
             let driver_features = device_features;
+            serial_println!(
+                "VirtIO driver feature bits ({}): {:#034b}",
+                i,
+                device_features
+            );
             config.driver_feature_select().write(i);
             config.driver_feature().write(driver_features);
         }
