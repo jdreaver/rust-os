@@ -370,24 +370,41 @@ impl VirtIONotifyConfig {
         self.config_addr + offset
     }
 
-    /// 4.1.5.2 Available Buffer Notifications: When VIRTIO_F_NOTIFICATION_DATA
-    /// has not been negotiated, the driver sends an available buffer
-    /// notification to the device by writing the 16-bit virtqueue index of this
-    /// virtqueue to the Queue Notify address.
+    /// 4.1.5.2 Available Buffer Notifications
     ///
     /// # Safety
     ///
     /// Caller must ensure that `queue_notify_offset` and `queue_index` are
     /// valid.
-    pub(super) unsafe fn notify_device(&self, queue_notify_offset: u16, queue_index: u16) {
-        // 4.1.5.2 Available Buffer Notifications: When
-        // VIRTIO_F_NOTIFICATION_DATA has not been negotiated, the driver sends
-        // an available buffer notification to the device by writing the 16-bit
-        // virtqueue index of this virtqueue to the Queue Notify address.
+    pub(super) unsafe fn notify_device(
+        &self,
+        queue_notify_offset: u16,
+        queue_index: u16,
+        avail_offset: u16,
+    ) {
+        // TODO: Check if VIRTIO_F_NOTIFICATION_DATA has been negotiated or not.
+        // This function currently assumes it has been negotiated.
+
         let notify_addr = self.queue_notify_address(queue_notify_offset);
-        let notify_ptr = notify_addr.as_u64() as *mut u16;
+        let notify_ptr = notify_addr.as_u64() as *mut QueueNotifyData;
+
+        let data = QueueNotifyData {
+            vqn: queue_index,
+            available_index: avail_offset,
+        };
+
+        serial_println!("sending data: {data:#x?}");
         unsafe {
-            notify_ptr.write_volatile(queue_index);
+            notify_ptr.write_volatile(data);
         }
     }
+}
+
+/// See "4.1.5.2 Available Buffer Notifications"
+#[repr(C)]
+#[derive(Debug)]
+struct QueueNotifyData {
+    /// virtqueue number
+    vqn: u16,
+    available_index: u16,
 }
