@@ -1,7 +1,6 @@
 use spin::Mutex;
 
-use crate::serial;
-use crate::{serial_print, serial_println};
+use crate::{serial, serial_print, serial_println, tests};
 
 static NEXT_COMMAND_BUFFER: Mutex<ShellBuffer<64>> = Mutex::new(ShellBuffer::new());
 
@@ -109,6 +108,7 @@ fn reset_terminal_line() {
 
 enum Command<'a> {
     Help,
+    Tests,
     Invalid,
     Unknown(&'a str),
 }
@@ -120,6 +120,7 @@ fn next_command(buffer: &mut [u8]) -> Option<Command> {
     match command_str.trim() {
         "" => None,
         "help" => Some(Command::Help),
+        "tests" => Some(Command::Tests),
         s => Some(Command::Unknown(s)),
     }
 }
@@ -128,6 +129,10 @@ fn run_command(command: &Command) {
     match command {
         Command::Help => {
             serial_println!("help - print this help");
+        }
+        Command::Tests => {
+            serial_println!("Running tests...");
+            tests::run_tests();
         }
         Command::Invalid => {
             serial_println!("Invalid command");

@@ -75,8 +75,6 @@ pub fn start() -> ! {
 
     keyboard::init_keyboard();
 
-    tests::run_tests();
-
     shell::run_serial_shell();
 }
 

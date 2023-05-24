@@ -101,8 +101,10 @@ make test
 - Multi-tasking (see resources below)
 - Make a simple shell that runs hard-coded program names (not separate processes yet! Just inline code on the current thread)
   - List PCI devices
+  - Integrate with multi-tasking. Make a new task for the thing being run, and the shell's task simply waits for the sub-task to complete.
   - Show register values, internal structures, etc
-  - Run all tests, or run a subset of tests (maybe make testing its own little CLI sub command)
+  - Have help be meaningful
+  - Split up tests
 - Detect kernel stack overflows. Guard pages? Some other mechanism?
   - I need a huge stack for debug mode apparently. I was seeing stack overflows with a 4096 byte stack when running in debug mode, so I quadrupled it
 - VirtIO improvements:
