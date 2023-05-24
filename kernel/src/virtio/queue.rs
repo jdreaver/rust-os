@@ -57,10 +57,10 @@ impl VirtQueue {
         let desc_index = self
             .descriptors
             .add_descriptor(buffer_addr, buffer_len, flags);
-        let avail_idx = self.avail_ring.add_entry(desc_index);
+        self.avail_ring.add_entry(desc_index);
         unsafe {
             self.device_notify_config
-                .notify_device(self.notify_offset, self.index, avail_idx);
+                .notify_device(self.notify_offset, self.index);
         };
     }
 
@@ -273,7 +273,7 @@ impl VirtqAvailRing {
         self.physical_address
     }
 
-    fn add_entry(&self, desc_index: u16) -> u16 {
+    fn add_entry(&self, desc_index: u16) {
         // 2.7.13.2 Updating The Available Ring
         //
         // TODO: Check that the driver doesn't add more entries than are
@@ -284,7 +284,6 @@ impl VirtqAvailRing {
 
         // 2.7.13.3 Updating idx
         self.idx.modify(|idx| idx.wrapping_add(1));
-        self.idx.read()
     }
 }
 
