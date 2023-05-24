@@ -123,12 +123,12 @@ fn virtio_rng_interrupt(vector: u8, handler_id: InterruptHandlerID) {
         .initialized_device
         .get_virtqueue(VirtIORNG::QUEUE_INDEX)
         .unwrap();
-    let used_index = virtq.used_ring_index() - 1;
+    let used_index = virtq.used_ring_index();
 
     let mut used_index_lock = rng.processed_used_index.lock();
     let last_processed: u16 = *used_index_lock;
 
-    for i in last_processed..=used_index {
+    for i in last_processed..used_index {
         let (used_entry, descriptor) = virtq.get_used_ring_entry(i);
         // serial_println!("Got used entry: {:#x?}", (used_entry, descriptor));
 
