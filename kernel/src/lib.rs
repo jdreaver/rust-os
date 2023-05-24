@@ -3,6 +3,7 @@
 #![feature(allocator_api)]
 #![feature(naked_functions)]
 #![feature(strict_provenance)]
+#![feature(sync_unsafe_cell)]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 #![allow(
     clippy::cast_possible_truncation,

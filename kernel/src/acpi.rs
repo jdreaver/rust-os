@@ -1,4 +1,4 @@
-use core::cell::UnsafeCell;
+use core::cell::SyncUnsafeCell;
 use core::ptr::NonNull;
 
 use acpi::mcfg::{Mcfg, McfgEntry};
@@ -8,7 +8,7 @@ use x86_64::PhysAddr;
 
 use crate::serial_println;
 
-static mut ACPI_INFO: UnsafeCell<Option<ACPIInfo>> = UnsafeCell::new(None);
+static ACPI_INFO: SyncUnsafeCell<Option<ACPIInfo>> = SyncUnsafeCell::new(None);
 
 pub(crate) unsafe fn init(rsdp_addr: PhysAddr) {
     ACPI_INFO
