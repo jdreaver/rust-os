@@ -195,6 +195,12 @@ pub(crate) fn serial1_write_byte(byte: u8) {
     SERIAL1.write(byte);
 }
 
+pub(crate) fn serial1_write_bytes(bytes: &[u8]) {
+    for byte in bytes {
+        serial1_write_byte(*byte);
+    }
+}
+
 /// Read the next byte from the serial port.
 pub(crate) fn serial1_read_byte() -> u8 {
     SERIAL1.read()

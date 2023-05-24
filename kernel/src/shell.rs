@@ -44,32 +44,29 @@ impl<const N: usize> ShellBuffer<N> {
     fn buffer_slice(&mut self) -> &mut [u8] {
         &mut self.buffer[..self.index]
     }
+
+    fn redraw_buffer(&self) {
+        reset_terminal_line();
+        serial_print!("ksh > ");
+        for i in 0..self.index {
+            serial::serial1_write_byte(self.buffer[i]);
+        }
+    }
 }
 
 pub(crate) fn run_serial_shell() -> ! {
     let mut buffer = NEXT_COMMAND_BUFFER.lock();
 
     loop {
-        serial_print!("ksh > ");
+        buffer.redraw_buffer();
         loop {
             let c = serial::serial1_read_byte();
             match c {
                 b'\n' | b'\r' => {
                     serial_println!();
                     let command = next_command(buffer.buffer_slice());
-                    match command {
-                        Some(Command::Help) => {
-                            serial_println!("help - print this help");
-                        }
-                        Some(Command::Invalid) => {
-                            serial_println!("Invalid command");
-                        }
-                        Some(Command::Unknown(command)) => {
-                            serial_println!("Unknown command: {}", command);
-                        }
-                        None => {
-                            serial_println!();
-                        }
+                    if let Some(command) = command {
+                        run_command(&command);
                     }
                     buffer.clear();
                     break;
@@ -89,12 +86,25 @@ pub(crate) fn run_serial_shell() -> ! {
                         serial::serial1_write_byte(c);
                     }
                 }
+                // End of text
+                3 => {
+                    serial_println!("^C");
+                    buffer.clear();
+                    break;
+                }
                 _ => {
-                    serial_println!("Don't know what to do with: {} ({})", c as char, c);
+                    reset_terminal_line();
+                    serial_println!("Don't know what to do with ASCII char: {c}");
+                    break;
                 }
             }
         }
     }
+}
+
+fn reset_terminal_line() {
+    // Clears line (with ESC[2K) and returns cursor to start of line (with \r)
+    serial::serial1_write_bytes(b"\x1B[2K\r");
 }
 
 enum Command<'a> {
@@ -111,5 +121,19 @@ fn next_command(buffer: &mut [u8]) -> Option<Command> {
         "" => None,
         "help" => Some(Command::Help),
         s => Some(Command::Unknown(s)),
+    }
+}
+
+fn run_command(command: &Command) {
+    match command {
+        Command::Help => {
+            serial_println!("help - print this help");
+        }
+        Command::Invalid => {
+            serial_println!("Invalid command");
+        }
+        Command::Unknown(command) => {
+            serial_println!("Unknown command: {}", command);
+        }
     }
 }
