@@ -8,7 +8,7 @@ use super::queue::{VirtQueue, VirtqAvailRing, VirtqDescriptorTable, VirtqUsedRin
 
 #[derive(Debug)]
 pub(super) struct VirtIOInitializedDevice {
-    config: VirtIODeviceConfig,
+    pub(super) config: VirtIODeviceConfig,
     virtqueues: Vec<VirtQueue>,
 }
 

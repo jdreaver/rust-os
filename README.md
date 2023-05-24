@@ -91,7 +91,18 @@ make test
 
 ## TODO
 
+- Use newtypes way, way more aggressively. Bare `u8`, `u16`, are no good and have caused a lot of bugs.
 - RNG: Adding `rng` command to shell uncovered bug where interrupt doesn't fire twice. Do we need to reset something somewhere? MSI-X? ACK something?
+  - (I wonder if a misconfig here is the reason we don't see interrupts when UEFI is disabled...)
+  - Search for `VIRTIO_F_NOTIFICATION_DATA`. Is it negotiated? Are we sending the right notifications?
+  - Are either us or the device setting `used_event` or `avail_event` to suppress notifications? Search for `VIRTIO_F_EVENT_IDX` in the spec
+    - I believe `VIRTIO_F_EVENT_IDX` _is_ negotiated
+  - I'm seeing `isr.queue_interrupt` flip from `false` to `true` for some reason. It is supposed to be disabled if MSI-X is enabled...
+  - In "4.1.4.5.2 Driver Requirements: ISR status capability" it says:
+
+    > If MSI-X capability is enabled, the driver SHOULD NOT access ISR status upon detecting a Queue Interrupt.
+
+    Are we accessing it on accident?
 - IOAPIC: Make IOAPIC IRQ numbers an enum for better safety, and throw an error if IOAPIC enum assigned to twice
   - Or, perhaps we dynamically assign these for the ones that don't need to be well-known, like the keyboard one
 - Investigate if we should be doing `apic::end_of_interrupt` for handlers on their behalf or not.

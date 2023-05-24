@@ -22,7 +22,13 @@ pub(crate) struct VirtIODeviceConfig {
     pci_type0_config: PCIDeviceConfigType0,
 
     common_virtio_config: VirtIOPCICommonConfigRegisters,
+
+    /// See "4.1.4.5.2 Driver Requirements: ISR status capability". Note that we
+    /// should never access this with MSI-X enabled!:
+    ///
+    /// > If MSI-X capability is enabled, the driver SHOULD NOT access ISR status upon detecting a Queue Interrupt.
     _isr: VirtIOPCIISRRegisters,
+
     notify_config: VirtIONotifyConfig,
 }
 

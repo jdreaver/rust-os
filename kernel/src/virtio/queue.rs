@@ -12,7 +12,7 @@ use super::config::VirtIONotifyConfig;
 /// Wrapper around allocated virt queues for a an initialized VirtIO device.
 #[derive(Debug)]
 pub(super) struct VirtQueue {
-    /// The queue's index in the device's virtqueue array.
+    /// The queue's location in the device's virtqueue array.
     index: u16,
 
     /// Device's notification config, inlined here to compute the notification
@@ -275,7 +275,11 @@ impl VirtqAvailRing {
 
     fn add_entry(&self, desc_index: u16) {
         // 2.7.13.2 Updating The Available Ring
-        let idx = self.idx.read();
+        //
+        // TODO: Check that the driver doesn't add more entries than are
+        // actually available. We don't want to overwrite the end of ring
+        // buffer. This likely needs to be done at a higher level.
+        let idx = self.idx.read() % self.ring.len() as u16;
         self.ring.write(idx as usize, desc_index);
 
         // 2.7.13.3 Updating idx
