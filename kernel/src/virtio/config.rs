@@ -35,7 +35,7 @@ pub(crate) struct VirtIODeviceConfig {
 
     notify_config: VirtIONotifyConfig,
 
-    _device_config_cap: VirtIOPCICapabilityHeader,
+    device_config_phys_addr: PhysAddr,
 }
 
 impl VirtIODeviceConfig {
@@ -57,7 +57,7 @@ impl VirtIODeviceConfig {
         let mut common_virtio_config = None;
         let mut isr = None;
         let mut notify_config = None;
-        let mut device_config_cap = None;
+        let mut device_config_phys_addr = None;
         for capability in pci_config.iter_capabilities() {
             let capability = unsafe {
                 VirtIOPCICapabilityHeader::from_pci_capability(pci_type0_config, &capability)
@@ -90,8 +90,8 @@ impl VirtIODeviceConfig {
                 VirtIOConfig::ISR(isr_regs) => {
                     isr.get_or_insert(isr_regs);
                 }
-                VirtIOConfig::Device => {
-                    device_config_cap.get_or_insert(capability);
+                VirtIOConfig::Device(addr) => {
+                    device_config_phys_addr.get_or_insert(addr);
                 }
                 VirtIOConfig::PCI => {
                     serial_println!("VirtIO PCI config found: {:#x?}", capability);
@@ -109,7 +109,8 @@ impl VirtIODeviceConfig {
             common_virtio_config.expect("failed to find VirtIO common config");
         let isr = isr.expect("failed to find VirtIO ISR");
         let notify_config = notify_config.expect("failed to find VirtIO notify config");
-        let device_config = device_config_cap.expect("failed to find VirtIO device config");
+        let device_config_phys_addr =
+            device_config_phys_addr.expect("failed to find VirtIO device config");
 
         Some(Self {
             pci_config,
@@ -117,7 +118,7 @@ impl VirtIODeviceConfig {
             common_virtio_config,
             _isr: isr,
             notify_config,
-            _device_config_cap: device_config,
+            device_config_phys_addr,
         })
     }
 
@@ -135,6 +136,10 @@ impl VirtIODeviceConfig {
 
     pub(super) fn notify_config(&self) -> VirtIONotifyConfig {
         self.notify_config
+    }
+
+    pub(super) fn device_config_phys_addr(&self) -> PhysAddr {
+        self.device_config_phys_addr
     }
 
     /// Iterates through `device_feature_select` and `device_feature` to find
@@ -236,7 +241,9 @@ impl VirtIOPCICapabilityHeader {
                 let config_addr = self.compute_and_map_config_address();
                 VirtIOPCIISRRegisters::from_address(config_addr.as_u64() as usize)
             }),
-            VirtIOPCIConfigType::Device => VirtIOConfig::Device,
+            VirtIOPCIConfigType::Device => {
+                VirtIOConfig::Device(self.compute_and_map_config_address())
+            }
             VirtIOPCIConfigType::PCI => VirtIOConfig::PCI,
             VirtIOPCIConfigType::SharedMemory => VirtIOConfig::SharedMemory,
             VirtIOPCIConfigType::Vendor => VirtIOConfig::Vendor,
@@ -310,7 +317,7 @@ enum VirtIOConfig {
     Common(VirtIOPCICommonConfigRegisters),
     Notify(VirtIONotifyConfig),
     ISR(VirtIOPCIISRRegisters),
-    Device,
+    Device(PhysAddr),
     PCI,
     SharedMemory,
     Vendor,

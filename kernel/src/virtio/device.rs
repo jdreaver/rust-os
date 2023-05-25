@@ -58,7 +58,7 @@ impl VirtIOInitializedDevice {
         // `used_event` or not in the avail ring, instead of just assuming that
         // we did this.
         device_features.negotiate_reserved_bits(|bits| {
-            *bits &= !ReservedFeatureBits::EVENT_IDX;
+            bits.remove(ReservedFeatureBits::EVENT_IDX);
         });
 
         // Write the features we want to enable

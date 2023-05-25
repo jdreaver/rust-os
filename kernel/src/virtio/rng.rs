@@ -51,10 +51,6 @@ pub(crate) fn request_random_numbers() {
 /// supplies high-quality randomness for guest use.
 #[derive(Debug)]
 struct VirtIORNG {
-    /// The initialized device, with virtqueues and interrupt handlers. It is
-    /// behind a RwLock because we need to be able to write to it to request
-    /// random numbers, and the interrupt handler needs to be able to read from
-    /// it, potentially concurrently.
     initialized_device: VirtIOInitializedDevice,
 
     /// How far into the used ring we've processed entries. Only used when

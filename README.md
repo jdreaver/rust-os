@@ -281,6 +281,7 @@ struct virtio_blk_config {
 	uint8_t writeback;
 	uint8_t unused0;
 	uint16_t num_queues;
+	uint32_t max_discard_sectors;
 	uint32_t max_discard_seg;
 	uint32_t discard_sector_alignment;
 	uint32_t max_write_zeroes_sectors;
@@ -304,6 +305,7 @@ int main(void)
 	printf("offsetof(writeback) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, writeback)),
 	printf("offsetof(unused0) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, unused0)),
 	printf("offsetof(num_queues) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, num_queues)),
+	printf("offsetof(max_discard_sectors) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_discard_sectors)),
 	printf("offsetof(max_discard_seg) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_discard_seg)),
 	printf("offsetof(discard_sector_alignment) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, discard_sector_alignment)),
 	printf("offsetof(max_write_zeroes_sectors) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_write_zeroes_sectors)),
