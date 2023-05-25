@@ -4,6 +4,7 @@ use crate::interrupts::{InterruptHandler, InterruptHandlerID};
 use crate::{interrupts, serial_println};
 
 use super::config::{VirtIOConfigStatus, VirtIODeviceConfig};
+use super::features::ReservedFeatureBits;
 use super::queue::{
     VirtQueue, VirtQueueIndex, VirtqAvailRing, VirtqDescriptorTable, VirtqUsedRing,
 };
@@ -40,35 +41,20 @@ impl VirtIOInitializedDevice {
         // selection registers 4 times to select features.
         //
         // (TODO: Make this configurable depending on device).
-        for i in 0..4 {
-            // Select the feature bits to negotiate
-            config.device_feature_select().write(i);
+        let mut device_features = device_config.get_device_features();
+        serial_println!("VirtIO device feature bits: {device_features:?}");
 
-            // Read the device feature bits
-            let mut device_features = config.device_feature().read();
-            serial_println!(
-                "VirtIO device feature bits ({}): {:#034b}",
-                i,
-                device_features
-            );
+        // Disable VIRTIO_F_EVENT_IDX so we don't need to mess with
+        // `used_event` in avail ring. TODO: Do this properly.
+        device_features.negotiate_reserved_bits(|bits| {
+            *bits &= !ReservedFeatureBits::EVENT_IDX;
+        });
 
-            // Disable VIRTIO_F_EVENT_IDX so we don't need to mess with
-            // `used_event` in avail ring. TODO: Do this properly.
-            if i == 0 {
-                device_features &= !(1 << 29);
-            }
-
-            // Write the features we want to enable (TODO: actually pick
-            // features, don't just write them all back)
-            let driver_features = device_features;
-            serial_println!(
-                "VirtIO driver feature bits ({}): {:#034b}",
-                i,
-                device_features
-            );
-            config.driver_feature_select().write(i);
-            config.driver_feature().write(driver_features);
-        }
+        // Write the features we want to enable (TODO: actually pick
+        // features, don't just write them all back)
+        let driver_features = device_features;
+        serial_println!("VirtIO driver feature bits: {driver_features:?}");
+        device_config.set_driver_features(&driver_features);
 
         // Set the FEATURES_OK status bit to indicate that the driver has
         // written the feature bits.

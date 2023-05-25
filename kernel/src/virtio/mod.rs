@@ -1,5 +1,6 @@
 mod config;
 mod device;
+mod features;
 mod queue;
 mod rng;
 

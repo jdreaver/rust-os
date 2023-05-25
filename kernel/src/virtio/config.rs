@@ -11,6 +11,7 @@ use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW};
 use crate::serial_println;
 
+use super::features::Features;
 use super::queue::VirtQueueIndex;
 
 /// Holds the configuration for a VirtIO device.
@@ -128,6 +129,32 @@ impl VirtIODeviceConfig {
 
     pub(super) fn notify_config(&self) -> VirtIONotifyConfig {
         self.notify_config
+    }
+
+    /// Iterates through `device_feature_select` and `device_feature` to find
+    /// the device features.
+    pub(super) fn get_device_features(&self) -> Features {
+        let mut features = 0;
+        for i in 0..2_u32 {
+            self.common_virtio_config.device_feature_select().write(i);
+            let mut feature_bits = u64::from(self.common_virtio_config.device_feature().read());
+            feature_bits <<= i * 32;
+            features |= feature_bits;
+        }
+        Features::new(features)
+    }
+
+    /// Iterates through `driver_feature_select` and `driver_feature` to set
+    /// the driver features.
+    pub(super) fn set_driver_features(&self, features: &Features) {
+        let bits = features.as_u64();
+        for i in 0..2_u32 {
+            self.common_virtio_config.driver_feature_select().write(i);
+            let feature_bits = (bits >> (i * 32)) as u32;
+            self.common_virtio_config
+                .driver_feature()
+                .write(feature_bits);
+        }
     }
 }
 

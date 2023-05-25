@@ -111,7 +111,7 @@ make test
     - Investigate how Linux or other OS virtio drivers do locking
   - Ensure we don't accidentally reuse descriptors while we are waiting for a response from the device. Don't automatically just wrap around! This is what might require a mutex rather than just atomic integers?
   - I think there is a race condition with the interrupts with the current non-locking mechanism. Ensure that if there are concurrent writes while an interrupt, then an interrupt won't miss a read (e.g. there will at least be a followup interrupt)
-  - Proper feature negotiation, and ensure we are accounting for the different features in the logic (especially around notifications)
+  - Remember features we negotiate, and ensure we are accounting for the different features in the logic (especially around notifications)
   - In "4.1.4.5.2 Driver Requirements: ISR status capability" it says:
 
     > If MSI-X capability is enabled, the driver SHOULD NOT access ISR status upon detecting a Queue Interrupt.
