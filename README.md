@@ -247,6 +247,78 @@ Block device:
 - <https://github.com/mit-pdos/xv6-riscv/blob/f5b93ef12f7159f74f80f94729ee4faabe42c360/kernel/virtio_disk.c>
 - <https://marz.utk.edu/my-courses/cosc562/virtio/block/>
 
+
+#### Struct offsets
+
+The VirtIO spec uses C structs to compute offsets. Here is a C program that shows how to compute these offsets:
+
+```c
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+
+struct virtio_blk_config {
+	uint64_t capacity;
+	uint32_t size_max;
+	uint32_t seg_max;
+	struct virtio_blk_geometry {
+		uint16_t cylinders;
+		uint8_t heads;
+		uint8_t sectors;
+	} geometry;
+	uint32_t blk_size;
+	struct virtio_blk_topology {
+		// # of logical blocks per physical block (log2)
+		uint8_t physical_block_exp;
+		// offset of first aligned logical block
+		uint8_t alignment_offset;
+		// suggested minimum I/O size in blocks
+		uint16_t min_io_size;
+		// optimal (suggested maximum) I/O size in blocks
+		uint32_t opt_io_size;
+	} topology;
+	uint8_t writeback;
+	uint8_t unused0;
+	uint16_t num_queues;
+	uint32_t max_discard_seg;
+	uint32_t discard_sector_alignment;
+	uint32_t max_write_zeroes_sectors;
+	uint32_t max_write_zeroes_seg;
+	uint8_t write_zeroes_may_unmap;
+	uint8_t unused1[3];
+	uint32_t max_secure_erase_sectors;
+	uint32_t max_secure_erase_seg;
+	uint32_t secure_erase_sector_alignment;
+};
+
+int main(void)
+{
+
+	printf("offsetof(capacity) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, capacity)),
+	printf("offsetof(size_max) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, size_max)),
+	printf("offsetof(seg_max) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, seg_max)),
+	printf("offsetof(geometry) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, geometry)),
+	printf("offsetof(blk_size) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, blk_size)),
+	printf("offsetof(topology) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, topology)),
+	printf("offsetof(writeback) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, writeback)),
+	printf("offsetof(unused0) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, unused0)),
+	printf("offsetof(num_queues) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, num_queues)),
+	printf("offsetof(max_discard_seg) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_discard_seg)),
+	printf("offsetof(discard_sector_alignment) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, discard_sector_alignment)),
+	printf("offsetof(max_write_zeroes_sectors) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_write_zeroes_sectors)),
+	printf("offsetof(max_write_zeroes_seg) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_write_zeroes_seg)),
+	printf("offsetof(write_zeroes_may_unmap) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, write_zeroes_may_unmap)),
+	printf("offsetof(max_secure_erase_sectors) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_secure_erase_sectors)),
+	printf("offsetof(max_secure_erase_seg) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_secure_erase_seg)),
+	printf("offsetof(secure_erase_sector_alignment) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, secure_erase_sector_alignment)),
+
+	printf("sizeof(struct virtio_blk_config) = 0x%02X\n", (long) sizeof(struct virtio_blk_config));
+
+	exit(EXIT_SUCCESS);
+}
+```
+
 ### Volatile memory access in Rust, and spurious reads
 
 TL;DR: Use raw pointers instead of references to memory-mapped IO regions to
