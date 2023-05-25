@@ -91,6 +91,10 @@ make test
 
 ## TODO
 
+- virtio-blk
+  - Refactor descriptor table to deal with chained descriptors. We can write chained descriptors with a slice, but we might need a type to iterate when reading.
+    - Rename `VirtqDescriptor` to `RawVirtQueueDescriptor` or something, and then have `ChainedVirtQueueDescriptor`?
+  - Have `BlockRequest` wrap descriptors. I don't see much value in it being its own "thing" besides that. Maybe call it `RawBlockRequest`, or `BlockRequestDescriptors`?
 - Multi-tasking (see resources below)
 - Make a simple shell that runs hard-coded program names (not separate processes yet! Just inline code on the current thread)
   - Integrate with multi-tasking. Make a new task for the thing being run, and the shell's task simply waits for the sub-task to complete.
@@ -144,8 +148,6 @@ make test
 - virtio-rng interrupt doesn't seem to fire with UEFI disabled (`make run UEFI=off`). Fix it.
 - Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
 - Filesystem support
-  - Now that I have PCI working, attach a drive via QEMU and see what is looks like under PCI
-    - I'm pretty sure there is just one SATA controller for multiple drives
   - Example <https://github.com/rafalh/rust-fatfs>
   - <https://wiki.osdev.org/FAT>
 - Allocator designs <https://os.phil-opp.com/allocator-designs/>
@@ -244,9 +246,11 @@ $ qemu-system-x86_64 -device virtio-rng-pci,help
 Block device:
 - <https://www.qemu.org/2021/01/19/virtio-blk-scsi-configuration/>
 - <https://brennan.io/2020/03/22/sos-block-device/>
+  - Explains why you need 3 descriptors per request (different permissions needed). Links to <https://stackoverflow.com/questions/52037482/qemu-virtio-blk-strange-restrictions>
 - <https://github.com/mit-pdos/xv6-riscv/blob/f5b93ef12f7159f74f80f94729ee4faabe42c360/kernel/virtio_disk.c>
 - <https://marz.utk.edu/my-courses/cosc562/virtio/block/>
-
+  - <https://web.eecs.utk.edu/~smarz1/courses/cosc361/notes/virtio/>
+  - <https://web.eecs.utk.edu/~smarz1/courses/cosc361/notes/blockio/>
 
 #### Struct offsets
 
