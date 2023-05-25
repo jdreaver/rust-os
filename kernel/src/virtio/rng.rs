@@ -1,5 +1,6 @@
 use core::ptr;
 
+use bitflags::bitflags;
 use spin::{Mutex, RwLock};
 use x86_64::VirtAddr;
 
@@ -73,7 +74,8 @@ impl VirtIORNG {
             "VirtIORNG: Device ID mismatch, got {device_id}"
         );
 
-        let initialized_device = VirtIOInitializedDevice::new(device_config);
+        let initialized_device =
+            VirtIOInitializedDevice::new(device_config, |_: &mut RNGFeatureBits| {});
 
         Self {
             initialized_device,
@@ -104,6 +106,15 @@ impl VirtIORNG {
         let buffer_size = core::mem::size_of_val(&VIRTIO_RNG_BUFFER);
         let flags = VirtqDescriptorFlags::new().with_device_write(true);
         virtq.add_buffer(buffer_phys_addr, buffer_size as u32, flags);
+    }
+}
+
+bitflags! {
+    #[derive(Debug)]
+    #[repr(transparent)]
+    /// VirtIO RNG device has no device-specific feature bits. See "5.4.3
+    /// Feature bits".
+    struct RNGFeatureBits: u64 {
     }
 }
 

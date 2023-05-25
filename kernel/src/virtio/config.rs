@@ -1,6 +1,7 @@
 use core::fmt;
 
 use bitfield_struct::bitfield;
+use bitflags::Flags;
 use x86_64::PhysAddr;
 
 use crate::pci::{
@@ -133,7 +134,10 @@ impl VirtIODeviceConfig {
 
     /// Iterates through `device_feature_select` and `device_feature` to find
     /// the device features.
-    pub(super) fn get_device_features(&self) -> Features {
+    pub(super) fn get_device_features<F>(&self) -> Features<F>
+    where
+        F: Flags<Bits = u64>,
+    {
         let mut features = 0;
         for i in 0..2_u32 {
             self.common_virtio_config.device_feature_select().write(i);
@@ -146,7 +150,10 @@ impl VirtIODeviceConfig {
 
     /// Iterates through `driver_feature_select` and `driver_feature` to set
     /// the driver features.
-    pub(super) fn set_driver_features(&self, features: &Features) {
+    pub(super) fn set_driver_features<F>(&self, features: &Features<F>)
+    where
+        F: Flags<Bits = u64>,
+    {
         let bits = features.as_u64();
         for i in 0..2_u32 {
             self.common_virtio_config.driver_feature_select().write(i);

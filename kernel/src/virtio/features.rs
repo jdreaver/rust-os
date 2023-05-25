@@ -1,12 +1,17 @@
 use core::fmt;
+use core::marker::PhantomData;
 
-use bitflags::bitflags;
+use bitflags::{bitflags, Flags};
 
-/// See "2.2 Feature Bits"
+/// See "2.2 Feature Bits". The `F` type parameter is used to specify
+/// the device-specific feature bits via a `Flags` implementation.
 ///
 /// N.B. The spec technically supports up to 128 bits of features, but
 /// all the devices we use only need 64 bits.
-pub(super) struct Features(u64);
+pub(super) struct Features<F> {
+    bits: u64,
+    _phantom: PhantomData<F>,
+}
 
 bitflags! {
     #[derive(Debug)]
@@ -27,25 +32,55 @@ bitflags! {
     }
 }
 
-impl Features {
-    pub(super) fn new(features: u64) -> Self {
-        Self(features)
+impl<F> Features<F>
+where
+    F: Flags<Bits = u64>,
+{
+    pub(super) fn new(bits: u64) -> Self {
+        Self {
+            bits,
+            _phantom: PhantomData,
+        }
     }
 
     pub(super) fn as_u64(&self) -> u64 {
-        self.0
+        self.bits
     }
 
     pub(super) fn negotiate_reserved_bits(&mut self, f: impl FnOnce(&mut ReservedFeatureBits)) {
-        let mut reserved_bits = ReservedFeatureBits::from_bits_truncate(self.0);
-        f(&mut reserved_bits);
-        self.0 = reserved_bits.bits();
+        self.negotiate_flags_impl(f);
+    }
+
+    pub(super) fn negotiate_device_bits(&mut self, f: impl FnOnce(&mut F))
+    where
+        F: Flags<Bits = u64>,
+    {
+        self.negotiate_flags_impl(f);
+    }
+
+    // Separate function to make type parameter stuff clearer between reserved
+    // and device flags.
+    fn negotiate_flags_impl<I>(&mut self, f: impl FnOnce(&mut I))
+    where
+        I: Flags<Bits = u64>,
+    {
+        let mut bits = I::from_bits_retain(self.bits);
+        f(&mut bits);
+        self.bits = bits.bits();
     }
 }
 
-impl fmt::Debug for Features {
+impl<F> fmt::Debug for Features<F>
+where
+    F: Flags<Bits = u64> + fmt::Debug,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let reserved = ReservedFeatureBits::from_bits_truncate(self.0);
-        f.debug_tuple("Features").field(&reserved).finish()
+        f.debug_struct("Features")
+            .field(
+                "reserved",
+                &ReservedFeatureBits::from_bits_truncate(self.bits),
+            )
+            .field("device_specific", &F::from_bits_truncate(self.bits))
+            .finish()
     }
 }
