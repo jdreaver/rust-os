@@ -34,6 +34,8 @@ pub(crate) struct VirtIODeviceConfig {
     _isr: VirtIOPCIISRRegisters,
 
     notify_config: VirtIONotifyConfig,
+
+    _device_config_cap: VirtIOPCICapabilityHeader,
 }
 
 impl VirtIODeviceConfig {
@@ -55,6 +57,7 @@ impl VirtIODeviceConfig {
         let mut common_virtio_config = None;
         let mut isr = None;
         let mut notify_config = None;
+        let mut device_config_cap = None;
         for capability in pci_config.iter_capabilities() {
             let capability = unsafe {
                 VirtIOPCICapabilityHeader::from_pci_capability(pci_type0_config, &capability)
@@ -88,7 +91,7 @@ impl VirtIODeviceConfig {
                     isr.get_or_insert(isr_regs);
                 }
                 VirtIOConfig::Device => {
-                    serial_println!("VirtIO Device config found: {:#x?}", capability);
+                    device_config_cap.get_or_insert(capability);
                 }
                 VirtIOConfig::PCI => {
                     serial_println!("VirtIO PCI config found: {:#x?}", capability);
@@ -106,6 +109,7 @@ impl VirtIODeviceConfig {
             common_virtio_config.expect("failed to find VirtIO common config");
         let isr = isr.expect("failed to find VirtIO ISR");
         let notify_config = notify_config.expect("failed to find VirtIO notify config");
+        let device_config = device_config_cap.expect("failed to find VirtIO device config");
 
         Some(Self {
             pci_config,
@@ -113,6 +117,7 @@ impl VirtIODeviceConfig {
             common_virtio_config,
             _isr: isr,
             notify_config,
+            _device_config_cap: device_config,
         })
     }
 

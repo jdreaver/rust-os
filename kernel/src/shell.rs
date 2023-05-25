@@ -110,6 +110,7 @@ enum Command<'a> {
     Help,
     Tests,
     ListPCI,
+    ListVirtIO,
     PrintACPI,
     RNG,
     Invalid,
@@ -125,6 +126,7 @@ fn next_command(buffer: &mut [u8]) -> Option<Command> {
         "help" => Some(Command::Help),
         "tests" => Some(Command::Tests),
         "list-pci" => Some(Command::ListPCI),
+        "list-virtio" => Some(Command::ListVirtIO),
         "print-acpi" => Some(Command::PrintACPI),
         "rng" => Some(Command::RNG),
         s => Some(Command::Unknown(s)),
@@ -149,6 +151,15 @@ fn run_command(command: &Command) {
             let pci_config_region_base_address = acpi_info.pci_config_region_base_address();
             pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
                 serial_println!("Found PCI device: {device:#x?}");
+            });
+        }
+        Command::ListVirtIO => {
+            serial_println!("Listing virtio devices...");
+            let acpi_info = acpi::acpi_info();
+            let pci_config_region_base_address = acpi_info.pci_config_region_base_address();
+            pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
+                let Some(device) = virtio::VirtIODeviceConfig::from_pci_config(device) else { return; };
+                serial_println!("Found VirtIO device: {device:#x?}");
             });
         }
         Command::PrintACPI => {
