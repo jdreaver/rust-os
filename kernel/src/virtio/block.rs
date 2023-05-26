@@ -54,8 +54,12 @@ pub(crate) fn virtio_block_get_id() {
         .expect("failed to get VirtIO device ID buffer physical address");
     let buffer_size = core::mem::size_of_val(&DEVICE_ID_BUFFER) as u32;
 
-    let request = BlockRequest::new(BlockRequestType::GetID, 0, buffer_phys_addr, buffer_size);
-    virtq.add_buffer(&request.to_descriptor_chain());
+    let request = BlockRequest::GetID {
+        data_addr: buffer_phys_addr,
+        data_len: buffer_size,
+    };
+    let raw_request = request.to_raw();
+    virtq.add_buffer(&raw_request.to_descriptor_chain());
 }
 
 fn virtio_block_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
@@ -78,8 +82,14 @@ fn virtio_block_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
 
     for i in last_processed..used_index {
         let (_, mut descriptor_chain) = virtq.get_used_ring_entry(i);
-        let request = BlockRequest::from_descriptor_chain(&mut descriptor_chain);
+        let raw_request = RawBlockRequest::from_descriptor_chain(&mut descriptor_chain);
+        let request = BlockRequest::from_raw(&raw_request);
         serial_println!("Got response: {:#x?}", request);
+
+        #[allow(irrefutable_let_patterns)]
+        let BlockRequest::GetID { data_addr, data_len } = request else {
+            panic!("Unexpected response from VirtIO block device");
+        };
 
         // The used entry should be using the exact same buffer we just
         // created, but let's pretend we didn't know that.
@@ -87,10 +97,7 @@ fn virtio_block_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
             // The device ID response is a null-terminated string with a max
             // size of the buffer size (if the string size == buffer size, there
             // is no null terminator)
-            strings::c_str_from_pointer(
-                request.data_addr.as_u64() as *const u8,
-                request.data_len as usize,
-            )
+            strings::c_str_from_pointer(data_addr.as_u64() as *const u8, data_len as usize)
         };
         serial_println!("Device ID: {s}");
     }
@@ -213,6 +220,38 @@ struct BlockConfigTopology {
     opt_io_size: u32,
 }
 
+#[derive(Debug)]
+enum BlockRequest {
+    GetID { data_addr: PhysAddr, data_len: u32 },
+}
+
+impl BlockRequest {
+    fn to_raw(&self) -> RawBlockRequest {
+        match self {
+            Self::GetID {
+                data_addr,
+                data_len,
+            } => {
+                assert!(
+                    *data_len == 20,
+                    "GetID requests MUST have a data buffer of exactly 20 bytes"
+                );
+                RawBlockRequest::new(BlockRequestType::GetID, 0, *data_addr, *data_len)
+            }
+        }
+    }
+
+    fn from_raw(raw: &RawBlockRequest) -> Self {
+        match raw.request_type {
+            BlockRequestType::GetID => Self::GetID {
+                data_addr: raw.data_addr,
+                data_len: raw.data_len,
+            },
+            _ => panic!("Unsupported block request type: {:?}", raw.request_type),
+        }
+    }
+}
+
 /// Wraps the different components of a block device request.
 ///
 /// Under the hood this is:
@@ -232,7 +271,7 @@ struct BlockConfigTopology {
 /// That means this needs to be split up into 3 chained descriptors when we
 /// write this to the descriptor table.
 #[derive(Debug)]
-struct BlockRequest {
+struct RawBlockRequest {
     request_type: BlockRequestType,
     sector: u64,
     data_addr: PhysAddr,
@@ -248,7 +287,7 @@ struct RawBlockRequestHeader {
     sector: u64,
 }
 
-impl BlockRequest {
+impl RawBlockRequest {
     fn new(
         request_type: BlockRequestType,
         sector: u64,
