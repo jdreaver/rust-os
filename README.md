@@ -390,3 +390,15 @@ Other higher-level Linux resources:
 - <https://0xax.gitbooks.io/linux-insides/content/Timers/linux-timers-6.html>
 - <https://stackoverflow.com/questions/51919219/determine-tsc-frequency-on-linux>
 - <https://stackoverflow.com/questions/13772567/how-to-get-the-cpu-cycle-count-in-x86-64-from-c/51907627#51907627>
+
+### Memory barriers
+
+When performing memory-mapped device IO, it is often important to ensure that
+your reads and writes are performed in the order you write them in code. Using
+volatile reads/writes can ensure that the _compiler_ doesn't reorder them, but
+the CPU may still reorder them.
+
+- <https://www.kernel.org/doc/Documentation/memory-barriers.txt>
+- <https://lwn.net/Articles/847481/>
+- <https://doc.rust-lang.org/core/sync/atomic/fn.compiler_fence.html>
+- <https://en.wikipedia.org/wiki/Memory_barrier>
