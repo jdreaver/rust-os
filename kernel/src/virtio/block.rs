@@ -1,6 +1,6 @@
 use bitflags::bitflags;
 use core::{mem, ptr};
-use spin::{Mutex, RwLock};
+use spin::RwLock;
 use x86_64::{PhysAddr, VirtAddr};
 
 use crate::interrupts::InterruptHandlerID;
@@ -101,13 +101,7 @@ fn virtio_block_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
         .get_virtqueue(VirtQueueIndex(0))
         .unwrap();
 
-    let used_index = virtq.used_ring_index();
-
-    let mut used_index_lock = device.processed_used_index.lock();
-    let last_processed: u16 = *used_index_lock;
-
-    for i in last_processed..used_index {
-        let (_, mut descriptor_chain) = virtq.get_used_ring_entry(i);
+    virtq.process_new_entries(|_, mut descriptor_chain| {
         let raw_request = RawBlockRequest::from_descriptor_chain(&mut descriptor_chain);
         let request = BlockRequest::from_raw(&raw_request);
         serial_println!("Got response: {:#x?}", request);
@@ -138,9 +132,7 @@ fn virtio_block_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
                 serial_println!("Device ID response: {s}");
             }
         }
-    }
-
-    *used_index_lock = used_index;
+    });
 }
 
 /// See "5.2 Block Device" in the VirtIO spec.
@@ -148,9 +140,6 @@ fn virtio_block_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
 struct VirtIOBlockDevice {
     initialized_device: VirtIOInitializedDevice,
     _block_config: BlockConfigRegisters,
-
-    /// How far into the used ring we've processed entries.
-    processed_used_index: Mutex<u16>, // TODO: Abstract/dedup with RNG device
 }
 
 impl VirtIOBlockDevice {
@@ -179,7 +168,6 @@ impl VirtIOBlockDevice {
         Self {
             initialized_device,
             _block_config: block_config,
-            processed_used_index: Mutex::new(0),
         }
     }
 }

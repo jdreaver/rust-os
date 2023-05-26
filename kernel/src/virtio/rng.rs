@@ -1,7 +1,7 @@
 use core::ptr;
 
 use bitflags::bitflags;
-use spin::{Mutex, RwLock};
+use spin::RwLock;
 use x86_64::VirtAddr;
 
 use crate::interrupts::InterruptHandlerID;
@@ -52,10 +52,6 @@ pub(crate) fn request_random_numbers() {
 #[derive(Debug)]
 struct VirtIORNG {
     initialized_device: VirtIOInitializedDevice,
-
-    /// How far into the used ring we've processed entries. Only used when
-    /// reading from the RNG device and processing entries.
-    processed_used_index: Mutex<u16>, // TODO: Abstract/dedup with block device
 }
 
 impl VirtIORNG {
@@ -73,10 +69,7 @@ impl VirtIORNG {
         let initialized_device =
             VirtIOInitializedDevice::new(device_config, |_: &mut RNGFeatureBits| {});
 
-        Self {
-            initialized_device,
-            processed_used_index: Mutex::new(0),
-        }
+        Self { initialized_device }
     }
 
     fn enable_msix(&mut self, processor_id: u8) {
@@ -135,13 +128,8 @@ fn virtio_rng_interrupt(vector: u8, handler_id: InterruptHandlerID) {
         .initialized_device
         .get_virtqueue(VirtIORNG::QUEUE_INDEX)
         .unwrap();
-    let used_index = virtq.used_ring_index();
 
-    let mut used_index_lock = rng.processed_used_index.lock();
-    let last_processed: u16 = *used_index_lock;
-
-    for i in last_processed..used_index {
-        let (used_entry, mut descriptor_chain) = virtq.get_used_ring_entry(i);
+    virtq.process_new_entries(|used_entry, mut descriptor_chain| {
         let descriptor = descriptor_chain.next().expect("no descriptor in chain");
         // serial_println!("Got used entry: {:#x?}", (used_entry, descriptor));
 
@@ -157,7 +145,5 @@ fn virtio_rng_interrupt(vector: u8, handler_id: InterruptHandlerID) {
             )
         };
         serial_println!("RNG buffer: {:x?}", buffer);
-    }
-
-    *used_index_lock = used_index;
+    });
 }

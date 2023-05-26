@@ -2,6 +2,7 @@ use core::mem;
 use core::sync::atomic::{AtomicU16, Ordering};
 
 use bitfield_struct::bitfield;
+use spin::Mutex;
 use x86_64::PhysAddr;
 
 use crate::barrier::barrier;
@@ -28,6 +29,11 @@ pub(super) struct VirtQueue {
     descriptors: VirtQueueDescriptorTable,
     avail_ring: VirtQueueAvailRing,
     used_ring: VirtQueueUsedRing,
+
+    /// Used to record how many used ring entries have been processed by the
+    /// driver. This is a mutex so we can ensure multiple threads using the
+    /// driver don't process the same entries.
+    last_processed_used_index: Mutex<u16>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -52,6 +58,7 @@ impl VirtQueue {
             descriptors,
             avail_ring,
             used_ring,
+            last_processed_used_index: Mutex::new(0),
         }
     }
 
@@ -66,17 +73,26 @@ impl VirtQueue {
         };
     }
 
-    pub(super) fn used_ring_index(&self) -> u16 {
-        self.used_ring.idx.read()
+    pub(super) fn process_new_entries<F>(&self, mut f: F)
+    where
+        F: FnMut(VirtQueueUsedElem, VirtQueueDescriptorChainIterator),
+    {
+        let mut last_processed_lock = self.last_processed_used_index.lock();
+        let last_processed = *last_processed_lock;
+        let used_index = self.used_ring.idx.read();
+
+        for i in last_processed..used_index {
+            let (used_elem, chain) = self.get_used_ring_entry(i);
+            f(used_elem, chain);
+        }
+
+        *last_processed_lock = used_index;
     }
 
-    pub(super) fn get_used_ring_entry(
+    fn get_used_ring_entry(
         &self,
         index: u16,
-    ) -> (
-        VirtQueueUsedElem,
-        impl Iterator<Item = ChainedVirtQueueDescriptorElem> + '_,
-    ) {
+    ) -> (VirtQueueUsedElem, VirtQueueDescriptorChainIterator) {
         // Load the used element
         let used_elem = self.used_ring.get_used_elem(index);
 
