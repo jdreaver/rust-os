@@ -8,7 +8,7 @@ use crate::interrupts::InterruptHandlerID;
 use crate::{memory, serial_println};
 
 use super::device::VirtIOInitializedDevice;
-use super::queue::{VirtQueueDescriptorFlags, VirtQueueIndex};
+use super::queue::{ChainedVirtQueueDescriptorElem, VirtQueueDescriptorFlags, VirtQueueIndex};
 use super::VirtIODeviceConfig;
 
 static VIRTIO_RNG: RwLock<Option<VirtIORNG>> = RwLock::new(None);
@@ -101,7 +101,12 @@ impl VirtIORNG {
             .expect("failed to get VirtIO RNG buffer physical address");
         let buffer_size = core::mem::size_of_val(&VIRTIO_RNG_BUFFER);
         let flags = VirtQueueDescriptorFlags::new().with_device_write(true);
-        virtq.add_buffer(buffer_phys_addr, buffer_size as u32, flags);
+        let desc = ChainedVirtQueueDescriptorElem {
+            addr: buffer_phys_addr,
+            len: buffer_size as u32,
+            flags,
+        };
+        virtq.add_buffer(&[desc]);
     }
 }
 
@@ -136,7 +141,8 @@ fn virtio_rng_interrupt(vector: u8, handler_id: InterruptHandlerID) {
     let last_processed: u16 = *used_index_lock;
 
     for i in last_processed..used_index {
-        let (used_entry, descriptor) = virtq.get_used_ring_entry(i);
+        let (used_entry, mut descriptor_chain) = virtq.get_used_ring_entry(i);
+        let descriptor = descriptor_chain.next().expect("no descriptor in chain");
         // serial_println!("Got used entry: {:#x?}", (used_entry, descriptor));
 
         // The used entry should be using the exact same buffer we just

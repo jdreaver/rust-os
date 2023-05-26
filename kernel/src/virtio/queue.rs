@@ -1,5 +1,5 @@
 use core::mem;
-use core::sync::atomic::AtomicU16;
+use core::sync::atomic::{AtomicU16, Ordering};
 
 use bitfield_struct::bitfield;
 use x86_64::PhysAddr;
@@ -55,15 +55,8 @@ impl VirtQueue {
     }
 
     /// See "2.7.13 Supplying Buffers to The Device"
-    pub(super) fn add_buffer(
-        &self,
-        buffer_addr: PhysAddr,
-        buffer_len: u32,
-        flags: VirtQueueDescriptorFlags,
-    ) {
-        let desc_index = self
-            .descriptors
-            .add_descriptor(buffer_addr, buffer_len, flags);
+    pub(super) fn add_buffer(&self, descriptors: &[ChainedVirtQueueDescriptorElem]) {
+        let desc_index = self.descriptors.add_descriptor(descriptors);
         self.avail_ring.add_entry(desc_index);
         unsafe {
             self.device_notify_config
@@ -78,14 +71,17 @@ impl VirtQueue {
     pub(super) fn get_used_ring_entry(
         &self,
         index: u16,
-    ) -> (VirtQueueUsedElem, VirtQueueDescriptor) {
+    ) -> (
+        VirtQueueUsedElem,
+        impl Iterator<Item = ChainedVirtQueueDescriptorElem> + '_,
+    ) {
         // Load the used element
         let used_elem = self.used_ring.get_used_elem(index);
 
         // Load the associated descriptor
-        let descriptor = self.descriptors.get_descriptor(used_elem.id as u16);
+        let chain = VirtQueueDescriptorChainIterator::new(&self.descriptors, used_elem.id as u16);
 
-        (used_elem, descriptor)
+        (used_elem, chain)
     }
 }
 
@@ -106,14 +102,21 @@ pub(super) struct VirtQueueDescriptorTable {
     raw_next_index: AtomicU16,
 
     /// Array of descriptors.
-    descriptors: VolatileArrayRW<VirtQueueDescriptor>,
+    descriptors: VolatileArrayRW<RawVirtQueueDescriptor>,
 }
 
 impl VirtQueueDescriptorTable {
     pub(super) unsafe fn allocate(queue_size: u16) -> Result<Self, AllocZeroedBufferError> {
         let queue_size = queue_size as usize;
 
-        let mem_size = mem::size_of::<VirtQueueDescriptor>() * queue_size;
+        // Queue size being a power of 2 is in the spec, and is important for
+        // the wrapping logic to work.
+        assert!(
+            queue_size.is_power_of_two(),
+            "queue size must be a power of two for index wrapping to work"
+        );
+
+        let mem_size = mem::size_of::<RawVirtQueueDescriptor>() * queue_size;
 
         // Check that this matches the spec. See 2.7 Split Virtqueues
         assert_eq!(
@@ -142,9 +145,7 @@ impl VirtQueueDescriptorTable {
 
     /// Atomically increments the internal index and performs the necessary wrapping.
     fn next_index(&self) -> u16 {
-        let index = self
-            .raw_next_index
-            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        let index = self.raw_next_index.fetch_add(1, Ordering::Relaxed);
         // N.B. Assumes that the queue size is a power of 2, which is in the
         // virtio spec. Specifically, when we do fetch_add above, it performs a
         // wraparound when we max out u16, and this modulo logic only works in
@@ -152,35 +153,104 @@ impl VirtQueueDescriptorTable {
         index % self.descriptors.len() as u16
     }
 
-    fn add_descriptor(
-        &self,
-        buffer_addr: PhysAddr,
-        buffer_len: u32,
-        flags: VirtQueueDescriptorFlags,
-    ) -> u16 {
-        // 2.7.13.1 Placing Buffers Into The Descriptor Table
-        let desc_index = self.next_index();
+    /// Adds a group of chained descriptors to the descriptor table. Returns the
+    /// index of the first descriptor.
+    fn add_descriptor(&self, descriptors: &[ChainedVirtQueueDescriptorElem]) -> u16 {
+        let mut first_idx: Option<u16> = None;
+        let mut prev_idx: Option<u16> = None;
 
-        let descriptor = VirtQueueDescriptor {
-            addr: buffer_addr,
-            len: buffer_len,
-            flags,
-            next: 0,
-        };
+        for desc in descriptors.iter() {
+            let idx = self.next_index();
+            first_idx.get_or_insert(idx);
 
-        self.descriptors.write(desc_index as usize, descriptor);
+            // Modify the previous descriptor to point to this one.
+            if let Some(prev_index) = prev_idx {
+                self.descriptors.modify_mut(prev_index as usize, |desc| {
+                    desc.flags.set_indirect(true);
+                    desc.next = prev_index;
+                });
+            }
 
-        desc_index
+            assert!(
+                !desc.flags.indirect(),
+                "ChainedVirtQueueDescriptorElem should not set the INDIRECT flag"
+            );
+
+            let descriptor = RawVirtQueueDescriptor {
+                addr: desc.addr,
+                len: desc.len,
+                flags: desc.flags,
+                next: 0,
+            };
+
+            self.descriptors.write(idx as usize, descriptor);
+
+            prev_idx = Some(idx);
+        }
+
+        first_idx.expect("can't add empty descriptor")
     }
 
-    fn get_descriptor(&self, index: u16) -> VirtQueueDescriptor {
+    fn get_descriptor(&self, index: u16) -> RawVirtQueueDescriptor {
         self.descriptors.read(index as usize)
+    }
+}
+
+/// See "2.7.5 The Virtqueue Descriptor Table". This is a virtqueue descriptor
+/// without the `next` field, and is meant to be used in an array to represent a
+/// single descriptor.
+pub(super) struct ChainedVirtQueueDescriptorElem {
+    /// Physical address for the buffer.
+    pub(super) addr: PhysAddr,
+    /// Length of the buffer, in bytes.
+    pub(super) len: u32,
+    pub(super) flags: VirtQueueDescriptorFlags,
+}
+
+/// Iterator over a chain of descriptors.
+pub(super) struct VirtQueueDescriptorChainIterator<'a> {
+    descriptors: &'a VirtQueueDescriptorTable,
+    current_index: Option<u16>,
+}
+
+impl VirtQueueDescriptorChainIterator<'_> {
+    pub(super) fn new(
+        descriptors: &VirtQueueDescriptorTable,
+        start_index: u16,
+    ) -> VirtQueueDescriptorChainIterator {
+        VirtQueueDescriptorChainIterator {
+            descriptors,
+            current_index: Some(start_index),
+        }
+    }
+}
+
+impl Iterator for VirtQueueDescriptorChainIterator<'_> {
+    type Item = ChainedVirtQueueDescriptorElem;
+
+    fn next(&mut self) -> Option<ChainedVirtQueueDescriptorElem> {
+        let current_index = self.current_index?;
+        let descriptor = self.descriptors.get_descriptor(current_index);
+
+        if descriptor.flags.next() {
+            self.current_index = Some(descriptor.next);
+        } else {
+            self.current_index = None;
+        }
+
+        Some(ChainedVirtQueueDescriptorElem {
+            addr: descriptor.addr,
+            len: descriptor.len,
+            flags: descriptor.flags,
+        })
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub(super) struct VirtQueueDescriptor {
+/// See "2.7.5 The Virtqueue Descriptor Table". This is "raw" because we have
+/// `ChainedVirtQueueDescriptor`
+struct RawVirtQueueDescriptor {
     /// Physical address for the buffer.
     pub(super) addr: PhysAddr,
     /// Length of the buffer, in bytes.

@@ -92,8 +92,6 @@ make test
 ## TODO
 
 - virtio-blk
-  - Refactor descriptor table to deal with chained descriptors. We can write chained descriptors with a slice, but we might need a type to iterate when reading.
-    - Rename `VirtqDescriptor` to `RawVirtQueueDescriptor` or something, and then have `ChainedVirtQueueDescriptor`?
   - Have `BlockRequest` wrap descriptors. I don't see much value in it being its own "thing" besides that. Maybe call it `RawBlockRequest`, or `BlockRequestDescriptors`?
 - Multi-tasking (see resources below)
 - Make a simple shell that runs hard-coded program names (not separate processes yet! Just inline code on the current thread)
