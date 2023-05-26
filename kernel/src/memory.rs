@@ -159,7 +159,7 @@ impl NaiveFreeMemoryBlockAllocator {
             // Construct figure out if we have enough space in the current region.
             let memory_region = self.usable_memory_regions[self.current_memory_region];
 
-            let start_address = memory_region.start_address + self.region_offset_bytes;
+            let unaligned_start_address = memory_region.start_address + self.region_offset_bytes;
             // If we have an alignment requirement (e.g. pages must be aligned
             // to their size) we need to apply it.
             //
@@ -169,14 +169,16 @@ impl NaiveFreeMemoryBlockAllocator {
             // are allocating a new 2 MiB page, align_up will consume 2 MiB - 4
             // KiB of wasted space. This is a naive allocator so that is okay
             // for now.
-            let start_address =
-                alignment.map_or(start_address, |alignment| start_address.align_up(alignment));
+            let start_address = alignment.map_or(unaligned_start_address, |alignment| {
+                unaligned_start_address.align_up(alignment)
+            });
+            let end_address = start_address + num_bytes;
 
-            if start_address - memory_region.start_address >= memory_region.len {
+            if end_address - memory_region.start_address >= memory_region.len {
                 self.current_memory_region += 1;
                 self.region_offset_bytes = 0;
             } else {
-                self.region_offset_bytes += num_bytes;
+                self.region_offset_bytes = end_address - memory_region.start_address;
                 return Some(start_address);
             }
         }
