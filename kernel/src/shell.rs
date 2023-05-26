@@ -1,26 +1,24 @@
+use alloc::vec::Vec;
 use spin::Mutex;
 
 use crate::{acpi, pci, serial, serial_print, serial_println, tests, virtio};
 
-static NEXT_COMMAND_BUFFER: Mutex<ShellBuffer<64>> = Mutex::new(ShellBuffer::new());
+static NEXT_COMMAND_BUFFER: Mutex<ShellBuffer> = Mutex::new(ShellBuffer::new());
 
-struct ShellBuffer<const N: usize> {
-    buffer: [u8; N],
-    index: usize,
+struct ShellBuffer {
+    buffer: Vec<u8>,
 }
 
-impl<const N: usize> ShellBuffer<N> {
+impl ShellBuffer {
+    const MAX_SIZE: usize = 512;
+
     const fn new() -> Self {
-        Self {
-            buffer: [0; N],
-            index: 0,
-        }
+        Self { buffer: Vec::new() }
     }
 
     fn add_char(&mut self, c: u8) -> bool {
-        if self.index < N {
-            self.buffer[self.index] = c;
-            self.index += 1;
+        if self.buffer.len() < Self::MAX_SIZE - 1 {
+            self.buffer.push(c);
             true
         } else {
             false
@@ -28,27 +26,18 @@ impl<const N: usize> ShellBuffer<N> {
     }
 
     fn delete_char(&mut self) -> bool {
-        if self.index > 0 {
-            self.index -= 1;
-            true
-        } else {
-            false
-        }
+        self.buffer.pop().is_some()
     }
 
     fn clear(&mut self) {
-        self.index = 0;
-    }
-
-    fn buffer_slice(&mut self) -> &mut [u8] {
-        &mut self.buffer[..self.index]
+        self.buffer.clear();
     }
 
     fn redraw_buffer(&self) {
         reset_terminal_line();
         serial_print!("ksh > ");
-        for i in 0..self.index {
-            serial::serial1_write_byte(self.buffer[i]);
+        for c in &self.buffer {
+            serial::serial1_write_byte(*c);
         }
     }
 }
@@ -63,7 +52,7 @@ pub(crate) fn run_serial_shell() -> ! {
             match c {
                 b'\n' | b'\r' => {
                     serial_println!();
-                    let command = next_command(buffer.buffer_slice());
+                    let command = next_command(&buffer.buffer);
                     if let Some(command) = command {
                         run_command(&command);
                     }
@@ -119,7 +108,7 @@ enum Command<'a> {
     Unknown(&'a str),
 }
 
-fn next_command(buffer: &mut [u8]) -> Option<Command> {
+fn next_command(buffer: &[u8]) -> Option<Command> {
     let command_str = core::str::from_utf8(buffer);
     let Ok(command_str) = command_str else { return Some(Command::Invalid); };
 
