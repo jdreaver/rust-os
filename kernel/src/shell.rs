@@ -102,7 +102,7 @@ enum Command<'a> {
     ListVirtIO,
     PrintACPI,
     RNG,
-    VirtIOBlockRead,
+    VirtIOBlockRead { sector: u64 },
     VirtIOBlockID,
     Invalid,
     Unknown(&'a str),
@@ -112,17 +112,28 @@ fn next_command(buffer: &[u8]) -> Option<Command> {
     let command_str = core::str::from_utf8(buffer);
     let Ok(command_str) = command_str else { return Some(Command::Invalid); };
 
-    match command_str.trim() {
-        "" => None,
-        "help" => Some(Command::Help),
-        "tests" => Some(Command::Tests),
-        "list-pci" => Some(Command::ListPCI),
-        "list-virtio" => Some(Command::ListVirtIO),
-        "print-acpi" => Some(Command::PrintACPI),
-        "rng" => Some(Command::RNG),
-        "virtio-block-read" => Some(Command::VirtIOBlockRead),
-        "virtio-block-id" => Some(Command::VirtIOBlockID),
-        s => Some(Command::Unknown(s)),
+    let words = command_str.split_whitespace().collect::<Vec<_>>();
+
+    match &words[..] {
+        [""] => None,
+        ["help"] => Some(Command::Help),
+        ["tests"] => Some(Command::Tests),
+        ["list-pci"] => Some(Command::ListPCI),
+        ["list-virtio"] => Some(Command::ListVirtIO),
+        ["print-acpi"] => Some(Command::PrintACPI),
+        ["rng"] => Some(Command::RNG),
+        ["virtio-block-read", sector_str] => {
+            let sector = sector_str.parse::<u64>();
+            match sector {
+                Ok(sector) => Some(Command::VirtIOBlockRead { sector }),
+                Err(e) => {
+                    serial_println!("Invalid sector number {sector_str}: {e}");
+                    None
+                }
+            }
+        }
+        ["virtio-block-id"] => Some(Command::VirtIOBlockID),
+        _ => Some(Command::Unknown(command_str)),
     }
 }
 
@@ -163,9 +174,9 @@ fn run_command(command: &Command) {
             serial_println!("Generating random numbers...");
             virtio::request_random_numbers();
         }
-        Command::VirtIOBlockRead => {
-            serial_println!("Reading VirtIO block sector...");
-            virtio::virtio_block_read();
+        Command::VirtIOBlockRead { sector } => {
+            serial_println!("Reading VirtIO block sector {sector}...");
+            virtio::virtio_block_read(*sector);
         }
         Command::VirtIOBlockID => {
             serial_println!("Reading VirtIO block device ID...");

@@ -145,6 +145,7 @@ make test
     would be _really_ nice to be able to rely on `#[repr(C)]` alignment rules,
     especially for VirtIO where they use C structs in the spec.
 - virtio-rng interrupt doesn't seem to fire with UEFI disabled (`make run UEFI=off`). Fix it.
+  - virtio-blk interrupts work! Just a problem with RNG
 - Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
 - Filesystem support
   - Example <https://github.com/rafalh/rust-fatfs>

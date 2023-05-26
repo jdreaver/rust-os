@@ -64,7 +64,7 @@ pub(crate) fn virtio_block_get_id() {
     virtq.add_buffer(&raw_request.to_descriptor_chain());
 }
 
-pub(crate) fn virtio_block_read() {
+pub(crate) fn virtio_block_read(sector: u64) {
     let device_lock = VIRTIO_BLOCK.read();
     let device = device_lock
         .as_ref()
@@ -80,7 +80,7 @@ pub(crate) fn virtio_block_read() {
     let buffer_size = core::mem::size_of_val(&READ_BUFFER) as u32;
 
     let request = BlockRequest::Read {
-        sector: 0,
+        sector,
         data_addr: buffer_phys_addr,
         data_len: buffer_size,
     };
