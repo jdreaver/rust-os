@@ -53,7 +53,7 @@ else
 endif
 
 # Use virtio for the disk:
-QEMU_COMMON_ARGS += -drive file=$(HDD),if=none,id=drive-virtio-disk0,format=raw -device virtio-blk-pci,scsi=off,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=0
+QEMU_COMMON_ARGS += -drive file=$(HDD),if=none,id=drive-virtio-disk0,format=raw -device virtio-blk-pci,scsi=off,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=0,serial=hello-blk
 QEMU_COMMON_ARGS += -smp 2 # Use 2 cores
 QEMU_COMMON_ARGS += -m 2G # More memory
 QEMU_COMMON_ARGS += -device virtio-rng-pci-non-transitional # RNG is the simplest virtio device. Good for testing.

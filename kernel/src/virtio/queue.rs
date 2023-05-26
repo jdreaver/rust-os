@@ -166,8 +166,8 @@ impl VirtQueueDescriptorTable {
             // Modify the previous descriptor to point to this one.
             if let Some(prev_index) = prev_idx {
                 self.descriptors.modify_mut(prev_index as usize, |desc| {
-                    desc.flags.set_indirect(true);
-                    desc.next = prev_index;
+                    desc.flags.set_next(true);
+                    desc.next = idx;
                 });
             }
 

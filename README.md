@@ -92,7 +92,8 @@ make test
 ## TODO
 
 - virtio-blk
-  - Have `BlockRequest` wrap descriptors. I don't see much value in it being its own "thing" besides that. Maybe call it `RawBlockRequest`, or `BlockRequestDescriptors`?
+  - Create type safe wrappers around requests (and responses!)
+  - Maybe abstract out "last processed ID" between virtio-rng and virtio-blk. Should this go on the virtqueue as a mutex? (Is there a way to use atomics to avoid the mutex?)
 - Multi-tasking (see resources below)
 - Make a simple shell that runs hard-coded program names (not separate processes yet! Just inline code on the current thread)
   - Integrate with multi-tasking. Make a new task for the thing being run, and the shell's task simply waits for the sub-task to complete.

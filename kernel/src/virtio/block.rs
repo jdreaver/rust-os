@@ -1,12 +1,14 @@
 use bitflags::bitflags;
-use core::mem;
-use spin::RwLock;
-use x86_64::PhysAddr;
+use core::{mem, ptr};
+use spin::{Mutex, RwLock};
+use x86_64::{PhysAddr, VirtAddr};
 
+use crate::interrupts::InterruptHandlerID;
 use crate::registers::RegisterRO;
-use crate::{memory, register_struct, serial_println};
+use crate::{memory, register_struct, serial_println, strings};
 
 use super::device::VirtIOInitializedDevice;
+use super::queue::{ChainedVirtQueueDescriptorElem, VirtQueueDescriptorFlags, VirtQueueIndex};
 use super::VirtIODeviceConfig;
 
 // TODO: Support multiple block devices
@@ -21,17 +23,89 @@ pub(crate) fn try_init_virtio_block(device_config: VirtIODeviceConfig) {
         return;
     }
 
-    let device = VirtIOBlockDevice::from_device(device_config);
+    let mut device = VirtIOBlockDevice::from_device(device_config);
+    device.initialized_device.install_virtqueue_msix_handler(
+        VirtQueueIndex(0),
+        0,
+        0,
+        123,
+        virtio_block_interrupt,
+    );
     serial_println!("VirtIOBlockDevice: {:#x?}", device);
 
     VIRTIO_BLOCK.write().replace(device);
+}
+
+// N.B. The drive MUST provide a 20 byte buffer when requesting device ID.
+static DEVICE_ID_BUFFER: [u8; 20] = [0; 20];
+
+pub(crate) fn virtio_block_get_id() {
+    let device_lock = VIRTIO_BLOCK.read();
+    let device = device_lock
+        .as_ref()
+        .expect("VirtIOBlockDevice not initialized");
+
+    let virtq = device
+        .initialized_device
+        .get_virtqueue(VirtQueueIndex(0))
+        .unwrap();
+    let buffer_virt_addr = VirtAddr::new(ptr::addr_of!(DEVICE_ID_BUFFER) as u64);
+    let buffer_phys_addr = memory::translate_addr(buffer_virt_addr)
+        .expect("failed to get VirtIO device ID buffer physical address");
+    let buffer_size = core::mem::size_of_val(&DEVICE_ID_BUFFER) as u32;
+
+    let request = BlockRequest::new(BlockRequestType::GetID, 0, buffer_phys_addr, buffer_size);
+    virtq.add_buffer(&request.to_descriptor_chain());
+}
+
+fn virtio_block_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
+    serial_println!("!!! virtio_block_interrupt !!!");
+
+    let device_lock = VIRTIO_BLOCK.read();
+    let device = device_lock
+        .as_ref()
+        .expect("VirtIOBlockDevice not initialized");
+
+    let virtq = device
+        .initialized_device
+        .get_virtqueue(VirtQueueIndex(0))
+        .unwrap();
+
+    let used_index = virtq.used_ring_index();
+
+    let mut used_index_lock = device.processed_used_index.lock();
+    let last_processed: u16 = *used_index_lock;
+
+    for i in last_processed..used_index {
+        let (_, mut descriptor_chain) = virtq.get_used_ring_entry(i);
+        let request = BlockRequest::from_descriptor_chain(&mut descriptor_chain);
+        serial_println!("Got response: {:#x?}", request);
+
+        // The used entry should be using the exact same buffer we just
+        // created, but let's pretend we didn't know that.
+        let s = unsafe {
+            // The device ID response is a null-terminated string with a max
+            // size of the buffer size (if the string size == buffer size, there
+            // is no null terminator)
+            strings::c_str_from_pointer(
+                request.data_addr.as_u64() as *const u8,
+                request.data_len as usize,
+            )
+        };
+        serial_println!("Device ID: {s}");
+    }
+
+    *used_index_lock = used_index;
 }
 
 /// See "5.2 Block Device" in the VirtIO spec.
 #[derive(Debug)]
 struct VirtIOBlockDevice {
     initialized_device: VirtIOInitializedDevice,
-    block_config: BlockConfigRegisters,
+    _block_config: BlockConfigRegisters,
+
+    /// How far into the used ring we've processed entries.
+    processed_used_index: Mutex<u16>, // TODO: Abstract/dedup with RNG device
 }
 
 impl VirtIOBlockDevice {
@@ -46,7 +120,10 @@ impl VirtIOBlockDevice {
         );
 
         let initialized_device =
-            VirtIOInitializedDevice::new(device_config, |_: &mut BlockDeviceFeatureBits| {});
+            VirtIOInitializedDevice::new(device_config, |features: &mut BlockDeviceFeatureBits| {
+                // Don't use multi queue for now
+                features.remove(BlockDeviceFeatureBits::MQ);
+            });
 
         let block_config = unsafe {
             BlockConfigRegisters::from_address(
@@ -56,7 +133,8 @@ impl VirtIOBlockDevice {
 
         Self {
             initialized_device,
-            block_config,
+            _block_config: block_config,
+            processed_used_index: Mutex::new(0),
         }
     }
 }
@@ -155,65 +233,120 @@ struct BlockConfigTopology {
 /// write this to the descriptor table.
 #[derive(Debug)]
 struct BlockRequest {
-    header_addr: PhysAddr,
+    request_type: BlockRequestType,
+    sector: u64,
     data_addr: PhysAddr,
     data_len: u32,
-    status_addr: PhysAddr,
+    status: BlockRequestStatus,
 }
 
 #[repr(C)]
 #[derive(Debug)]
-struct BlockRequestHeader {
+struct RawBlockRequestHeader {
     request_type: u32,
     reserved: u32,
     sector: u64,
 }
 
 impl BlockRequest {
-    /// Allocates a new block request, ensuring it is sized correctly and
-    /// ensuring it uses physically-contiguous memory.
-    ///
-    /// TODO: Ensure we de-allocate the components when done with the descriptor.
-    fn allocate(
+    fn new(
         request_type: BlockRequestType,
         sector: u64,
         data_addr: PhysAddr,
         data_len: u32,
     ) -> Self {
+        Self {
+            request_type,
+            sector,
+            data_addr,
+            data_len,
+
+            // Trick: write 111 to status, which is invalid, so we can be certain
+            // that the device wrote the status. If we leave it as 0 we can't be
+            // certain that the device wrote the status.
+            status: BlockRequestStatus::Unset,
+        }
+    }
+
+    /// Creates a descriptor (that is chained) for the block request.
+    ///
+    /// TODO: Ensure we de-allocate the components when done with the descriptor.
+    fn to_descriptor_chain(&self) -> [ChainedVirtQueueDescriptorElem; 3] {
         // Allocate header
         let header_addr = memory::allocate_physically_contiguous_zeroed_buffer(
-            mem::size_of::<BlockRequestHeader>(),
-            mem::align_of::<BlockRequestHeader>(),
+            mem::size_of::<RawBlockRequestHeader>(),
+            mem::align_of::<RawBlockRequestHeader>(),
         )
         .expect("failed to allocate RawBlockRequest header");
 
         // Set header fields
-        let header_ptr = header_addr.as_u64() as *mut BlockRequestHeader;
+        let header_ptr = header_addr.as_u64() as *mut RawBlockRequestHeader;
         unsafe {
-            header_ptr.write_volatile(BlockRequestHeader {
-                request_type: request_type as u32,
+            header_ptr.write_volatile(RawBlockRequestHeader {
+                request_type: self.request_type as u32,
                 reserved: 0,
-                sector,
+                sector: self.sector,
             });
+        };
+
+        let header_desc = ChainedVirtQueueDescriptorElem {
+            addr: header_addr,
+            len: mem::size_of::<RawBlockRequestHeader>() as u32,
+            flags: VirtQueueDescriptorFlags::new().with_device_write(false),
+        };
+
+        // Buffer descriptor
+        let buffer_desc = ChainedVirtQueueDescriptorElem {
+            addr: self.data_addr,
+            len: self.data_len,
+            flags: VirtQueueDescriptorFlags::new().with_device_write(true),
         };
 
         // Allocate status
         let status_addr = memory::allocate_physically_contiguous_zeroed_buffer(1, 1)
             .expect("failed to allocate RawBlockRequest status");
-
-        // Trick: write 111 to status, which is invalid, so we can be certain
-        // that the device wrote the status. If we leave it as 0 we can't be
-        // certain that the device wrote the status.
         let status_ptr = status_addr.as_u64() as *mut u8;
         unsafe {
-            status_ptr.write_volatile(BlockRequestStatus::Unset as u8);
+            status_ptr.write_volatile(self.status as u8);
+        };
+        serial_println!("status_addr: {:#x}", status_addr);
+
+        let status_desc = ChainedVirtQueueDescriptorElem {
+            addr: status_addr,
+            len: 1,
+            flags: VirtQueueDescriptorFlags::new().with_device_write(true),
         };
 
+        [header_desc, buffer_desc, status_desc]
+    }
+
+    fn from_descriptor_chain(
+        mut chain: impl Iterator<Item = ChainedVirtQueueDescriptorElem>,
+    ) -> Self {
+        let header_desc = chain.next().expect("missing header descriptor");
+        let buffer_desc = chain.next().expect("missing buffer descriptor");
+        let status_desc = chain.next().expect("missing status descriptor");
+        assert!(chain.next().is_none(), "too many descriptors");
+
+        assert!(header_desc.len == mem::size_of::<RawBlockRequestHeader>() as u32);
+        let header_ptr = header_desc.addr.as_u64() as *const RawBlockRequestHeader;
+        let header = unsafe { header_ptr.read_volatile() };
+
+        let request_type = BlockRequestType::from_u32(header.request_type)
+            .expect("invalid request type in header");
+
+        assert!(status_desc.len == 1);
+        let status_ptr = status_desc.addr.as_u64() as *const u8;
+        let raw_status = unsafe { status_ptr.read_volatile() };
+        let status =
+            BlockRequestStatus::from_u8(raw_status).expect("invalid status in status descriptor");
+
         Self {
-            header_addr,
-            data_addr,
-            data_len,
-            status_addr,
+            request_type,
+            sector: header.sector,
+            data_addr: buffer_desc.addr,
+            data_len: buffer_desc.len,
+            status,
         }
     }
 }
@@ -223,6 +356,8 @@ enum BlockRequestType {
     In = 0,
     Out = 1,
     Flush = 4,
+    /// N.B. The "ID" for a device is the `serial=` option when creating the
+    /// device in QEMU.
     GetID = 8,
     GetLifetime = 10,
     Discard = 11,

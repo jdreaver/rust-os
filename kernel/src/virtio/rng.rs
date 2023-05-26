@@ -55,7 +55,7 @@ struct VirtIORNG {
 
     /// How far into the used ring we've processed entries. Only used when
     /// reading from the RNG device and processing entries.
-    processed_used_index: Mutex<u16>,
+    processed_used_index: Mutex<u16>, // TODO: Abstract/dedup with block device
 }
 
 impl VirtIORNG {
