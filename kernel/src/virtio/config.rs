@@ -4,6 +4,7 @@ use bitfield_struct::bitfield;
 use bitflags::Flags;
 use x86_64::PhysAddr;
 
+use crate::barrier::barrier;
 use crate::pci::{
     PCIDeviceCapability, PCIDeviceCapabilityHeader, PCIDeviceConfig, PCIDeviceConfigType0,
     PCIDeviceConfigTypes,
@@ -151,9 +152,11 @@ impl VirtIODeviceConfig {
         let mut features = 0;
         for i in 0..2_u32 {
             self.common_virtio_config.device_feature_select().write(i);
+            barrier();
             let mut feature_bits = u64::from(self.common_virtio_config.device_feature().read());
             feature_bits <<= i * 32;
             features |= feature_bits;
+            barrier();
         }
         Features::new(features)
     }
@@ -167,10 +170,12 @@ impl VirtIODeviceConfig {
         let bits = features.as_u64();
         for i in 0..2_u32 {
             self.common_virtio_config.driver_feature_select().write(i);
+            barrier();
             let feature_bits = (bits >> (i * 32)) as u32;
             self.common_virtio_config
                 .driver_feature()
                 .write(feature_bits);
+            barrier();
         }
     }
 }

@@ -4,6 +4,7 @@ use core::sync::atomic::{AtomicU16, Ordering};
 use bitfield_struct::bitfield;
 use x86_64::PhysAddr;
 
+use crate::barrier::barrier;
 use crate::memory;
 use crate::memory::AllocZeroedBufferError;
 use crate::registers::{RegisterRW, VolatileArrayRW};
@@ -58,6 +59,7 @@ impl VirtQueue {
     pub(super) fn add_buffer(&self, descriptors: &[ChainedVirtQueueDescriptorElem]) {
         let desc_index = self.descriptors.add_descriptor(descriptors);
         self.avail_ring.add_entry(desc_index);
+        barrier();
         unsafe {
             self.device_notify_config
                 .notify_device(self.notify_offset, self.index);
@@ -362,6 +364,7 @@ impl VirtQueueAvailRing {
         self.ring.write(idx as usize, desc_index);
 
         // 2.7.13.3 Updating idx
+        barrier();
         self.idx.modify(|idx| idx.wrapping_add(1));
     }
 }

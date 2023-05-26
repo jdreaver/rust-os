@@ -3,6 +3,7 @@ use core::fmt;
 
 use bitflags::Flags;
 
+use crate::barrier::barrier;
 use crate::interrupts::{InterruptHandler, InterruptHandlerID};
 use crate::{interrupts, serial_println};
 
@@ -34,16 +35,19 @@ impl VirtIOInitializedDevice {
         // 4.1.4.3.1 Device Requirements: Common configuration structure layout)
         let mut status = VirtIOConfigStatus::new();
         config.device_status().write(status);
+        barrier();
 
         // Set the ACKNOWLEDGE status bit to indicate that the driver knows
         // that the device is present.
         status.set_acknowledge(true);
         config.device_status().write(status);
+        barrier();
 
         // Set the DRIVER status bit to indicate that the driver is ready to
         // drive the device.
         status.set_driver(true);
         config.device_status().write(status);
+        barrier();
 
         // Feature negotiation. There are up to 128 feature bits, and
         // the feature registers are 32 bits wide, so we use the feature
