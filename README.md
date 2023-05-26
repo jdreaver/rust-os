@@ -109,6 +109,12 @@ make test
 - Detect kernel stack overflows. Guard pages? Some other mechanism?
   - I need a huge stack for debug mode apparently. I was seeing stack overflows with a 4096 byte stack when running in debug mode, so I quadrupled it
 - VirtIO improvements:
+  - Allocation and pointers: avoid manually calling `memory` alloc functions and passing around pointers
+    - Have virtqueues "own" their buffers and handle alloc/dealloc. Devices that need to alloc for descriptors, like virtio-blk, can do the same.
+    - We can use `Box<T, KERNEL_PHYSICAL_ALLOC>` to ensure we are using physical memory.
+    - Make sure we use memory barriers per the virtio spec
+      - Dig in to find out exactly what this means to virtio. The spec is loose.
+      - Maybe use <https://doc.rust-lang.org/std/sync/atomic/fn.fence.html> ?
   - Locking: we need to lock writes (I think?), but we should be able to read from the queue without locking. This should be ergonomic. I don't necessarily want to bury a mutex deep in the code.
     - Investigate how Linux or other OS virtio drivers do locking
   - Ensure we don't accidentally reuse descriptors while we are waiting for a response from the device. Don't automatically just wrap around! This is what might require a mutex rather than just atomic integers?
