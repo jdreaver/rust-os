@@ -113,6 +113,7 @@ enum Command<'a> {
     ListVirtIO,
     PrintACPI,
     RNG,
+    VirtIOBlockRead,
     VirtIOBlockID,
     Invalid,
     Unknown(&'a str),
@@ -130,6 +131,7 @@ fn next_command(buffer: &mut [u8]) -> Option<Command> {
         "list-virtio" => Some(Command::ListVirtIO),
         "print-acpi" => Some(Command::PrintACPI),
         "rng" => Some(Command::RNG),
+        "virtio-block-read" => Some(Command::VirtIOBlockRead),
         "virtio-block-id" => Some(Command::VirtIOBlockID),
         s => Some(Command::Unknown(s)),
     }
@@ -171,6 +173,10 @@ fn run_command(command: &Command) {
         Command::RNG => {
             serial_println!("Generating random numbers...");
             virtio::request_random_numbers();
+        }
+        Command::VirtIOBlockRead => {
+            serial_println!("Reading VirtIO block sector...");
+            virtio::virtio_block_read();
         }
         Command::VirtIOBlockID => {
             serial_println!("Reading VirtIO block device ID...");

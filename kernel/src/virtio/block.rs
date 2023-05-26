@@ -39,6 +39,8 @@ pub(crate) fn try_init_virtio_block(device_config: VirtIODeviceConfig) {
 // N.B. The drive MUST provide a 20 byte buffer when requesting device ID.
 static DEVICE_ID_BUFFER: [u8; 20] = [0; 20];
 
+static READ_BUFFER: [u8; 512] = [0; 512];
+
 pub(crate) fn virtio_block_get_id() {
     let device_lock = VIRTIO_BLOCK.read();
     let device = device_lock
@@ -55,6 +57,30 @@ pub(crate) fn virtio_block_get_id() {
     let buffer_size = core::mem::size_of_val(&DEVICE_ID_BUFFER) as u32;
 
     let request = BlockRequest::GetID {
+        data_addr: buffer_phys_addr,
+        data_len: buffer_size,
+    };
+    let raw_request = request.to_raw();
+    virtq.add_buffer(&raw_request.to_descriptor_chain());
+}
+
+pub(crate) fn virtio_block_read() {
+    let device_lock = VIRTIO_BLOCK.read();
+    let device = device_lock
+        .as_ref()
+        .expect("VirtIOBlockDevice not initialized");
+
+    let virtq = device
+        .initialized_device
+        .get_virtqueue(VirtQueueIndex(0))
+        .unwrap();
+    let buffer_virt_addr = VirtAddr::new(ptr::addr_of!(READ_BUFFER) as u64);
+    let buffer_phys_addr = memory::translate_addr(buffer_virt_addr)
+        .expect("failed to get VirtIO device ID buffer physical address");
+    let buffer_size = core::mem::size_of_val(&READ_BUFFER) as u32;
+
+    let request = BlockRequest::Read {
+        sector: 0,
         data_addr: buffer_phys_addr,
         data_len: buffer_size,
     };
@@ -86,20 +112,32 @@ fn virtio_block_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
         let request = BlockRequest::from_raw(&raw_request);
         serial_println!("Got response: {:#x?}", request);
 
-        #[allow(irrefutable_let_patterns)]
-        let BlockRequest::GetID { data_addr, data_len } = request else {
-            panic!("Unexpected response from VirtIO block device");
-        };
-
-        // The used entry should be using the exact same buffer we just
-        // created, but let's pretend we didn't know that.
-        let s = unsafe {
-            // The device ID response is a null-terminated string with a max
-            // size of the buffer size (if the string size == buffer size, there
-            // is no null terminator)
-            strings::c_str_from_pointer(data_addr.as_u64() as *const u8, data_len as usize)
-        };
-        serial_println!("Device ID: {s}");
+        match request {
+            BlockRequest::Read {
+                sector: _,
+                data_addr,
+                data_len,
+            } => {
+                let buffer = unsafe {
+                    core::slice::from_raw_parts(data_addr.as_u64() as *const u8, data_len as usize)
+                };
+                serial_println!("Read response: {:x?}", buffer);
+            }
+            BlockRequest::GetID {
+                data_addr,
+                data_len,
+            } => {
+                // The used entry should be using the exact same buffer we just
+                // created, but let's pretend we didn't know that.
+                let s = unsafe {
+                    // The device ID response is a null-terminated string with a max
+                    // size of the buffer size (if the string size == buffer size, there
+                    // is no null terminator)
+                    strings::c_str_from_pointer(data_addr.as_u64() as *const u8, data_len as usize)
+                };
+                serial_println!("Device ID response: {s}");
+            }
+        }
     }
 
     *used_index_lock = used_index;
@@ -222,12 +260,31 @@ struct BlockConfigTopology {
 
 #[derive(Debug)]
 enum BlockRequest {
-    GetID { data_addr: PhysAddr, data_len: u32 },
+    Read {
+        sector: u64,
+        data_addr: PhysAddr,
+        data_len: u32,
+    },
+    GetID {
+        data_addr: PhysAddr,
+        data_len: u32,
+    },
 }
 
 impl BlockRequest {
     fn to_raw(&self) -> RawBlockRequest {
         match self {
+            Self::Read {
+                sector,
+                data_addr,
+                data_len,
+            } => {
+                assert!(
+                    *data_len % 512 == 0,
+                    "Data length for read requests must be a multiple of 512"
+                );
+                RawBlockRequest::new(BlockRequestType::In, *sector, *data_addr, *data_len)
+            }
             Self::GetID {
                 data_addr,
                 data_len,
@@ -243,6 +300,11 @@ impl BlockRequest {
 
     fn from_raw(raw: &RawBlockRequest) -> Self {
         match raw.request_type {
+            BlockRequestType::In => Self::Read {
+                sector: raw.sector,
+                data_addr: raw.data_addr,
+                data_len: raw.data_len,
+            },
             BlockRequestType::GetID => Self::GetID {
                 data_addr: raw.data_addr,
                 data_len: raw.data_len,

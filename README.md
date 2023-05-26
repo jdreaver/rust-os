@@ -92,7 +92,6 @@ make test
 ## TODO
 
 - virtio-blk
-  - Create type safe wrappers around requests (and responses!)
   - Maybe abstract out "last processed ID" between virtio-rng and virtio-blk. Should this go on the virtqueue as a mutex? (Is there a way to use atomics to avoid the mutex?)
 - Multi-tasking (see resources below)
 - Make a simple shell that runs hard-coded program names (not separate processes yet! Just inline code on the current thread)
