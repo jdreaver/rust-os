@@ -9,7 +9,7 @@ use crate::{interrupts, serial_println};
 use super::config::{VirtIOConfigStatus, VirtIODeviceConfig};
 use super::features::ReservedFeatureBits;
 use super::queue::{
-    VirtQueue, VirtQueueIndex, VirtqAvailRing, VirtqDescriptorTable, VirtqUsedRing,
+    VirtQueue, VirtQueueAvailRing, VirtQueueDescriptorTable, VirtQueueIndex, VirtQueueUsedRing,
 };
 
 #[derive(Debug)]
@@ -86,18 +86,20 @@ impl VirtIOInitializedDevice {
             let queue_size = config.queue_size().read();
 
             let descriptors = unsafe {
-                VirtqDescriptorTable::allocate(queue_size)
+                VirtQueueDescriptorTable::allocate(queue_size)
                     .expect("failed to allocate driver ring buffer")
             };
             config.queue_desc().write(descriptors.physical_address());
 
             let avail_ring = unsafe {
-                VirtqAvailRing::allocate(queue_size).expect("failed to allocate driver ring buffer")
+                VirtQueueAvailRing::allocate(queue_size)
+                    .expect("failed to allocate driver ring buffer")
             };
             config.queue_driver().write(avail_ring.physical_address());
 
             let used_ring = unsafe {
-                VirtqUsedRing::allocate(queue_size).expect("failed to allocate driver ring buffer")
+                VirtQueueUsedRing::allocate(queue_size)
+                    .expect("failed to allocate driver ring buffer")
             };
             config.queue_device().write(used_ring.physical_address());
 

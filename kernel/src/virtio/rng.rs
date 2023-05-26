@@ -8,7 +8,7 @@ use crate::interrupts::InterruptHandlerID;
 use crate::{memory, serial_println};
 
 use super::device::VirtIOInitializedDevice;
-use super::queue::{VirtQueueIndex, VirtqDescriptorFlags};
+use super::queue::{VirtQueueDescriptorFlags, VirtQueueIndex};
 use super::VirtIODeviceConfig;
 
 static VIRTIO_RNG: RwLock<Option<VirtIORNG>> = RwLock::new(None);
@@ -100,7 +100,7 @@ impl VirtIORNG {
         let buffer_phys_addr = memory::translate_addr(buffer_virt_addr)
             .expect("failed to get VirtIO RNG buffer physical address");
         let buffer_size = core::mem::size_of_val(&VIRTIO_RNG_BUFFER);
-        let flags = VirtqDescriptorFlags::new().with_device_write(true);
+        let flags = VirtQueueDescriptorFlags::new().with_device_write(true);
         virtq.add_buffer(buffer_phys_addr, buffer_size as u32, flags);
     }
 }

@@ -24,9 +24,9 @@ pub(super) struct VirtQueue {
     /// layout".
     notify_offset: u16,
 
-    descriptors: VirtqDescriptorTable,
-    avail_ring: VirtqAvailRing,
-    used_ring: VirtqUsedRing,
+    descriptors: VirtQueueDescriptorTable,
+    avail_ring: VirtQueueAvailRing,
+    used_ring: VirtQueueUsedRing,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -40,9 +40,9 @@ impl VirtQueue {
         index: VirtQueueIndex,
         device_notify_config: VirtIONotifyConfig,
         notify_offset: u16,
-        descriptors: VirtqDescriptorTable,
-        avail_ring: VirtqAvailRing,
-        used_ring: VirtqUsedRing,
+        descriptors: VirtQueueDescriptorTable,
+        avail_ring: VirtQueueAvailRing,
+        used_ring: VirtQueueUsedRing,
     ) -> Self {
         Self {
             index,
@@ -59,7 +59,7 @@ impl VirtQueue {
         &self,
         buffer_addr: PhysAddr,
         buffer_len: u32,
-        flags: VirtqDescriptorFlags,
+        flags: VirtQueueDescriptorFlags,
     ) {
         let desc_index = self
             .descriptors
@@ -75,7 +75,10 @@ impl VirtQueue {
         self.used_ring.idx.read()
     }
 
-    pub(super) fn get_used_ring_entry(&self, index: u16) -> (VirtqUsedElem, VirtqDescriptor) {
+    pub(super) fn get_used_ring_entry(
+        &self,
+        index: u16,
+    ) -> (VirtQueueUsedElem, VirtQueueDescriptor) {
         // Load the used element
         let used_elem = self.used_ring.get_used_elem(index);
 
@@ -93,7 +96,7 @@ const VIRTQ_USED_ALIGN: usize = 4;
 
 /// See 2.7.5 The Virtqueue Descriptor Table
 #[derive(Debug)]
-pub(super) struct VirtqDescriptorTable {
+pub(super) struct VirtQueueDescriptorTable {
     /// The physical address for the queue's descriptor table.
     physical_address: PhysAddr,
 
@@ -103,14 +106,14 @@ pub(super) struct VirtqDescriptorTable {
     raw_next_index: AtomicU16,
 
     /// Array of descriptors.
-    descriptors: VolatileArrayRW<VirtqDescriptor>,
+    descriptors: VolatileArrayRW<VirtQueueDescriptor>,
 }
 
-impl VirtqDescriptorTable {
+impl VirtQueueDescriptorTable {
     pub(super) unsafe fn allocate(queue_size: u16) -> Result<Self, AllocZeroedBufferError> {
         let queue_size = queue_size as usize;
 
-        let mem_size = mem::size_of::<VirtqDescriptor>() * queue_size;
+        let mem_size = mem::size_of::<VirtQueueDescriptor>() * queue_size;
 
         // Check that this matches the spec. See 2.7 Split Virtqueues
         assert_eq!(
@@ -153,12 +156,12 @@ impl VirtqDescriptorTable {
         &self,
         buffer_addr: PhysAddr,
         buffer_len: u32,
-        flags: VirtqDescriptorFlags,
+        flags: VirtQueueDescriptorFlags,
     ) -> u16 {
         // 2.7.13.1 Placing Buffers Into The Descriptor Table
         let desc_index = self.next_index();
 
-        let descriptor = VirtqDescriptor {
+        let descriptor = VirtQueueDescriptor {
             addr: buffer_addr,
             len: buffer_len,
             flags,
@@ -170,25 +173,25 @@ impl VirtqDescriptorTable {
         desc_index
     }
 
-    fn get_descriptor(&self, index: u16) -> VirtqDescriptor {
+    fn get_descriptor(&self, index: u16) -> VirtQueueDescriptor {
         self.descriptors.read(index as usize)
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub(super) struct VirtqDescriptor {
+pub(super) struct VirtQueueDescriptor {
     /// Physical address for the buffer.
     pub(super) addr: PhysAddr,
     /// Length of the buffer, in bytes.
     pub(super) len: u32,
-    pub(super) flags: VirtqDescriptorFlags,
+    pub(super) flags: VirtQueueDescriptorFlags,
     /// Next field if flags & NEXT
     pub(super) next: u16,
 }
 
 #[bitfield(u16)]
-pub(super) struct VirtqDescriptorFlags {
+pub(super) struct VirtQueueDescriptorFlags {
     /// This marks a buffer as continuing via the next field.
     pub(super) next: bool,
 
@@ -220,10 +223,10 @@ pub(super) struct VirtqDescriptorFlags {
 ///     };
 /// ```
 #[derive(Debug)]
-pub(super) struct VirtqAvailRing {
+pub(super) struct VirtQueueAvailRing {
     physical_address: PhysAddr,
 
-    _flags: RegisterRW<VirtqAvailRingFlags>,
+    _flags: RegisterRW<VirtQueueAvailRingFlags>,
 
     /// idx field indicates where the driver would put the next descriptor entry
     /// in the ring (modulo the queue size). This starts at 0, and increases.
@@ -235,13 +238,13 @@ pub(super) struct VirtqAvailRing {
     _used_event: RegisterRW<u16>,
 }
 
-impl VirtqAvailRing {
+impl VirtQueueAvailRing {
     pub(super) unsafe fn allocate(queue_size: u16) -> Result<Self, AllocZeroedBufferError> {
         let queue_size = queue_size as usize;
 
         // Compute sizes before we do allocations.
         let flags_offset = 0;
-        let idx_offset = mem::size_of::<VirtqAvailRingFlags>();
+        let idx_offset = mem::size_of::<VirtQueueAvailRingFlags>();
         let ring_offset = idx_offset + mem::size_of::<u16>();
         let ring_len = queue_size * mem::size_of::<u16>();
         let used_event_offset = ring_offset + ring_len;
@@ -294,7 +297,7 @@ impl VirtqAvailRing {
 }
 
 #[bitfield(u16)]
-pub(super) struct VirtqAvailRingFlags {
+pub(super) struct VirtQueueAvailRingFlags {
     /// See 2.7.7 Used Buffer Notification Suppression
     no_interrupt: bool,
 
@@ -319,23 +322,23 @@ pub(super) struct VirtqAvailRingFlags {
 /// };
 /// ```
 #[derive(Debug)]
-pub(super) struct VirtqUsedRing {
+pub(super) struct VirtQueueUsedRing {
     physical_address: PhysAddr,
 
-    _flags: RegisterRW<VirtqUsedRingFlags>,
+    _flags: RegisterRW<VirtQueueUsedRingFlags>,
 
     /// idx field indicates where the device would put the next descriptor entry
     /// in the ring (modulo the queue size). This starts at 0, and increases.
     idx: RegisterRW<u16>,
 
-    ring: VolatileArrayRW<VirtqUsedElem>,
+    ring: VolatileArrayRW<VirtQueueUsedElem>,
 
     /// Only if VIRTIO_F_EVENT_IDX
     _avail_event: RegisterRW<u16>,
 }
 
 #[bitfield(u16)]
-pub(super) struct VirtqUsedRingFlags {
+pub(super) struct VirtQueueUsedRingFlags {
     /// See 2.7.10 Available Buffer Notification Suppression
     no_notify: bool,
 
@@ -346,7 +349,7 @@ pub(super) struct VirtqUsedRingFlags {
 /// 2.7.8 The Virtqueue Used Ring
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub(super) struct VirtqUsedElem {
+pub(super) struct VirtQueueUsedElem {
     /// Index of start of used descriptor chain.
     pub(super) id: u32,
 
@@ -355,15 +358,15 @@ pub(super) struct VirtqUsedElem {
     pub(super) len: u32,
 }
 
-impl VirtqUsedRing {
+impl VirtQueueUsedRing {
     pub(super) unsafe fn allocate(queue_size: u16) -> Result<Self, AllocZeroedBufferError> {
         let queue_size = queue_size as usize;
 
         // Compute sizes before we do allocations.
         let flags_offset = 0;
-        let idx_offset = mem::size_of::<VirtqUsedRingFlags>();
+        let idx_offset = mem::size_of::<VirtQueueUsedRingFlags>();
         let ring_offset = idx_offset + mem::size_of::<u16>();
-        let ring_len = queue_size * mem::size_of::<VirtqUsedElem>();
+        let ring_len = queue_size * mem::size_of::<VirtQueueUsedElem>();
         let avail_event_offset = ring_offset + ring_len;
         let struct_size = avail_event_offset + mem::size_of::<u16>();
 
@@ -399,7 +402,7 @@ impl VirtqUsedRing {
         self.physical_address
     }
 
-    fn get_used_elem(&self, idx: u16) -> VirtqUsedElem {
+    fn get_used_elem(&self, idx: u16) -> VirtQueueUsedElem {
         self.ring.read(idx as usize)
     }
 }
