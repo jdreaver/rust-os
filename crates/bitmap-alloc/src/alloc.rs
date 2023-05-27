@@ -64,16 +64,15 @@ impl<'a> BitmapAllocator<'a> {
         let mut start = 0;
         let mut current_len = 0;
         for (i, byte) in self.bitmap.iter().enumerate() {
-            // TODO: Maybe use the `count_zeros` intrinsic to check if we need
-            // to skip the byte.
-
-            // (TODO: buggy) Shortcut: if the byte is all 1's, then we know that
-            // all bits are set, so we can skip this byte.
-            // if *byte == Self::BITS_MAX {
-            //     start += Self::BITS_PER_CHUNK;
-            //     current_len = 0;
-            //     continue;
-            // }
+            // Shortcut: if there are not enough pages in this byte to satisfy
+            // our request, skip it. This is a performance optimization. Under
+            // the hood, on x86, it uses the POPCNT instruction.
+            let num_zeros = byte.count_zeros() as usize;
+            if num_zeros < num_pages - current_len {
+                start = (i + 1) * Self::BITS_PER_CHUNK;
+                current_len = 0;
+                continue;
+            }
 
             // TODO: Use a combination of shifts and `leading_zeroes` (or
             // `trailing_zeros` if we want least significant bit iteration) to
@@ -137,6 +136,11 @@ mod tests {
 
         allocator.free_contiguous(4, 5);
         assert_eq!(allocator.bitmap, [0b00001001, 0b00001110]);
+
+        // Should go back into the hold we just freed.
+        let start = allocator.allocate_contiguous(3);
+        assert_eq!(start, Some(4));
+        assert_eq!(allocator.bitmap, [0b01111001, 0b00001110]);
     }
 
     #[derive(Debug, Clone)]
