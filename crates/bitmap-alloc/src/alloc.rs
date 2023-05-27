@@ -9,7 +9,6 @@ pub struct BitmapAllocator<'a> {
 
 impl<'a> BitmapAllocator<'a> {
     pub(crate) const BITS_PER_CHUNK: usize = u8::BITS as usize;
-    pub(crate) const BITS_MAX: u8 = u8::MAX;
 
     pub(crate) fn new(bitmap: &'a mut [u8]) -> BitmapAllocator<'a> {
         BitmapAllocator { bitmap }
@@ -68,12 +67,13 @@ impl<'a> BitmapAllocator<'a> {
             // TODO: Maybe use the `count_zeros` intrinsic to check if we need
             // to skip the byte.
 
-            // Shortcut: if the byte is all 1's, then we know that all bits are
-            // set, so we can skip this byte.
-            if *byte == Self::BITS_MAX {
-                start += Self::BITS_PER_CHUNK;
-                continue;
-            }
+            // (TODO: buggy) Shortcut: if the byte is all 1's, then we know that
+            // all bits are set, so we can skip this byte.
+            // if *byte == Self::BITS_MAX {
+            //     start += Self::BITS_PER_CHUNK;
+            //     current_len = 0;
+            //     continue;
+            // }
 
             // TODO: Use a combination of shifts and `leading_zeroes` (or
             // `trailing_zeros` if we want least significant bit iteration) to
@@ -145,20 +145,42 @@ mod tests {
         Free,
     }
 
-    fn alloc_or_free_strategy() -> impl Strategy<Value = AllocOrFree> {
+    fn alloc_or_free_strategy(max_alloc: usize) -> impl Strategy<Value = AllocOrFree> {
         prop_oneof![
-            (1..1000usize).prop_map(AllocOrFree::Alloc),
+            (1..max_alloc).prop_map(AllocOrFree::Alloc),
             Just(AllocOrFree::Free),
         ]
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig {
+            // Bump up the number of test cases to make sure we get a good
+            // distribution of tests. Default is 256. See:
+            // https://docs.rs/proptest/latest/proptest/test_runner/struct.Config.html#structfield.cases
+            cases: 10_000, .. ProptestConfig::default()
+        })]
+
         #[test]
-        fn alloc_free(bitmap_elems in 2..20_usize, allocs in prop::collection::vec(alloc_or_free_strategy(), 1..1000)) {
+        fn alloc_free(
+            bitmap_elems in 2..20_usize,
+            initial_allocs in prop::collection::vec(1..20_usize, 5..15),
+            allocs in prop::collection::vec(alloc_or_free_strategy(80), 1..20)
+        ) {
             let mut bitmap = vec![0; bitmap_elems];
             let mut allocator = BitmapAllocator::new(&mut bitmap);
 
+            // TODO: Don't use HashSet here because free is non-deterministic.
+            // Use a BTreeMap, but have Free select a random index that we then
+            // mod with the BTreeMap length.
             let mut allocated_pages = HashSet::new();
+
+            for num_pages in initial_allocs {
+                let start = allocator.allocate_contiguous(num_pages);
+                if let Some(start) = start {
+                    allocated_pages.insert((start, num_pages));
+                }
+            }
+
             for alloc_or_free in allocs {
                 match alloc_or_free {
                     AllocOrFree::Alloc(num_pages) => {
