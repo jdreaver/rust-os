@@ -2,7 +2,6 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt::Write;
 
-use uefi::table::{Runtime, SystemTable};
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 use x86_64::structures::paging::{Size2MiB, Size4KiB};
 
@@ -12,27 +11,6 @@ static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
 
 pub(crate) fn run_tests() {
     let boot_info_data = boot_info::boot_info();
-
-    serial_println!("limine boot info:\n{boot_info_data:#x?}");
-    boot_info::print_limine_memory_map();
-
-    if let Some(system_table_addr) = boot_info_data.efi_system_table_address {
-        unsafe {
-            let system_table = SystemTable::<Runtime>::from_ptr(system_table_addr.as_mut_ptr())
-                .expect("failed to create EFI system table");
-            serial_println!(
-                "EFI runtime services:\n{:#?}",
-                system_table.runtime_services()
-            );
-
-            for entry in system_table.config_table() {
-                if entry.guid == uefi::table::cfg::ACPI2_GUID {
-                    // This should match the limine RSDP address
-                    serial_println!("EFI config table ACPI2 entry: {entry:#X?}");
-                }
-            }
-        };
-    }
 
     // Ensure we got a framebuffer.
     let mut framebuffer = unsafe {

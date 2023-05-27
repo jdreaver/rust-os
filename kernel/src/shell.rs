@@ -1,7 +1,8 @@
 use alloc::vec::Vec;
 use spin::Mutex;
+use uefi::table::{Runtime, SystemTable};
 
-use crate::{acpi, pci, serial, serial_print, serial_println, tests, virtio};
+use crate::{acpi, boot_info, pci, serial, serial_print, serial_println, tests, virtio};
 
 static NEXT_COMMAND_BUFFER: Mutex<ShellBuffer> = Mutex::new(ShellBuffer::new());
 
@@ -100,6 +101,7 @@ enum Command<'a> {
     Tests,
     ListPCI,
     ListVirtIO,
+    BootInfo,
     PrintACPI,
     RNG,
     VirtIOBlockRead { sector: u64 },
@@ -120,6 +122,7 @@ fn next_command(buffer: &[u8]) -> Option<Command> {
         ["tests"] => Some(Command::Tests),
         ["list-pci"] => Some(Command::ListPCI),
         ["list-virtio"] => Some(Command::ListVirtIO),
+        ["boot-info"] => Some(Command::BootInfo),
         ["print-acpi"] => Some(Command::PrintACPI),
         ["rng"] => Some(Command::RNG),
         ["virtio-block-read", sector_str] => {
@@ -165,6 +168,31 @@ fn run_command(command: &Command) {
                 let Some(device) = virtio::VirtIODeviceConfig::from_pci_config(device) else { return; };
                 serial_println!("Found VirtIO device: {device:#x?}");
             });
+        }
+        Command::BootInfo => {
+            serial_println!("Printing boot info...");
+            let boot_info_data = boot_info::boot_info();
+            serial_println!("limine boot info:\n{boot_info_data:#x?}");
+            boot_info::print_limine_memory_map();
+
+            if let Some(system_table_addr) = boot_info_data.efi_system_table_address {
+                unsafe {
+                    let system_table =
+                        SystemTable::<Runtime>::from_ptr(system_table_addr.as_mut_ptr())
+                            .expect("failed to create EFI system table");
+                    serial_println!(
+                        "EFI runtime services:\n{:#?}",
+                        system_table.runtime_services()
+                    );
+
+                    for entry in system_table.config_table() {
+                        if entry.guid == uefi::table::cfg::ACPI2_GUID {
+                            // This should match the limine RSDP address
+                            serial_println!("EFI config table ACPI2 entry: {entry:#X?}");
+                        }
+                    }
+                };
+            }
         }
         Command::PrintACPI => {
             serial_println!("Printing ACPI info...");
