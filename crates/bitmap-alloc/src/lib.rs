@@ -44,12 +44,24 @@ impl<'a> BitmapAllocator<'a> {
     pub fn mark_used(&mut self, page: usize) {
         let index = page / 8;
         let bit = page % 8;
+        // N.B. If this assertion is removed for performance reasons, make sure
+        // to add it to our tests, or conditionally compile it for tests.
+        assert!(
+            self.bitmap[index] & (1 << bit) == 0,
+            "page {page} is already used"
+        );
         self.bitmap[index] |= 1 << bit;
     }
 
     fn mark_unused(&mut self, page: usize) {
         let index = page / 8;
         let bit = page % 8;
+        // N.B. If this assertion is removed for performance reasons, make sure
+        // to add it to our tests, or conditionally compile it for tests.
+        assert!(
+            self.bitmap[index] & (1 << bit) != 0,
+            "page {page} is already unused"
+        );
         self.bitmap[index] &= !(1 << bit);
     }
 
@@ -59,6 +71,8 @@ impl<'a> BitmapAllocator<'a> {
         // TODO: Store the last allocation location, and start searching from
         // there. This will make allocations faster. Also consider resetting it
         // to the free start location whenever we do a free.
+
+        assert!(num_pages > 0, "cannot allocate 0 pages");
 
         let start = self.find_next_contiguous(num_pages)?;
         for page in start..start + num_pages {
@@ -134,6 +148,10 @@ impl<'a> BitmapAllocator<'a> {
 mod tests {
     use super::*;
 
+    use std::collections::HashSet;
+
+    use proptest::prelude::*;
+
     #[test]
     fn simple_test() {
         let mut bitmap = [0; 2];
@@ -157,5 +175,51 @@ mod tests {
 
         allocator.free_contiguous(4, 5);
         assert_eq!(allocator.bitmap, [0b00001001, 0b00001110]);
+    }
+
+    #[derive(Debug, Clone)]
+    enum AllocOrFree {
+        Alloc(usize),
+        Free,
+    }
+
+    fn alloc_or_free_strategy() -> impl Strategy<Value = AllocOrFree> {
+        prop_oneof![
+            (1..1000usize).prop_map(AllocOrFree::Alloc),
+            Just(AllocOrFree::Free),
+        ]
+    }
+
+    proptest! {
+        #[test]
+        fn alloc_free(bitmap_elems in 2..20_usize, allocs in prop::collection::vec(alloc_or_free_strategy(), 1..1000)) {
+            let mut bitmap = vec![0; bitmap_elems];
+            let mut allocator = BitmapAllocator::new(&mut bitmap);
+
+            let mut allocated_pages = HashSet::new();
+            for alloc_or_free in allocs {
+                match alloc_or_free {
+                    AllocOrFree::Alloc(num_pages) => {
+                        // N.B. This test relies on an assertion being present
+                        // in the allocator that will fail if we try to allocate
+                        // a page that is already allocated.
+                        let start = allocator.allocate_contiguous(num_pages);
+                        if let Some(start) = start {
+                            allocated_pages.insert((start, num_pages));
+                        }
+                    },
+                    AllocOrFree::Free => {
+                        // N.B. This test relies on an assertion being present
+                        // in the allocator that will fail if a page is freed
+                        // but not allocated.
+                        let alloc = allocated_pages.iter().next().cloned();
+                        if let Some(alloc@(start, num_pages)) = alloc {
+                            allocator.free_contiguous(start, num_pages);
+                            allocated_pages.remove(&alloc);
+                        }
+                    },
+                }
+            }
+        }
     }
 }
