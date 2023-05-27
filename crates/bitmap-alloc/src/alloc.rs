@@ -110,7 +110,7 @@ impl<'a> BitmapAllocator<'a> {
 mod tests {
     use super::*;
 
-    use std::collections::HashSet;
+    use std::collections::BTreeSet;
 
     use proptest::prelude::*;
 
@@ -142,13 +142,13 @@ mod tests {
     #[derive(Debug, Clone)]
     enum AllocOrFree {
         Alloc(usize),
-        Free,
+        Free(usize),
     }
 
     fn alloc_or_free_strategy(max_alloc: usize) -> impl Strategy<Value = AllocOrFree> {
         prop_oneof![
             (1..max_alloc).prop_map(AllocOrFree::Alloc),
-            Just(AllocOrFree::Free),
+            prop::num::usize::ANY.prop_map(AllocOrFree::Free),
         ]
     }
 
@@ -169,11 +169,12 @@ mod tests {
             let mut bitmap = vec![0; bitmap_elems];
             let mut allocator = BitmapAllocator::new(&mut bitmap);
 
-            // TODO: Don't use HashSet here because free is non-deterministic.
-            // Use a BTreeMap, but have Free select a random index that we then
-            // mod with the BTreeMap length.
-            let mut allocated_pages = HashSet::new();
+            // N.B. BTreeSet gives us consistent iteration order, which is
+            // important for determinism. We get randomness from the index we
+            // use for `Free`.
+            let mut allocated_pages = BTreeSet::new();
 
+            // Initial round of allocations to fill things up.
             for num_pages in initial_allocs {
                 let start = allocator.allocate_contiguous(num_pages);
                 if let Some(start) = start {
@@ -192,11 +193,15 @@ mod tests {
                             allocated_pages.insert((start, num_pages));
                         }
                     },
-                    AllocOrFree::Free => {
+                    AllocOrFree::Free(raw_idx) => {
+                        if allocated_pages.is_empty() {
+                            continue;
+                        }
+
                         // N.B. This test relies on an assertion being present
                         // in the allocator that will fail if a page is freed
                         // but not allocated.
-                        let alloc = allocated_pages.iter().next().cloned();
+                        let alloc = allocated_pages.iter().nth(raw_idx % allocated_pages.len()).cloned();
                         if let Some(alloc@(start, num_pages)) = alloc {
                             allocator.free_contiguous(start, num_pages);
                             allocated_pages.remove(&alloc);
@@ -204,6 +209,14 @@ mod tests {
                     },
                 }
             }
+
+            // Deallocate everything that has been allocated and ensure all
+            // pages are freed.
+            for (start, num_pages) in allocated_pages {
+                allocator.free_contiguous(start, num_pages);
+            }
+
+            assert!(allocator.bitmap.iter().all(|&byte| byte == 0));
         }
     }
 }
