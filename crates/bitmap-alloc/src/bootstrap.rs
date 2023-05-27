@@ -31,7 +31,7 @@ where
         .expect("no memory regions found");
 
     // Find a region where we can place the bitmap
-    let bitmap_bytes = total_memory / page_size;
+    let bitmap_bytes = total_memory.div_ceil(page_size);
     let bitmap_start = iter_regions()
         .filter(|r| r.free)
         .find_map(|region| {
@@ -53,7 +53,7 @@ where
         .expect("couldn't find a free region large enough to store the allocator bitmap");
 
     // Allocate the bitmap
-    let bitmap_len = bitmap_bytes / u8::BITS as usize;
+    let bitmap_len = bitmap_bytes.div_ceil(u8::BITS as usize);
     let bitmap = allocate_bitmap(bitmap_start, bitmap_len);
 
     // Mark all used regions as used in the bitmap
@@ -70,7 +70,7 @@ where
         }
 
         let start = region.start_address / page_size;
-        let end = (region.start_address + region.len_bytes as usize) / page_size;
+        let end = (region.start_address + region.len_bytes as usize).div_ceil(page_size);
         for page in start..end {
             alloc.mark_used(page);
         }
@@ -83,7 +83,7 @@ where
 mod tests {
     use super::*;
 
-    const TEST_BITMAP_LEN: usize = 10;
+    const TEST_BITMAP_LEN: usize = 11;
     static mut TEST_BITMAP: [u8; TEST_BITMAP_LEN] = [0_u8; TEST_BITMAP_LEN];
 
     #[test]
@@ -108,6 +108,11 @@ mod tests {
                 start_address: 0x400,
                 len_bytes: 0x100,
                 free: true,
+            },
+            MemoryRegion {
+                start_address: 0x500,
+                len_bytes: 0x20,
+                free: false,
             },
         ];
 

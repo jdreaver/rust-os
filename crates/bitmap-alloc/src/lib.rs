@@ -2,6 +2,7 @@
 //! kernel.
 
 #![cfg_attr(not(test), no_std)]
+#![feature(int_roundings)]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 #![allow(
     clippy::cast_possible_truncation,

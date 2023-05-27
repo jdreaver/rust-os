@@ -49,6 +49,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6776fc96284a0bb647b615056fc496d1fe1644a7ab01829818a6d91cae888b84"
 
 [[package]]
+name = "bitmap-alloc"
+version = "0.1.0"
+
+[[package]]
 name = "bitvec"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -200,6 +204,7 @@ dependencies = [
  "acpi",
  "bitfield-struct",
  "bitflags 2.3.1",
+ "bitmap-alloc",
  "lazy_static",
  "limine",
  "linked_list_allocator",

@@ -1,6 +1,7 @@
 #![no_std]
 #![feature(abi_x86_interrupt)]
 #![feature(allocator_api)]
+#![feature(int_roundings)]
 #![feature(naked_functions)]
 #![feature(strict_provenance)]
 #![feature(sync_unsafe_cell)]
@@ -54,11 +55,10 @@ pub fn start() -> ! {
     interrupts::init_interrupts();
 
     let boot_info_data = boot_info::boot_info();
-    let limine_usable_memory = boot_info::limine_usable_memory_regions();
     unsafe {
         memory::init(
             boot_info_data.higher_half_direct_map_offset,
-            limine_usable_memory,
+            boot_info::limine_memory_regions,
         );
     };
     heap::init().expect("failed to initialize heap");

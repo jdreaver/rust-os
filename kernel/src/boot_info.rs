@@ -7,7 +7,7 @@ use limine::{
 };
 use x86_64::{PhysAddr, VirtAddr};
 
-use crate::{memory, serial_println, strings};
+use crate::{serial_println, strings};
 
 static BOOT_INFO_ONCE: Once<BootInfo> = Once::new();
 
@@ -183,14 +183,13 @@ fn limine_memory_map_entries() -> impl Iterator<Item = &'static limine::LimineMe
 /// > The bootloader page tables are in bootloader-reclaimable memory [...], and
 /// > their specific layout is undefined as long as they provide the above
 /// > memory mappings.
-pub(crate) fn limine_usable_memory_regions() -> impl Iterator<Item = memory::UsableMemoryRegion> {
-    limine_memory_map_entries()
+pub(crate) fn limine_memory_regions() -> impl Iterator<Item = bitmap_alloc::MemoryRegion> {
+    limine_memory_map_entries().map(|entry| bitmap_alloc::MemoryRegion {
+        start_address: entry.base as usize,
+        len_bytes: entry.len,
         // See not above about usable vs reclaimable.
-        .filter(|entry| entry.typ == limine::LimineMemoryMapEntryType::Usable)
-        .map(|entry| memory::UsableMemoryRegion {
-            start_address: PhysAddr::new(entry.base),
-            len: entry.len,
-        })
+        free: entry.typ == limine::LimineMemoryMapEntryType::Usable,
+    })
 }
 
 pub(crate) fn print_limine_memory_map() {

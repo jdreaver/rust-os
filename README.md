@@ -91,6 +91,9 @@ make test
 
 ## TODO
 
+- bitmap-alloc
+  - Make page vs byte address part of the API b/c conversion is tricky and requires `div_ceil`. Newtypes/functions for both?
+    - We could embrace `PhysAddr`, `PhysFrame`, `Size4KiB`, etc, but that would introduce dep on `x86_64` crate
 - Multi-tasking (see resources below)
 - Make a simple shell that runs hard-coded program names (not separate processes yet! Just inline code on the current thread)
   - Integrate with multi-tasking. Make a new task for the thing being run, and the shell's task simply waits for the sub-task to complete.
@@ -106,7 +109,6 @@ make test
   - <https://docs.kernel.org/core-api/genericirq.html> mentions that a generic handler is hard b/c of APIC , IO/APIC, etc ACKs, which is why `__do_IRQ` no longer exists
 - Detect kernel stack overflows. Guard pages? Some other mechanism?
   - I need a huge stack for debug mode apparently. I was seeing stack overflows with a 4096 byte stack when running in debug mode, so I quadrupled it
-- Replace naive physical memory allocator
 - VirtIO improvements:
   - Allocation and pointers: avoid manually calling `memory` alloc functions and passing around pointers
     - Have virtqueues "own" their buffers and handle alloc/dealloc. Devices that need to alloc for descriptors, like virtio-blk, can do the same.

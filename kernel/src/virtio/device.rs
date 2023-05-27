@@ -88,6 +88,10 @@ impl VirtIOInitializedDevice {
             config.queue_select().write(idx);
 
             let queue_size = config.queue_size().read();
+            assert!(
+                queue_size > 0,
+                "queue size for queue {i} must be greater than 0"
+            );
 
             let descriptors = unsafe {
                 VirtQueueDescriptorTable::allocate(queue_size)
