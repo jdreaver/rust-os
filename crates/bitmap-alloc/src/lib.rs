@@ -34,6 +34,9 @@ pub struct BitmapAllocator<'a> {
 }
 
 impl<'a> BitmapAllocator<'a> {
+    const BITS_PER_CHUNK: usize = u8::BITS as usize;
+    const BITS_MAX: u8 = u8::MAX;
+
     pub fn new(bitmap: &'a mut [u8]) -> BitmapAllocator<'a> {
         BitmapAllocator { bitmap }
     }
@@ -41,9 +44,12 @@ impl<'a> BitmapAllocator<'a> {
     /// Mark a given page as used. This is used internally by the allocator, but
     /// is also used by the kernel to mark reserved pages as used when
     /// initializing the allocator.
+    ///
+    /// TODO: Make this function private if all bootstrapping via unused memory
+    /// regions can be done in this crate.
     pub fn mark_used(&mut self, page: usize) {
-        let index = page / 8;
-        let bit = page % 8;
+        let index = page / Self::BITS_PER_CHUNK;
+        let bit = page % Self::BITS_PER_CHUNK;
         // N.B. If this assertion is removed for performance reasons, make sure
         // to add it to our tests, or conditionally compile it for tests.
         assert!(
@@ -54,8 +60,8 @@ impl<'a> BitmapAllocator<'a> {
     }
 
     fn mark_unused(&mut self, page: usize) {
-        let index = page / 8;
-        let bit = page % 8;
+        let index = page / Self::BITS_PER_CHUNK;
+        let bit = page % Self::BITS_PER_CHUNK;
         // N.B. If this assertion is removed for performance reasons, make sure
         // to add it to our tests, or conditionally compile it for tests.
         assert!(
@@ -91,17 +97,17 @@ impl<'a> BitmapAllocator<'a> {
             // TODO: Maybe use the `count_zeros` intrinsic to check if we need
             // to skip the byte.
 
-            // Shortcut: if the byte is 0xFF, then we know that all bits are
+            // Shortcut: if the byte is all 1's, then we know that all bits are
             // set, so we can skip this byte.
-            if *byte == 0xFF {
-                start += 8;
+            if *byte == Self::BITS_MAX {
+                start += Self::BITS_PER_CHUNK;
                 continue;
             }
 
             // TODO: Use a combination of shifts and `leading_zeroes` (or
             // `trailing_zeros` if we want least significant bit iteration) to
             // find chunks of zeroes.
-            for bit in 0..8 {
+            for bit in 0..Self::BITS_PER_CHUNK {
                 let bit_free = *byte & (1 << bit) == 0;
                 if bit_free {
                     current_len += 1;
@@ -109,7 +115,9 @@ impl<'a> BitmapAllocator<'a> {
                         return Some(start);
                     }
                 } else {
-                    start = i * 8 + bit + 1;
+                    // Set start to the next bit, since we know that the current
+                    // bit is not free.
+                    start = i * Self::BITS_PER_CHUNK + bit + 1;
                     current_len = 0;
                 }
             }
