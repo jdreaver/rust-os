@@ -123,9 +123,7 @@ fn disable_pic() {
 /// Send spurious interrupts to a high index that we won't use.
 pub(crate) const SPURIOUS_INTERRUPT_VECTOR_INDEX: u8 = 0xFF;
 
-lazy_static! {
-    static ref NEXT_OPEN_INTERRUPT_INDEX: Mutex<u8> = Mutex::new(APIC_INTERRUPT_START_OFFSET);
-}
+static NEXT_OPEN_INTERRUPT_INDEX: Mutex<u8> = Mutex::new(APIC_INTERRUPT_START_OFFSET);
 
 /// Install an interrupt handler in the IDT. Uses the next open interrupt index
 /// and returns the used index.
