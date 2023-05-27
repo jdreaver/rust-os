@@ -97,7 +97,6 @@ fn reset_terminal_line() {
 }
 
 enum Command<'a> {
-    Help,
     Tests,
     ListPCI,
     ListVirtIO,
@@ -118,7 +117,6 @@ fn next_command(buffer: &[u8]) -> Option<Command> {
 
     match &words[..] {
         [""] => None,
-        ["help"] => Some(Command::Help),
         ["tests"] => Some(Command::Tests),
         ["list-pci"] => Some(Command::ListPCI),
         ["list-virtio"] => Some(Command::ListVirtIO),
@@ -142,9 +140,6 @@ fn next_command(buffer: &[u8]) -> Option<Command> {
 
 fn run_command(command: &Command) {
     match command {
-        Command::Help => {
-            serial_println!("help - print this help");
-        }
         Command::Tests => {
             serial_println!("Running tests...");
             tests::run_tests();
