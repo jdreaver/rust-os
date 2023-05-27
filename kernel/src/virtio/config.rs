@@ -147,13 +147,13 @@ impl VirtIODeviceConfig {
     /// the device features.
     pub(super) fn get_device_features<F>(&self) -> Features<F>
     where
-        F: Flags<Bits = u64>,
+        F: Flags<Bits = u128>,
     {
-        let mut features = 0;
-        for i in 0..2_u32 {
+        let mut features: u128 = 0;
+        for i in 0..4_u32 {
             self.common_virtio_config.device_feature_select().write(i);
             barrier();
-            let mut feature_bits = u64::from(self.common_virtio_config.device_feature().read());
+            let mut feature_bits = u128::from(self.common_virtio_config.device_feature().read());
             feature_bits <<= i * 32;
             features |= feature_bits;
             barrier();
@@ -165,10 +165,10 @@ impl VirtIODeviceConfig {
     /// the driver features.
     pub(super) fn set_driver_features<F>(&self, features: &Features<F>)
     where
-        F: Flags<Bits = u64>,
+        F: Flags<Bits = u128>,
     {
-        let bits = features.as_u64();
-        for i in 0..2_u32 {
+        let bits = features.as_u128();
+        for i in 0..4_u32 {
             self.common_virtio_config.driver_feature_select().write(i);
             barrier();
             let feature_bits = (bits >> (i * 32)) as u32;

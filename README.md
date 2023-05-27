@@ -106,6 +106,7 @@ make test
   - <https://docs.kernel.org/core-api/genericirq.html> mentions that a generic handler is hard b/c of APIC , IO/APIC, etc ACKs, which is why `__do_IRQ` no longer exists
 - Detect kernel stack overflows. Guard pages? Some other mechanism?
   - I need a huge stack for debug mode apparently. I was seeing stack overflows with a 4096 byte stack when running in debug mode, so I quadrupled it
+- Replace naive physical memory allocator
 - VirtIO improvements:
   - Allocation and pointers: avoid manually calling `memory` alloc functions and passing around pointers
     - Have virtqueues "own" their buffers and handle alloc/dealloc. Devices that need to alloc for descriptors, like virtio-blk, can do the same.
@@ -397,3 +398,12 @@ the CPU may still reorder them.
 - <https://lwn.net/Articles/847481/>
 - <https://doc.rust-lang.org/core/sync/atomic/fn.compiler_fence.html>
 - <https://en.wikipedia.org/wiki/Memory_barrier>
+
+### Memory management
+
+- <https://wiki.osdev.org/Page_Frame_Allocation>
+- <https://wiki.osdev.org/Brendan%27s_Memory_Management_Guide>
+- <https://wiki.osdev.org/Writing_a_memory_manager>
+- <https://wiki.osdev.org/Memory_management>
+- <https://forum.osdev.org/viewtopic.php?t=46327&p=327049>
+- <https://eatplayhate.me/2010/09/04/memory-management-from-the-ground-up-2-foundations/>

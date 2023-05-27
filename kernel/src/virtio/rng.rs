@@ -108,7 +108,7 @@ bitflags! {
     #[repr(transparent)]
     /// VirtIO RNG device has no device-specific feature bits. See "5.4.3
     /// Feature bits".
-    struct RNGFeatureBits: u64 {
+    struct RNGFeatureBits: u128 {
     }
 }
 

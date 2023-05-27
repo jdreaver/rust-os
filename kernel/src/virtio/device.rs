@@ -27,7 +27,7 @@ impl VirtIOInitializedDevice {
         negotiate_device_bits: impl FnOnce(&mut F),
     ) -> Self
     where
-        F: fmt::Debug + Flags<Bits = u64>,
+        F: fmt::Debug + Flags<Bits = u128>,
     {
         let config = device_config.common_virtio_config();
 

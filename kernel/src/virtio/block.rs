@@ -176,7 +176,7 @@ bitflags! {
     #[derive(Debug)]
     #[repr(transparent)]
     /// See "5.2.3 Feature bits"
-    struct BlockDeviceFeatureBits: u64 {
+    struct BlockDeviceFeatureBits: u128 {
         /// Maximum size of any single segment is in size_max.
         const SIZE_MAX = 1 << 1;
         /// Maximum number of segments in a request is in seg_max.
