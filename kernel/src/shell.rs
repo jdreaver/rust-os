@@ -1,4 +1,6 @@
 use alloc::vec::Vec;
+use core::fmt;
+
 use spin::Mutex;
 use uefi::table::{Runtime, SystemTable};
 
@@ -129,35 +131,31 @@ fn next_command(buffer: &[u8]) -> Option<Command> {
         ["print-acpi"] => Some(Command::PrintACPI),
         ["rng"] => Some(Command::RNG),
         ["virtio-block", "list"] => Some(Command::VirtIOBlockList),
-        ["virtio-block", "read", device_index_str, sector_str] => {
-            let device_id = match device_index_str.parse::<usize>() {
-                Ok(device_id) => device_id,
-                Err(e) => {
-                    serial_println!("Invalid device index {device_index_str}: {e}");
-                    return None;
-                }
-            };
-
-            let sector = sector_str.parse::<u64>();
-            match sector {
-                Ok(sector) => Some(Command::VirtIOBlockRead { device_id, sector }),
-                Err(e) => {
-                    serial_println!("Invalid sector number {sector_str}: {e}");
-                    None
-                }
-            }
+        ["virtio-block", "read", device_id_str, sector_str] => {
+            let device_id = parse_or_print_error(device_id_str, "device ID")?;
+            let sector = parse_or_print_error(sector_str, "sector number")?;
+            Some(Command::VirtIOBlockRead { device_id, sector })
         }
         ["virtio-block", "id", device_id_str] => {
-            let device_id = device_id_str.parse::<usize>();
-            match device_id {
-                Ok(device_id) => Some(Command::VirtIOBlockID { device_id }),
-                Err(e) => {
-                    serial_println!("Invalid device_id number {device_id_str}: {e}");
-                    None
-                }
-            }
+            let device_id = parse_or_print_error(device_id_str, "device ID")?;
+            Some(Command::VirtIOBlockID { device_id })
         }
         _ => Some(Command::Unknown(command_str)),
+    }
+}
+
+fn parse_or_print_error<T>(s: &str, name: &str) -> Option<T>
+where
+    T: core::str::FromStr + fmt::Display,
+    T::Err: fmt::Display,
+{
+    let parsed = s.parse::<T>();
+    match parsed {
+        Ok(parsed) => Some(parsed),
+        Err(e) => {
+            serial_println!("Invalid {name} {s}: {e}");
+            None
+        }
     }
 }
 
