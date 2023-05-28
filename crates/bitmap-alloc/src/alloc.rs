@@ -5,13 +5,21 @@ pub struct BitmapAllocator<'a> {
     /// In the real kernel, this bitmap is itself stored in main memory, so
     /// there is a bit of a bootstrapping problem that needs to be solved.
     bitmap: &'a mut [u64], // TODO: Use u128 if that is faster
+
+    /// The index of the last single page that was allocated. This is used to
+    /// speed up single page allocations, since we can start searching from
+    /// here.
+    last_single_page_allocation: Option<usize>,
 }
 
 impl<'a> BitmapAllocator<'a> {
     pub(crate) const BITS_PER_CHUNK: usize = u64::BITS as usize;
 
     pub(crate) fn new(bitmap: &'a mut [u64]) -> BitmapAllocator<'a> {
-        BitmapAllocator { bitmap }
+        BitmapAllocator {
+            bitmap,
+            last_single_page_allocation: None,
+        }
     }
 
     /// Mark a given page as used. This is used internally by the allocator, but
@@ -44,16 +52,18 @@ impl<'a> BitmapAllocator<'a> {
     /// Allocates a contiguous block of memory of the given size, and returns
     /// the starting page of the block. Returns `None` if no such block exists.
     pub fn allocate_contiguous(&mut self, num_pages: usize) -> Option<usize> {
-        // TODO: Store the last allocation location, and start searching from
-        // there. This will make allocations faster. Also consider resetting it
-        // to the free start location whenever we do a free.
-
         assert!(num_pages > 0, "cannot allocate 0 pages");
 
-        let start = self.find_next_contiguous(num_pages)?;
+        let start = self.find_next_contiguous(num_pages);
+        if num_pages == 1 {
+            self.last_single_page_allocation = start;
+        }
+
+        let start = start?;
         for page in start..start + num_pages {
             self.mark_used(page);
         }
+
         Some(start)
     }
 
@@ -61,15 +71,26 @@ impl<'a> BitmapAllocator<'a> {
     /// size, and returns the starting page of the block. Returns `None` if no
     /// such block exists.
     fn find_next_contiguous(&mut self, num_pages: usize) -> Option<usize> {
-        let mut start = 0;
+        // Optimization: if this is a single page allocation, we can start
+        // searching from the last single page allocation, since we know that
+        // all single page allocations are contiguous.
+        let mut start = if num_pages == 1 {
+            self.last_single_page_allocation.unwrap_or(0)
+        } else {
+            0
+        };
+        let byte_idx = start / Self::BITS_PER_CHUNK;
+
         let mut current_len = 0;
-        for (i, byte) in self.bitmap.iter().enumerate() {
+        for i in byte_idx..self.bitmap.len() {
+            let byte = self.bitmap[i];
+
             // TODO: Consider using u64::count_zeros() and/or
             // trailing_zeros()/leading_zeros() (depending on if we want to do
             // least significant bit or most significant bit iteration) to speed
             // this up instead of manually inspecting bit by bit.
             for bit in 0..Self::BITS_PER_CHUNK {
-                let bit_free = *byte & (1 << bit) == 0;
+                let bit_free = byte & (1 << bit) == 0;
                 if bit_free {
                     current_len += 1;
                     if current_len == num_pages {
@@ -90,8 +111,16 @@ impl<'a> BitmapAllocator<'a> {
     /// Frees a contiguous block of memory of the given size, starting at the
     /// given page.
     pub fn free_contiguous(&mut self, start_page: usize, num_pages: usize) {
+        assert!(num_pages > 0, "cannot free 0 pages");
         for page in start_page..start_page + num_pages {
             self.mark_unused(page);
+        }
+
+        // No matter how many pages we have,
+        if let Some(last_single_page_start) = self.last_single_page_allocation {
+            if start_page < last_single_page_start {
+                self.last_single_page_allocation = Some(start_page);
+            }
         }
     }
 }
@@ -143,6 +172,45 @@ mod tests {
         );
     }
 
+    #[test]
+    fn single_page_allocs() {
+        let mut bitmap = [0; 1];
+        let mut allocator = BitmapAllocator::new(&mut bitmap);
+
+        let start = allocator.allocate_contiguous(2);
+        assert_eq!(start, Some(0));
+
+        let start = allocator.allocate_contiguous(1);
+        assert_eq!(start, Some(2));
+
+        allocator.free_contiguous(0, 2);
+        assert_eq!(allocator.bitmap, [0b100]);
+
+        let start = allocator.allocate_contiguous(3);
+        assert_eq!(start, Some(3));
+
+        let start = allocator.allocate_contiguous(1);
+        assert_eq!(start, Some(0));
+
+        let start = allocator.allocate_contiguous(1);
+        assert_eq!(start, Some(1));
+
+        let start = allocator.allocate_contiguous(1);
+        assert_eq!(start, Some(6));
+
+        allocator.free_contiguous(2, 1);
+        assert_eq!(allocator.bitmap, [0b1111011]);
+        assert_eq!(allocator.last_single_page_allocation, Some(2));
+
+        allocator.free_contiguous(3, 3);
+        assert_eq!(allocator.bitmap, [0b1000011]);
+        assert_eq!(allocator.last_single_page_allocation, Some(2));
+
+        let start = allocator.allocate_contiguous(1);
+        assert_eq!(start, Some(2));
+        assert_eq!(allocator.bitmap, [0b1000111]);
+    }
+
     #[derive(Debug, Clone)]
     enum AllocOrFree {
         Alloc(usize),
@@ -167,7 +235,6 @@ mod tests {
         #[test]
         fn alloc_free(
             bitmap_elems in 2..20_usize,
-            initial_allocs in prop::collection::vec(1..20_usize, 5..15),
             allocs in prop::collection::vec(alloc_or_free_strategy(80), 1..20)
         ) {
             let mut bitmap = vec![0; bitmap_elems];
@@ -177,14 +244,6 @@ mod tests {
             // important for determinism. We get randomness from the index we
             // use for `Free`.
             let mut allocated_pages = BTreeSet::new();
-
-            // Initial round of allocations to fill things up.
-            for num_pages in initial_allocs {
-                let start = allocator.allocate_contiguous(num_pages);
-                if let Some(start) = start {
-                    allocated_pages.insert((start, num_pages));
-                }
-            }
 
             for alloc_or_free in allocs {
                 match alloc_or_free {
