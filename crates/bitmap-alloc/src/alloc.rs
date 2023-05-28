@@ -4,13 +4,13 @@ pub struct BitmapAllocator<'a> {
     ///
     /// In the real kernel, this bitmap is itself stored in main memory, so
     /// there is a bit of a bootstrapping problem that needs to be solved.
-    bitmap: &'a mut [u8], // TODO: Use u64, or even u128 if that is faster
+    bitmap: &'a mut [u64], // TODO: Use u128 if that is faster
 }
 
 impl<'a> BitmapAllocator<'a> {
-    pub(crate) const BITS_PER_CHUNK: usize = u8::BITS as usize;
+    pub(crate) const BITS_PER_CHUNK: usize = u64::BITS as usize;
 
-    pub(crate) fn new(bitmap: &'a mut [u8]) -> BitmapAllocator<'a> {
+    pub(crate) fn new(bitmap: &'a mut [u64]) -> BitmapAllocator<'a> {
         BitmapAllocator { bitmap }
     }
 
@@ -64,19 +64,10 @@ impl<'a> BitmapAllocator<'a> {
         let mut start = 0;
         let mut current_len = 0;
         for (i, byte) in self.bitmap.iter().enumerate() {
-            // Shortcut: if there are not enough pages in this byte to satisfy
-            // our request, skip it. This is a performance optimization. Under
-            // the hood, on x86, it uses the POPCNT instruction.
-            let num_zeros = byte.count_zeros() as usize;
-            if num_zeros < num_pages - current_len {
-                start = (i + 1) * Self::BITS_PER_CHUNK;
-                current_len = 0;
-                continue;
-            }
-
-            // TODO: Use a combination of shifts and `leading_zeroes` (or
-            // `trailing_zeros` if we want least significant bit iteration) to
-            // find chunks of zeroes.
+            // TODO: Consider using u64::count_zeros() and/or
+            // trailing_zeros()/leading_zeros() (depending on if we want to do
+            // least significant bit or most significant bit iteration) to speed
+            // this up instead of manually inspecting bit by bit.
             for bit in 0..Self::BITS_PER_CHUNK {
                 let bit_free = *byte & (1 << bit) == 0;
                 if bit_free {
@@ -121,26 +112,35 @@ mod tests {
         let start = allocator.allocate_contiguous(1);
         assert_eq!(start, Some(0));
 
-        let start = allocator.allocate_contiguous(100);
+        let start = allocator.allocate_contiguous(1000);
         assert_eq!(start, None);
 
         allocator.mark_used(3);
         let start = allocator.allocate_contiguous(5);
         assert_eq!(start, Some(4));
 
-        assert_eq!(allocator.bitmap, [0b11111001, 0b00000001]);
+        let start = allocator.allocate_contiguous(63);
+        assert_eq!(start, Some(9));
+
+        assert_eq!(allocator.bitmap, [u64::MAX & !0b110, 0b11111111]);
 
         let start = allocator.allocate_contiguous(3);
-        assert_eq!(start, Some(9));
-        assert_eq!(allocator.bitmap, [0b11111001, 0b00001111]);
+        assert_eq!(start, Some(72));
+        assert_eq!(allocator.bitmap, [u64::MAX & !0b110, 0b00000111_11111111]);
 
         allocator.free_contiguous(4, 5);
-        assert_eq!(allocator.bitmap, [0b00001001, 0b00001110]);
+        assert_eq!(
+            allocator.bitmap,
+            [u64::MAX & !0b111110110, 0b00000111_11111111]
+        );
 
         // Should go back into the hold we just freed.
         let start = allocator.allocate_contiguous(3);
         assert_eq!(start, Some(4));
-        assert_eq!(allocator.bitmap, [0b01111001, 0b00001110]);
+        assert_eq!(
+            allocator.bitmap,
+            [u64::MAX & !0b110000110, 0b00000111_11111111]
+        );
     }
 
     #[derive(Debug, Clone)]

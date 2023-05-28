@@ -138,7 +138,7 @@ impl PhysicalMemoryAllocator<'_> {
             Self::PAGE_SIZE,
             memory_regions,
             |bitmap_addr, bitmap_len| {
-                let ptr = bitmap_addr as *mut u8;
+                let ptr = bitmap_addr as *mut u64;
                 core::slice::from_raw_parts_mut(ptr, bitmap_len)
             },
         );

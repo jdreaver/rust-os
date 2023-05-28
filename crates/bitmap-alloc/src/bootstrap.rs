@@ -22,7 +22,7 @@ pub fn bootstrap_allocator<'a, I, R, A>(
 where
     I: Iterator<Item = MemoryRegion>,
     R: Fn() -> I,
-    A: Fn(usize, usize) -> &'a mut [u8],
+    A: Fn(usize, usize) -> &'a mut [u64],
 {
     // Compute total memory size
     let total_memory = iter_regions()
@@ -53,7 +53,7 @@ where
         .expect("couldn't find a free region large enough to store the allocator bitmap");
 
     // Allocate the bitmap
-    let bitmap_len = bitmap_bytes.div_ceil(u8::BITS as usize);
+    let bitmap_len = bitmap_bytes.div_ceil(u64::BITS as usize);
     let bitmap = allocate_bitmap(bitmap_start, bitmap_len);
 
     // Mark all used regions as used in the bitmap
@@ -83,8 +83,8 @@ where
 mod tests {
     use super::*;
 
-    const TEST_BITMAP_LEN: usize = 11;
-    static mut TEST_BITMAP: [u8; TEST_BITMAP_LEN] = [0_u8; TEST_BITMAP_LEN];
+    const TEST_BITMAP_LEN: usize = 2;
+    static mut TEST_BITMAP: [u64; TEST_BITMAP_LEN] = [0_u64; TEST_BITMAP_LEN];
 
     #[test]
     fn bootstrap() {
@@ -118,7 +118,7 @@ mod tests {
 
         let page_size = 0x10;
         let iter_regions = || regions.iter().cloned();
-        let allocate_bitmap = |start, len| -> &mut [u8] {
+        let allocate_bitmap = |start, len| -> &mut [u64] {
             assert_eq!(start, 0x100);
             assert_eq!(len, TEST_BITMAP_LEN);
             unsafe { &mut TEST_BITMAP }
