@@ -59,18 +59,24 @@ where
     // Mark all used regions as used in the bitmap
     let mut alloc = BitmapAllocator::new(bitmap);
     for region in iter_regions() {
-        // Ensure all regions are page-aligned, or else the logic here is much more complicated.
-        assert!(
-            region.start_address % page_size == 0,
-            "regions start address must be page-aligned"
-        );
-
         if region.free {
             continue;
         }
 
-        let start = region.start_address / page_size;
-        let end = (region.start_address + region.len_bytes as usize).div_ceil(page_size);
+        // For non-free regions start are not page-aligned, we should expand
+        // them so the cover entire pages. That is, these reserved regions take
+        // precedence over free regions in a given page.
+        let page_aligned = region.start_address % page_size == 0;
+        let (start_address, region_len_bytes) = if page_aligned {
+            let start_address = region.start_address - region.start_address % page_size;
+            let region_len_bytes = region.len_bytes + (region.start_address - start_address) as u64;
+            (start_address, region_len_bytes)
+        } else {
+            (region.start_address, region.len_bytes)
+        };
+        let start = start_address / page_size;
+        let end = (start_address + region_len_bytes as usize).div_ceil(page_size);
+
         for page in start..end {
             alloc.mark_used(page);
         }
