@@ -97,7 +97,9 @@ fn reset_terminal_line() {
 }
 
 enum Command<'a> {
-    Tests,
+    TestMisc,
+    TestHPET,
+    TestScheduler,
     ListPCI,
     ListVirtIO,
     BootInfo,
@@ -117,7 +119,9 @@ fn next_command(buffer: &[u8]) -> Option<Command> {
 
     match &words[..] {
         [""] => None,
-        ["tests"] => Some(Command::Tests),
+        ["test", "misc"] => Some(Command::TestMisc),
+        ["test", "hpet"] => Some(Command::TestHPET),
+        ["test", "scheduler"] => Some(Command::TestScheduler),
         ["list-pci"] => Some(Command::ListPCI),
         ["list-virtio"] => Some(Command::ListVirtIO),
         ["boot-info"] => Some(Command::BootInfo),
@@ -140,9 +144,14 @@ fn next_command(buffer: &[u8]) -> Option<Command> {
 
 fn run_command(command: &Command) {
     match command {
-        Command::Tests => {
-            serial_println!("Running tests...");
-            tests::run_tests();
+        Command::TestMisc => {
+            tests::run_misc_tests();
+        }
+        Command::TestHPET => {
+            tests::test_hpet();
+        }
+        Command::TestScheduler => {
+            tests::test_scheduler();
         }
         Command::Invalid => {
             serial_println!("Invalid command");

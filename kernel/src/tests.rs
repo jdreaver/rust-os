@@ -9,7 +9,7 @@ use crate::{boot_info, hpet, interrupts, memory, scheduler, serial_println, virt
 
 static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
 
-pub(crate) fn run_tests() {
+pub(crate) fn run_misc_tests() {
     let boot_info_data = boot_info::boot_info();
 
     // Ensure we got a framebuffer.
@@ -99,6 +99,10 @@ pub(crate) fn run_tests() {
     let my_box = Box::new_in(42, &memory::KERNEL_PHYSICAL_ALLOCATOR);
     serial_println!("Allocator alloc'ed my_box {my_box:?} at {my_box:p}");
 
+    drop(my_box);
+    let other_box = Box::new_in(42, &memory::KERNEL_PHYSICAL_ALLOCATOR);
+    serial_println!("Allocator alloc'ed other_box at {other_box:?} at {other_box:p}");
+
     // Trigger a page fault, which should trigger a double fault if we don't
     // have a page fault handler.
     // unsafe {
@@ -111,15 +115,9 @@ pub(crate) fn run_tests() {
 
     // Test custom panic handler
     // panic!("Some panic message");
+}
 
-    hpet::enable_periodic_timer_handler(
-        123,
-        test_hpet_interrupt_handler,
-        TEST_HPET_TIMER_IOAPIC_IRQ_NUMBER,
-        0,
-        &hpet::Milliseconds::new(1000),
-    );
-
+pub(crate) fn test_scheduler() {
     scheduler::push_task("task 1", task_1_test_task);
     scheduler::push_task("task 2", task_2_test_task);
 
@@ -170,6 +168,16 @@ fn naive_nth_prime(n: usize) -> usize {
             scheduler::run_scheduler();
         }
     }
+}
+
+pub(crate) fn test_hpet() {
+    hpet::enable_periodic_timer_handler(
+        123,
+        test_hpet_interrupt_handler,
+        TEST_HPET_TIMER_IOAPIC_IRQ_NUMBER,
+        0,
+        &hpet::Milliseconds::new(1000),
+    );
 }
 
 /// Arbitrary IO/APIC interrupt number for the test HPET timer
