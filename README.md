@@ -109,6 +109,7 @@ make test
   - <https://docs.kernel.org/core-api/genericirq.html> mentions that a generic handler is hard b/c of APIC , IO/APIC, etc ACKs, which is why `__do_IRQ` no longer exists
 - Detect kernel stack overflows. Guard pages? Some other mechanism?
   - I need a huge stack for debug mode apparently. I was seeing stack overflows with a 4096 byte stack when running in debug mode, so I quadrupled it
+- Try replacing bitmap allocator with a buddy allocator, perhaps itself implemented with multiple bitmaps <https://wiki.osdev.org/Page_Frame_Allocation>
 - VirtIO improvements:
   - Allocation and pointers: avoid manually calling `memory` alloc functions and passing around pointers
     - Have virtqueues "own" their buffers and handle alloc/dealloc. Devices that need to alloc for descriptors, like virtio-blk, can do the same.
@@ -123,8 +124,6 @@ make test
     > If MSI-X capability is enabled, the driver SHOULD NOT access ISR status upon detecting a Queue Interrupt.
 
     Ensure we aren't accessing this on accident! Maybe explicitly don't touch it, and ensure that Debug doesn't print it. (Maybe we need a special register type for things we can read but shouldn't print on debug?)
-  - Abstract logic around `processed_used_index`, wrapping idx, etc into VirtIO device, not the RNG handler.
-    - This is where locking may get tricky.
 - `registers.rs` and macros
   - Consider moving `registers.rs` stuff into dedicated crate with unit tests
   - Also document `registers.rs` stuff
@@ -409,3 +408,4 @@ the CPU may still reorder them.
 - <https://wiki.osdev.org/Memory_management>
 - <https://forum.osdev.org/viewtopic.php?t=46327&p=327049>
 - <https://eatplayhate.me/2010/09/04/memory-management-from-the-ground-up-2-foundations/>
+- <https://en.wikipedia.org/wiki/Buddy_memory_allocation>

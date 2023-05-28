@@ -33,7 +33,7 @@ pub(super) struct VirtQueue {
     /// Used to record how many used ring entries have been processed by the
     /// driver. This is a mutex so we can ensure multiple threads using the
     /// driver don't process the same entries.
-    last_processed_used_index: Mutex<u16>,
+    last_processed_used_index: Mutex<WrappingIndex>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -41,6 +41,34 @@ pub(super) struct VirtQueue {
 /// The virtqueue's index within a device's virtqueue array. That is, the
 /// virtqueue "number" for that device.
 pub(super) struct VirtQueueIndex(pub(super) u16);
+
+/// Index that wraps around when it reaches the virtqueue's size.
+///
+/// This type exists to ensure we don't accidentally try and index into an array
+/// with the wrapping index. To actually index into a ring or descriptor table,
+/// you need to take the mod of this index with the virtqueue's size.
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+struct WrappingIndex(u16);
+
+impl WrappingIndex {
+    fn increment(self) -> Self {
+        Self(self.0.wrapping_add(1))
+    }
+
+    fn to_elem_index(self, queue_size: u16) -> u16 {
+        // N.B. Assumes that the queue size is a power of 2, which is in the
+        // virtio spec. Specifically, when we increment this index, it performs
+        // a wraparound when we max out u16, and this modulo logic only works in
+        // conjunction with that when the queue size is a power of 2.
+        assert!(
+            queue_size.is_power_of_two(),
+            "queue size must be a power of two for index wrapping to work"
+        );
+
+        self.0 % queue_size
+    }
+}
 
 impl VirtQueue {
     pub(super) fn new(
@@ -58,7 +86,7 @@ impl VirtQueue {
             descriptors,
             avail_ring,
             used_ring,
-            last_processed_used_index: Mutex::new(0),
+            last_processed_used_index: Mutex::new(WrappingIndex(0)),
         }
     }
 
@@ -81,7 +109,8 @@ impl VirtQueue {
         let last_processed = *last_processed_lock;
         let used_index = self.used_ring.idx.read();
 
-        for i in last_processed..used_index {
+        for i in last_processed.0..used_index.0 {
+            let i = WrappingIndex(i);
             let (used_elem, chain) = self.get_used_ring_entry(i);
             f(used_elem, chain);
         }
@@ -91,7 +120,7 @@ impl VirtQueue {
 
     fn get_used_ring_entry(
         &self,
-        index: u16,
+        index: WrappingIndex,
     ) -> (VirtQueueUsedElem, VirtQueueDescriptorChainIterator) {
         // Load the used element
         let used_elem = self.used_ring.get_used_elem(index);
@@ -162,13 +191,8 @@ impl VirtQueueDescriptorTable {
     }
 
     /// Atomically increments the internal index and performs the necessary wrapping.
-    fn next_index(&self) -> u16 {
-        let index = self.raw_next_index.fetch_add(1, Ordering::Relaxed);
-        // N.B. Assumes that the queue size is a power of 2, which is in the
-        // virtio spec. Specifically, when we do fetch_add above, it performs a
-        // wraparound when we max out u16, and this modulo logic only works in
-        // conjunction with that when the queue size is a power of 2.
-        index % self.descriptors.len() as u16
+    fn next_index(&self) -> WrappingIndex {
+        WrappingIndex(self.raw_next_index.fetch_add(1, Ordering::Relaxed))
     }
 
     /// Adds a group of chained descriptors to the descriptor table. Returns the
@@ -178,7 +202,7 @@ impl VirtQueueDescriptorTable {
         let mut prev_idx: Option<u16> = None;
 
         for desc in descriptors.iter() {
-            let idx = self.next_index();
+            let idx = self.next_index().to_elem_index(self.descriptors.len() as u16);
             first_idx.get_or_insert(idx);
 
             // Modify the previous descriptor to point to this one.
@@ -318,7 +342,7 @@ pub(super) struct VirtQueueAvailRing {
 
     /// idx field indicates where the driver would put the next descriptor entry
     /// in the ring (modulo the queue size). This starts at 0, and increases.
-    idx: RegisterRW<u16>,
+    idx: RegisterRW<WrappingIndex>,
 
     ring: VolatileArrayRW<u16>,
 
@@ -376,12 +400,12 @@ impl VirtQueueAvailRing {
         // TODO: Check that the driver doesn't add more entries than are
         // actually available. We don't want to overwrite the end of ring
         // buffer. This likely needs to be done at a higher level.
-        let idx = self.idx.read() % self.ring.len() as u16;
+        let idx = self.idx.read().0 % self.ring.len() as u16;
         self.ring.write(idx as usize, desc_index);
 
         // 2.7.13.3 Updating idx
         barrier();
-        self.idx.modify(|idx| idx.wrapping_add(1));
+        self.idx.modify(WrappingIndex::increment);
     }
 }
 
@@ -418,7 +442,7 @@ pub(super) struct VirtQueueUsedRing {
 
     /// idx field indicates where the device would put the next descriptor entry
     /// in the ring (modulo the queue size). This starts at 0, and increases.
-    idx: RegisterRW<u16>,
+    idx: RegisterRW<WrappingIndex>,
 
     ring: VolatileArrayRW<VirtQueueUsedElem>,
 
@@ -491,7 +515,8 @@ impl VirtQueueUsedRing {
         self.physical_address
     }
 
-    fn get_used_elem(&self, idx: u16) -> VirtQueueUsedElem {
-        self.ring.read(idx as usize)
+    fn get_used_elem(&self, idx: WrappingIndex) -> VirtQueueUsedElem {
+        let elem_idx = idx.to_elem_index(self.ring.len() as u16);
+        self.ring.read(elem_idx as usize)
     }
 }
