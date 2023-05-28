@@ -44,8 +44,8 @@ impl WriteOnlySerialPort {
             // Enable DLAB
             u8::write_to_port(self.line_ctrl, 0x80);
 
-            // Set maximum speed to 38400 bps by configuring DLL and DLM
-            u8::write_to_port(self.data, 0x03); // Low byte
+            // Set maximum speed to 115200 bps by configuring DLL and DLM
+            u8::write_to_port(self.data, 0x01); // Low byte
             u8::write_to_port(self.int_en, 0x00); // High byte
 
             // Disable DLAB and set data word length to 8 bits, no parity, one
