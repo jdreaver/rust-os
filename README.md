@@ -93,6 +93,8 @@ make test
 
 - VirtIO improvements:
   - Proper request queue/response. Shell should be able to enqueue a request and poll for a response.
+    - Each device can have a request queue, and a method that can be called synchronously to check on a request
+    - When a request is enqueued, we add the descriptor and avail ring entry.
   - Allocate buffers on the fly instead of using static buffers, or have client provide buffer
     - Reuse them if we are reusing a descriptor, or free them.
   - Allocation and pointers: avoid manually calling `memory` alloc functions and passing around pointers
@@ -112,6 +114,7 @@ make test
   - Show register values, internal structures, etc
   - Have help be meaningful
   - Split up tests and have subcommands like `test all` (all can be optional) `test interrupts`, `test memory-mappings`, etc
+  - Eventually replace using the serial device with vsock or virtio-console for speed. Maybe the primary interface to the OS could be a TUI, which would be super neat!
 - IOAPIC: Make IOAPIC IRQ numbers an enum for better safety, and throw an error if IOAPIC enum assigned to twice
   - Or, perhaps we dynamically assign these for the ones that don't need to be well-known, like the keyboard one
 - Investigate if we should be doing `apic::end_of_interrupt` for handlers on their behalf or not.
