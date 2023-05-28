@@ -170,8 +170,6 @@ pub(crate) struct LockedPhysicalMemoryAllocator<'a> {
 }
 
 impl LockedPhysicalMemoryAllocator<'_> {
-    const PAGE_SIZE: usize = Size4KiB::SIZE as usize;
-
     const fn new() -> Self {
         Self {
             mutex: Mutex::new(None),
@@ -202,11 +200,11 @@ impl LockedPhysicalMemoryAllocator<'_> {
 unsafe impl Allocator for LockedPhysicalMemoryAllocator<'_> {
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         let size = layout.size();
-        let num_pages = size.div_ceil(Self::PAGE_SIZE);
+        let num_pages = size.div_ceil(PhysicalMemoryAllocator::PAGE_SIZE);
 
         let alignment = layout.align() as u64;
         assert!(
-            alignment <= Self::PAGE_SIZE as u64,
+            alignment <= PhysicalMemoryAllocator::PAGE_SIZE as u64,
             "alignment must be <= page size. What the hell are we aligning???"
         );
         let start_page = self.with_lock(|allocator| {
@@ -215,7 +213,7 @@ unsafe impl Allocator for LockedPhysicalMemoryAllocator<'_> {
                 .allocate_contiguous(num_pages)
                 .ok_or(AllocError)
         })?;
-        let start_address = start_page * Self::PAGE_SIZE;
+        let start_address = start_page * PhysicalMemoryAllocator::PAGE_SIZE;
 
         let slice =
             unsafe { core::slice::from_raw_parts_mut(start_address as *mut u8, layout.size()) };
@@ -227,13 +225,13 @@ unsafe impl Allocator for LockedPhysicalMemoryAllocator<'_> {
 
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
         let size = layout.size();
-        let num_pages = size.div_ceil(Self::PAGE_SIZE);
+        let num_pages = size.div_ceil(PhysicalMemoryAllocator::PAGE_SIZE);
         let start_addr = ptr.as_ptr() as usize;
         assert!(
-            start_addr % Self::PAGE_SIZE == 0,
+            start_addr % PhysicalMemoryAllocator::PAGE_SIZE == 0,
             "somehow start address of {start_addr} is not page aligned"
         );
-        let start_page = start_addr / Self::PAGE_SIZE;
+        let start_page = start_addr / PhysicalMemoryAllocator::PAGE_SIZE;
         self.with_lock(|allocator| {
             allocator.allocator.free_contiguous(start_page, num_pages);
         });
