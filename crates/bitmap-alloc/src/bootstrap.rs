@@ -10,6 +10,54 @@ pub struct MemoryRegion {
     pub free: bool,
 }
 
+impl MemoryRegion {
+    /// Aligns the region to the given page size. This is useful for ensuring
+    /// that the region covers entire pages, which is a requirement for the
+    /// allocator.
+    ///
+    /// Note that free regions that aren't page-aligned are rounded _up_ to the
+    /// page size, and non-free regions are rounded _down_ to the page size.
+    /// This ensures that non-free regions take precedence over free regions in
+    /// a given page.
+    ///
+    /// Returns `None` if the region is too small to be aligned to the given
+    /// page size.
+    fn page_aligned_start_end_address(&self, page_size: usize) -> Option<(usize, usize)> {
+        if self.free {
+            let aligned_start = shift_up_page_size(self.start_address, page_size);
+
+            let end = self.start_address + self.len_bytes as usize;
+            let aligned_end = shift_down_page_size(end, page_size);
+
+            if aligned_end <= aligned_start {
+                return None;
+            }
+
+            Some((aligned_start, aligned_end))
+        } else {
+            let aligned_start = shift_down_page_size(self.start_address, page_size);
+
+            let end = self.start_address + self.len_bytes as usize;
+            let aligned_end = shift_up_page_size(end, page_size);
+
+            Some((aligned_start, aligned_end))
+        }
+    }
+}
+
+fn shift_up_page_size(value: usize, page_size: usize) -> usize {
+    let shift = if value % page_size == 0 {
+        0
+    } else {
+        page_size - value % page_size
+    };
+    value + shift
+}
+
+fn shift_down_page_size(value: usize, page_size: usize) -> usize {
+    value - value % page_size
+}
+
 /// This function bootstraps the allocator. The allocator bitmap needs to be in
 /// physical memory. We need to figure out where to put it, we need to make sure
 /// it is big enough, and we need to ensure that the pages the bitmap is located
@@ -35,15 +83,9 @@ where
     let bitmap_start = iter_regions()
         .filter(|r| r.free)
         .find_map(|region| {
-            let start = region.start_address;
+            let Some((start, end)) = region.page_aligned_start_end_address(page_size) else { return None; };
 
-            // Start address must be page-aligned
-            assert!(
-                start % page_size == 0,
-                "regions start address must be page-aligned"
-            );
-
-            let fits = region.len_bytes as usize >= bitmap_bytes - (start - region.start_address);
+            let fits = bitmap_bytes <= end - start;
             if fits {
                 Some(start)
             } else {
@@ -63,20 +105,9 @@ where
             continue;
         }
 
-        // For non-free regions start are not page-aligned, we should expand
-        // them so the cover entire pages. That is, these reserved regions take
-        // precedence over free regions in a given page.
-        let page_aligned = region.start_address % page_size == 0;
-        let (start_address, region_len_bytes) = if page_aligned {
-            let start_address = region.start_address - region.start_address % page_size;
-            let region_len_bytes = region.len_bytes + (region.start_address - start_address) as u64;
-            (start_address, region_len_bytes)
-        } else {
-            (region.start_address, region.len_bytes)
-        };
-        let start = start_address / page_size;
-        let end = (start_address + region_len_bytes as usize).div_ceil(page_size);
-
+        let Some((start_addr, end_addr)) = region.page_aligned_start_end_address(page_size) else { continue; };
+        let start = start_addr / page_size;
+        let end = end_addr / page_size;
         for page in start..end {
             alloc.mark_used(page);
         }
@@ -154,5 +185,62 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn page_aligned_start_end_address_free() {
+        let region = MemoryRegion {
+            start_address: 0x101,
+            len_bytes: 0x100,
+            free: true,
+        };
+        let got = region.page_aligned_start_end_address(0x10);
+        let expect = Some((0x110, 0x200));
+        assert_eq!(got, expect);
+
+        let region = MemoryRegion {
+            start_address: 0x100,
+            len_bytes: 0x100,
+            free: true,
+        };
+        let got = region.page_aligned_start_end_address(0x10);
+        let expect = Some((0x100, 0x200));
+        assert_eq!(got, expect);
+    }
+
+    #[test]
+    fn page_aligned_start_end_address_free_too_small() {
+        let region = MemoryRegion {
+            start_address: 0x101,
+            len_bytes: 0x10,
+            free: true,
+        };
+        let got = region.page_aligned_start_end_address(0x10);
+        assert_eq!(got, None);
+
+        let region = MemoryRegion {
+            start_address: 0x101,
+            len_bytes: 0xf,
+            free: true,
+        };
+        let got = region.page_aligned_start_end_address(0x10);
+        assert_eq!(got, None);
+
+        let region = MemoryRegion {
+            start_address: 0x101,
+            len_bytes: 0xe,
+            free: true,
+        };
+        let got = region.page_aligned_start_end_address(0x10);
+        assert_eq!(got, None);
+
+        let region = MemoryRegion {
+            start_address: 0x101,
+            len_bytes: 0x1f,
+            free: true,
+        };
+        let got = region.page_aligned_start_end_address(0x10);
+        let expect = Some((0x110, 0x120));
+        assert_eq!(got, expect);
     }
 }
