@@ -122,6 +122,17 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
                     core::slice::from_raw_parts(data_addr.as_u64() as *const u8, data_len as usize)
                 };
                 serial_println!("Read response: {:x?}", buffer);
+
+                // If we detect a FAT filesystem, print out the BIOS Parameter Block
+                //
+                // TODO: Abstract this out of here
+                if let [0xeb, 0x3c, 0x90] = &buffer[..3] {
+                    let bios_param_block: fat::BIOSParameterBlock = unsafe {
+                        let ptr = data_addr.as_u64() as *const fat::BIOSParameterBlock;
+                        ptr.read()
+                    };
+                    serial_println!("BIOS Parameter Block: {:#x?}", bios_param_block);
+                }
             }
             BlockRequest::GetID {
                 data_addr,
