@@ -119,7 +119,7 @@ fn next_command(buffer: &[u8]) -> Option<Command> {
     let words = command_str.split_whitespace().collect::<Vec<_>>();
 
     match &words[..] {
-        [""] => None,
+        [] => None,
         ["test", "misc"] => Some(Command::TestMisc),
         ["test", "hpet"] => Some(Command::TestHPET),
         ["test", "scheduler"] => Some(Command::TestScheduler),
