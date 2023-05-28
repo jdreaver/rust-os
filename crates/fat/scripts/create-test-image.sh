@@ -2,18 +2,23 @@
 
 set -eu
 
-rm -rf test-image
-mkdir -p test-image
+if [ "$#" -ne 1 ]; then
+  echo "Usage: $0 OUTPUT_FILE" >&2
+  exit 1
+fi
 
-name="test-image/fat12.img"
-block_count=2000
+output_file="$1"
 
-dd if=/dev/zero of="$name" bs=1024 "count=$block_count"
-mformat -i "$name"
+dd if=/dev/zero of="$output_file" bs=1024 count=2000
+mformat -i "$output_file"
 
+long_txt=/tmp/long.txt
+rm -f "$long_txt"
 for i in $(seq 1 1000); do
-  echo "Rust is cool!" >> "test-image/long.txt"
+  echo "Rust is cool!" >> "$long_txt"
 done
-mcopy -i "$name" "test-image/long.txt" ::
-echo "Rust is cool!" >> "test-image/short.txt"
-mcopy -i "$name" "test-image/short.txt" ::
+mcopy -i "$output_file" "$long_txt" ::
+
+short_txt=/tmp/short.txt
+echo "Rust is cool!" > "$short_txt"
+mcopy -i "$output_file" "$short_txt" ::

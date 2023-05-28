@@ -111,6 +111,8 @@ make test
   - I need a huge stack for debug mode apparently. I was seeing stack overflows with a 4096 byte stack when running in debug mode, so I quadrupled it
 - Try replacing bitmap allocator with a buddy allocator, perhaps itself implemented with multiple bitmaps <https://wiki.osdev.org/Page_Frame_Allocation>
 - VirtIO improvements:
+  - Allocate buffers on the fly instead of using static buffers
+    - Reuse them if we are reusing a descriptor, or free them.
   - Allocation and pointers: avoid manually calling `memory` alloc functions and passing around pointers
     - Have virtqueues "own" their buffers and handle alloc/dealloc. Devices that need to alloc for descriptors, like virtio-blk, can do the same.
     - We can use `Box<T, KERNEL_PHYSICAL_ALLOC>` to ensure we are using physical memory.

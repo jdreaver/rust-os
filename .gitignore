@@ -1,5 +1,5 @@
 /target
 /iso_root
 /kernel.elf
-/kernel.hdd
 /kernel.iso
+/*.hdd

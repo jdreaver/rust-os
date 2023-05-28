@@ -105,8 +105,9 @@ enum Command<'a> {
     BootInfo,
     PrintACPI,
     RNG,
-    VirtIOBlockRead { sector: u64 },
-    VirtIOBlockID,
+    VirtIOBlockList,
+    VirtIOBlockRead { device_id: usize, sector: u64 },
+    VirtIOBlockID { device_id: usize },
     Invalid,
     Unknown(&'a str),
 }
@@ -127,17 +128,35 @@ fn next_command(buffer: &[u8]) -> Option<Command> {
         ["boot-info"] => Some(Command::BootInfo),
         ["print-acpi"] => Some(Command::PrintACPI),
         ["rng"] => Some(Command::RNG),
-        ["virtio-block-read", sector_str] => {
+        ["virtio-block", "list"] => Some(Command::VirtIOBlockList),
+        ["virtio-block", "read", device_index_str, sector_str] => {
+            let device_id = match device_index_str.parse::<usize>() {
+                Ok(device_id) => device_id,
+                Err(e) => {
+                    serial_println!("Invalid device index {device_index_str}: {e}");
+                    return None;
+                }
+            };
+
             let sector = sector_str.parse::<u64>();
             match sector {
-                Ok(sector) => Some(Command::VirtIOBlockRead { sector }),
+                Ok(sector) => Some(Command::VirtIOBlockRead { device_id, sector }),
                 Err(e) => {
                     serial_println!("Invalid sector number {sector_str}: {e}");
                     None
                 }
             }
         }
-        ["virtio-block-id"] => Some(Command::VirtIOBlockID),
+        ["virtio-block", "id", device_id_str] => {
+            let device_id = device_id_str.parse::<usize>();
+            match device_id {
+                Ok(device_id) => Some(Command::VirtIOBlockID { device_id }),
+                Err(e) => {
+                    serial_println!("Invalid device_id number {device_id_str}: {e}");
+                    None
+                }
+            }
+        }
         _ => Some(Command::Unknown(command_str)),
     }
 }
@@ -206,13 +225,16 @@ fn run_command(command: &Command) {
             serial_println!("Generating random numbers...");
             virtio::request_random_numbers();
         }
-        Command::VirtIOBlockRead { sector } => {
-            serial_println!("Reading VirtIO block sector {sector}...");
-            virtio::virtio_block_read(*sector);
+        Command::VirtIOBlockList => {
+            virtio::virtio_block_print_devices();
         }
-        Command::VirtIOBlockID => {
+        Command::VirtIOBlockRead { device_id, sector } => {
+            serial_println!("Reading VirtIO block sector {sector}...");
+            virtio::virtio_block_read(*device_id, *sector);
+        }
+        Command::VirtIOBlockID { device_id } => {
             serial_println!("Reading VirtIO block device ID...");
-            virtio::virtio_block_get_id();
+            virtio::virtio_block_get_id(*device_id);
         }
         Command::Unknown(command) => {
             serial_println!("Unknown command: {}", command);

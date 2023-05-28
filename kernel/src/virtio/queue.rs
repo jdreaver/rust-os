@@ -202,7 +202,9 @@ impl VirtQueueDescriptorTable {
         let mut prev_idx: Option<u16> = None;
 
         for desc in descriptors.iter() {
-            let idx = self.next_index().to_elem_index(self.descriptors.len() as u16);
+            let idx = self
+                .next_index()
+                .to_elem_index(self.descriptors.len() as u16);
             first_idx.get_or_insert(idx);
 
             // Modify the previous descriptor to point to this one.

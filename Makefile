@@ -1,8 +1,10 @@
-HDD = kernel.hdd
+KERNEL_HDD = kernel.hdd
 LIMINE = $(shell nix build ./flake#limine --print-out-paths --no-link)
 OVMF = $(shell nix build ./flake#OVMF --print-out-paths --no-link)/OVMF.fd
 QEMU_DEBUG_BIN = $(shell nix build ./flake#qemu-x86_64-debug --print-out-paths --no-link)/bin/qemu-system-x86_64
 QEMU_SOURCE_CODE = $(shell nix build ./flake#qemu-x86_64-debug --print-out-paths --no-link)/raw
+
+TEST_HDD = test.hdd
 
 RUST_BUILD_MODE = debug
 RUST_BUILD_MODE_FLAG =
@@ -21,7 +23,7 @@ ALL_CRATES = $(TEST_CRATES) kernel
 
 .DEFAULT_GOAL := all
 .PHONY: all
-all: $(HDD)
+all: $(KERNEL_HDD)
 
 QEMU=qemu-system-x86_64
 RUN_QEMU_GDB=no
@@ -54,7 +56,8 @@ else
 endif
 
 # Use virtio for the disk:
-QEMU_COMMON_ARGS += -drive file=$(HDD),if=none,id=drive-virtio-disk0,format=raw -device virtio-blk-pci,scsi=off,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=0,serial=hello-blk
+QEMU_COMMON_ARGS += -drive file=$(KERNEL_HDD),if=none,id=drive-virtio-disk0,format=raw -device virtio-blk-pci,scsi=off,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=0,serial=hello-blk
+QEMU_COMMON_ARGS += -drive file=$(TEST_HDD),if=none,id=drive-virtio-disk1,format=raw -device virtio-blk-pci,scsi=off,drive=drive-virtio-disk1,id=virtio-disk1,serial=test-blk
 QEMU_COMMON_ARGS += -smp 2 # Use 2 cores
 QEMU_COMMON_ARGS += -m 2G # More memory
 QEMU_COMMON_ARGS += -device virtio-rng-pci-non-transitional # RNG is the simplest virtio device. Good for testing.
@@ -63,7 +66,7 @@ QEMU_ARGS += $(QEMU_COMMON_ARGS)
 QEMU_ARGS += -M q35,accel=kvm # Use the q35 chipset. accel=kvm enables hardware acceleration, makes things way faster.
 
 .PHONY: run
-run: $(HDD)
+run: $(KERNEL_HDD) $(TEST_HDD)
 	$(QEMU) $(QEMU_ARGS)
 
 # N.B. Run `make run-debug` in one terminal, and `make gdb` in another.
@@ -72,7 +75,7 @@ QEMU_DEBUG_ARGS += -M q35 # Use the q35 chipset, but don't use kvm acceleration 
 QEMU_DEBUG_ARGS += -d int,cpu_reset,guest_errors # Log some unexpected things. Run qemu-system-x86_64 -d help to see more.
 
 .PHONY: run-debug
-run-debug: $(HDD)
+run-debug: $(KERNEL_HDD) $(TEST_HDD)
 	qemu-system-x86_64 $(QEMU_DEBUG_ARGS) -s -S
 
 .PHONY: gdb
@@ -102,14 +105,14 @@ kernel:
 # 	rm -rf iso_root
 
 # Adapted from https://github.com/limine-bootloader/limine-barebones/blob/trunk/GNUmakefile
-$(HDD): kernel
-	rm -f $(HDD)
-	dd if=/dev/zero bs=1M count=0 seek=64 of=$(HDD)
-	parted -s $(HDD) mklabel gpt
-	parted -s $(HDD) mkpart ESP fat32 2048s 100%
-	parted -s $(HDD) set 1 esp on
-	$(LIMINE)/limine-deploy $(HDD)
-	sudo losetup -Pf --show $(HDD) >loopback_dev
+$(KERNEL_HDD): kernel
+	rm -f $(KERNEL_HDD)
+	dd if=/dev/zero bs=1M count=0 seek=64 of=$(KERNEL_HDD)
+	parted -s $(KERNEL_HDD) mklabel gpt
+	parted -s $(KERNEL_HDD) mkpart ESP fat32 2048s 100%
+	parted -s $(KERNEL_HDD) set 1 esp on
+	$(LIMINE)/limine-deploy $(KERNEL_HDD)
+	sudo losetup -Pf --show $(KERNEL_HDD) >loopback_dev
 	sudo mkfs.fat -F 32 `cat loopback_dev`p1
 	mkdir -p img_mount
 	sudo mount `cat loopback_dev`p1 img_mount
@@ -121,6 +124,9 @@ $(HDD): kernel
 	sudo umount img_mount
 	sudo losetup -d `cat loopback_dev`
 	rm -rf loopback_dev img_mount
+
+$(TEST_HDD):
+	./crates/fat/scripts/create-test-image.sh $(TEST_HDD)
 
 .PHONY: test
 test:

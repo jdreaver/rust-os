@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use bitflags::bitflags;
 use core::{mem, ptr};
 use spin::RwLock;
@@ -12,7 +13,7 @@ use super::queue::{ChainedVirtQueueDescriptorElem, VirtQueueDescriptorFlags, Vir
 use super::VirtIODeviceConfig;
 
 // TODO: Support multiple block devices
-static VIRTIO_BLOCK: RwLock<Option<VirtIOBlockDevice>> = RwLock::new(None);
+static VIRTIO_BLOCK: RwLock<Vec<VirtIOBlockDevice>> = RwLock::new(Vec::new());
 
 pub(crate) fn try_init_virtio_block(device_config: VirtIODeviceConfig) {
     let device_id = device_config.pci_config().device_id();
@@ -23,17 +24,26 @@ pub(crate) fn try_init_virtio_block(device_config: VirtIODeviceConfig) {
         return;
     }
 
+    let mut devices = VIRTIO_BLOCK.write();
+
     let mut device = VirtIOBlockDevice::from_device(device_config);
+    let device_index = devices.len();
+    let handler_id = device_index as u32; // Use device index to disambiguate devices
     device.initialized_device.install_virtqueue_msix_handler(
         VirtQueueIndex(0),
         0,
         0,
-        123,
+        handler_id,
         virtio_block_interrupt,
     );
     serial_println!("VirtIOBlockDevice: {:#x?}", device);
 
-    VIRTIO_BLOCK.write().replace(device);
+    devices.push(device);
+}
+
+pub(crate) fn virtio_block_print_devices() {
+    let devices = VIRTIO_BLOCK.read();
+    serial_println!("virtio block devices: {:#x?}", devices);
 }
 
 // N.B. The drive MUST provide a 20 byte buffer when requesting device ID.
@@ -41,11 +51,9 @@ static DEVICE_ID_BUFFER: [u8; 20] = [0; 20];
 
 static READ_BUFFER: [u8; 512] = [0; 512];
 
-pub(crate) fn virtio_block_get_id() {
+pub(crate) fn virtio_block_get_id(device_index: usize) {
     let device_lock = VIRTIO_BLOCK.read();
-    let device = device_lock
-        .as_ref()
-        .expect("VirtIOBlockDevice not initialized");
+    let device = device_lock.get(device_index).expect("invalid device index");
 
     let virtq = device
         .initialized_device
@@ -64,11 +72,9 @@ pub(crate) fn virtio_block_get_id() {
     virtq.add_buffer(&raw_request.to_descriptor_chain());
 }
 
-pub(crate) fn virtio_block_read(sector: u64) {
+pub(crate) fn virtio_block_read(device_index: usize, sector: u64) {
     let device_lock = VIRTIO_BLOCK.read();
-    let device = device_lock
-        .as_ref()
-        .expect("VirtIOBlockDevice not initialized");
+    let device = device_lock.get(device_index).expect("invalid device index");
 
     let virtq = device
         .initialized_device
@@ -88,13 +94,13 @@ pub(crate) fn virtio_block_read(sector: u64) {
     virtq.add_buffer(&raw_request.to_descriptor_chain());
 }
 
-fn virtio_block_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
+fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
     serial_println!("!!! virtio_block_interrupt !!!");
 
     let device_lock = VIRTIO_BLOCK.read();
     let device = device_lock
-        .as_ref()
-        .expect("VirtIOBlockDevice not initialized");
+        .get(handler_id as usize)
+        .expect("invalid device index");
 
     let virtq = device
         .initialized_device
