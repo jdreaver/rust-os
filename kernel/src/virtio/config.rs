@@ -10,7 +10,7 @@ use crate::pci::{
     PCIDeviceConfigTypes,
 };
 use crate::register_struct;
-use crate::registers::{RegisterRO, RegisterRW};
+use crate::registers::{RegisterRO, RegisterROSideEffect, RegisterRW};
 use crate::serial_println;
 
 use super::features::Features;
@@ -391,8 +391,13 @@ pub(super) struct VirtIOConfigStatus {
 
 register_struct!(
     /// 4.1.4.5 ISR status capability
+    ///
+    /// Reading the ISR has side effects, so we mark it as such. Also, we should
+    /// never read this value if MSI-X is enabled.
+    ///
+    /// > If MSI-X capability is enabled, the driver SHOULD NOT access ISR status upon detecting a Queue Interrupt.
     pub(super) VirtIOPCIISRRegisters {
-        0x00 => isr: RegisterRW<VirtIOISRStatus>,
+        0x00 => isr: RegisterROSideEffect<VirtIOISRStatus>,
     }
 );
 

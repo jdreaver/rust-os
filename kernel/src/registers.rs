@@ -54,7 +54,7 @@ impl<T> RegisterRW<T> {
 
 impl<T: Debug> Debug for RegisterRW<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        debug_fmt_register("RegisterRW", Some(self.read()), self.address, f)
+        debug_fmt_register("RegisterRW", ValOrStr::Val(self.read()), self.address, f)
     }
 }
 
@@ -85,7 +85,45 @@ impl<T> RegisterRO<T> {
 
 impl<T: Debug> Debug for RegisterRO<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        debug_fmt_register("RegisterRO", Some(self.read()), self.address, f)
+        debug_fmt_register("RegisterRO", ValOrStr::Val(self.read()), self.address, f)
+    }
+}
+
+/// Read-only register mapped to some underlying memory address, but reading the
+/// register has a side effect, so we don't print the value in the `Debug`
+/// implementation.
+#[derive(Clone, Copy)]
+pub struct RegisterROSideEffect<T> {
+    address: usize,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> RegisterROSideEffect<T> {
+    /// # Safety
+    ///
+    /// The caller must ensure that the address is a valid memory location for a
+    /// register of size `T`.
+    pub unsafe fn from_address(address: usize) -> Self {
+        Self {
+            address,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Read from the register using `read_volatile`.
+    pub fn read(&self) -> T {
+        unsafe { core::ptr::read_volatile(self.address as *const T) }
+    }
+}
+
+impl<T: Debug> Debug for RegisterROSideEffect<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        debug_fmt_register(
+            "RegisterRO",
+            ValOrStr::Str::<T>("(read-only side effect)"),
+            self.address,
+            f,
+        )
     }
 }
 
@@ -118,14 +156,24 @@ impl<T> RegisterWO<T> {
 
 impl<T: Debug> Debug for RegisterWO<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        debug_fmt_register::<T>("RegisterWO", None, self.address, f)
+        debug_fmt_register::<T>(
+            "RegisterWO",
+            ValOrStr::Str::<T>("UNKNOWN (write-only)"),
+            self.address,
+            f,
+        )
     }
+}
+
+enum ValOrStr<T> {
+    Val(T),
+    Str(&'static str),
 }
 
 /// Common `Debug.fmt()` implementation for all register types.
 fn debug_fmt_register<T: Debug>(
     struct_name: &str,
-    value: Option<T>,
+    value: ValOrStr<T>,
     address: usize,
     f: &mut core::fmt::Formatter<'_>,
 ) -> core::fmt::Result {
@@ -134,8 +182,8 @@ fn debug_fmt_register<T: Debug>(
     f.write_str(struct_name)?;
     f.write_str("(")?;
     match value {
-        Some(value) => value.fmt(f)?,
-        None => f.write_str("UNKNOWN (write only)")?,
+        ValOrStr::Val(value) => value.fmt(f)?,
+        ValOrStr::Str(s) => f.write_str(s)?,
     }
     f.write_str(" [")?;
     (address as *const T).fmt(f)?;
