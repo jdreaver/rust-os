@@ -91,6 +91,18 @@ make test
 
 ## TODO
 
+- VirtIO improvements:
+  - Proper request queue/response. Shell should be able to enqueue a request and poll for a response.
+  - Allocate buffers on the fly instead of using static buffers, or have client provide buffer
+    - Reuse them if we are reusing a descriptor, or free them.
+  - Allocation and pointers: avoid manually calling `memory` alloc functions and passing around pointers
+    - Have virtqueues "own" their buffers and handle alloc/dealloc. Devices that need to alloc for descriptors, like virtio-blk, can do the same.
+    - We can use `Box<T, KERNEL_PHYSICAL_ALLOC>` to ensure we are using physical memory.
+  - Locking: we need to lock writes (I think?), but we should be able to read from the queue without locking. This should be ergonomic. I don't necessarily want to bury a mutex deep in the code.
+    - Investigate how Linux or other OS virtio drivers do locking
+  - Ensure we don't accidentally reuse descriptors while we are waiting for a response from the device. Don't automatically just wrap around! This is what might require a mutex rather than just atomic integers?
+  - I think there is a race condition with the interrupts with the current non-locking mechanism. Ensure that if there are concurrent writes while an interrupt, then an interrupt won't miss a read (e.g. there will at least be a followup interrupt)
+  - Remember features we negotiate, and ensure we are accounting for the different features in the logic (especially around notifications)
 - bitmap-alloc
   - Make page vs byte address part of the API b/c conversion is tricky and requires `div_ceil`. Newtypes/functions for both?
     - We could embrace `PhysAddr`, `PhysFrame`, `Size4KiB`, etc, but that would introduce dep on `x86_64` crate
@@ -110,17 +122,6 @@ make test
 - Detect kernel stack overflows. Guard pages? Some other mechanism?
   - I need a huge stack for debug mode apparently. I was seeing stack overflows with a 4096 byte stack when running in debug mode, so I quadrupled it
 - Try replacing bitmap allocator with a buddy allocator, perhaps itself implemented with multiple bitmaps <https://wiki.osdev.org/Page_Frame_Allocation>
-- VirtIO improvements:
-  - Allocate buffers on the fly instead of using static buffers
-    - Reuse them if we are reusing a descriptor, or free them.
-  - Allocation and pointers: avoid manually calling `memory` alloc functions and passing around pointers
-    - Have virtqueues "own" their buffers and handle alloc/dealloc. Devices that need to alloc for descriptors, like virtio-blk, can do the same.
-    - We can use `Box<T, KERNEL_PHYSICAL_ALLOC>` to ensure we are using physical memory.
-  - Locking: we need to lock writes (I think?), but we should be able to read from the queue without locking. This should be ergonomic. I don't necessarily want to bury a mutex deep in the code.
-    - Investigate how Linux or other OS virtio drivers do locking
-  - Ensure we don't accidentally reuse descriptors while we are waiting for a response from the device. Don't automatically just wrap around! This is what might require a mutex rather than just atomic integers?
-  - I think there is a race condition with the interrupts with the current non-locking mechanism. Ensure that if there are concurrent writes while an interrupt, then an interrupt won't miss a read (e.g. there will at least be a followup interrupt)
-  - Remember features we negotiate, and ensure we are accounting for the different features in the logic (especially around notifications)
 - `registers.rs` and macros
   - Consider moving `registers.rs` stuff into dedicated crate with unit tests
   - Also document `registers.rs` stuff
