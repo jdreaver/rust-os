@@ -105,9 +105,7 @@ make test
   - I think there is a race condition with the interrupts with the current non-locking mechanism. Ensure that if there are concurrent writes while an interrupt, then an interrupt won't miss a read (e.g. there will at least be a followup interrupt)
   - Remember features we negotiate, and ensure we are accounting for the different features in the logic (especially around notifications)
 - Ensure `PhysicalBuffer` allocation and deallocation is safe, and that page and size math is correct (particularly in `drop()`). Make it foolproof.
-  - Maybe keep the `Layout` around? Ensure `Layout::size()` and actual buffer size are what we think they are! As long as we use the same logic for alloc/dealloc we should be fine.
-  - Problem is rehydrating `Layout`. We need alignment to do that. Maybe we should just store actual pages? We can convert to/from PhysAddr and len just fine. The contract is then that `PhysicalBuffer` may allocate more than asked for. VirtIO will need to make sure it just uses a smaller `len` than necessary.
-    - Don't use `allocate` for this. Use the underlying bitmap directly. DRY with `allocate` if needed but don't use it.
+  - Perhaps introduce page <-> address translation layer in a single spot.
 - Create `sync` module that has synchronization primitives
   - Wrapper around `spin::Mutex` that also disables interrupts, similar to Linux's `spin_lock_irqsave` (`x86_64::interrupts::without_interrupts` is handy here). Might need our own custom `MutexGuard` wrapper that handles re-enabling interrupts on `drop()`
   - In the future we should disable preemption when spin locks are taken

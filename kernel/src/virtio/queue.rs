@@ -267,14 +267,16 @@ pub(super) struct ChainedVirtQueueDescriptorElem {
 }
 
 impl ChainedVirtQueueDescriptorElem {
-    pub(super) fn from_buffer(buffer: PhysicalBuffer, flags: VirtQueueDescriptorFlags) -> Self {
-        let (addr, len) = buffer.into_raw_parts();
-        let len = match u32::try_from(len) {
-            Ok(len) => len,
-            Err(e) => {
-                panic!("PhysicalBuffer of size {len} is too large for virtqueue descriptor: {e}")
-            }
-        };
+    pub(super) fn from_buffer(
+        buffer: PhysicalBuffer,
+        len: u32,
+        flags: VirtQueueDescriptorFlags,
+    ) -> Self {
+        let (addr, buffer_len) = buffer.into_raw_parts();
+        assert!(
+            len as usize <= buffer_len,
+            "buffer is too small for descriptor"
+        );
         Self { addr, len, flags }
     }
 }

@@ -97,6 +97,7 @@ impl VirtIORNG {
             PhysicalBuffer::allocate(num_bytes as usize, 4).expect("failed to allocate rng buffer");
         let desc = ChainedVirtQueueDescriptorElem::from_buffer(
             buffer,
+            num_bytes,
             VirtQueueDescriptorFlags::new().with_device_write(true),
         );
         let desc_index = virtq.add_buffer(&[desc]);

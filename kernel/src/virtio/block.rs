@@ -390,6 +390,7 @@ impl RawBlockRequest {
         .expect("failed to allocate RawBlockRequest header");
         let header_desc = ChainedVirtQueueDescriptorElem::from_buffer(
             header_buffer,
+            core::mem::size_of::<RawBlockRequestHeader>() as u32,
             VirtQueueDescriptorFlags::new().with_device_write(false),
         );
 
@@ -411,6 +412,7 @@ impl RawBlockRequest {
             .expect("failed to allocate RawBlockRequest status");
         let status_desc = ChainedVirtQueueDescriptorElem::from_buffer(
             status_buffer,
+            core::mem::size_of::<u8>() as u32,
             VirtQueueDescriptorFlags::new().with_device_write(true),
         );
 

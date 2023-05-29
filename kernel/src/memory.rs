@@ -216,11 +216,8 @@ unsafe impl Allocator for LockedPhysicalMemoryAllocator<'_> {
                 .ok_or(AllocError)
         })?;
         let start_address = start_page * PhysicalMemoryAllocator::PAGE_SIZE;
-
-        let slice =
-            unsafe { core::slice::from_raw_parts_mut(start_address as *mut u8, layout.size()) };
-
-        let ptr: NonNull<[u8]> = unsafe { NonNull::new_unchecked(slice) };
+        let actual_size = num_pages * PhysicalMemoryAllocator::PAGE_SIZE;
+        let ptr = unsafe { nonnull_ptr_slice_from_addr_len(start_address, actual_size) };
 
         Ok(ptr)
     }
@@ -240,6 +237,11 @@ unsafe impl Allocator for LockedPhysicalMemoryAllocator<'_> {
     }
 }
 
+unsafe fn nonnull_ptr_slice_from_addr_len(addr: usize, len_bytes: usize) -> NonNull<[u8]> {
+    let ptr = addr as *mut u8;
+    NonNull::new_unchecked(core::slice::from_raw_parts_mut(ptr, len_bytes))
+}
+
 unsafe impl<S: PageSize> FrameAllocator<S> for LockedPhysicalMemoryAllocator<'_> {
     fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
         self.mutex
@@ -257,12 +259,12 @@ pub(crate) enum AllocZeroedBufferError {
     AllocError(AllocError),
 }
 
-/// Physically contiguous buffer of memory. Useful for e.g. Direct Memory Access
+/// Physically contiguous buffer of memory. Allocates by page, so it can
+/// allocate more memory than requested. Useful for e.g. Direct Memory Access
 /// (DMA) like with VirtIO buffers.
 #[derive(Debug)]
 pub(crate) struct PhysicalBuffer {
-    addr: PhysAddr,
-    len_bytes: usize,
+    ptr: NonNull<[u8]>,
 }
 
 impl PhysicalBuffer {
@@ -272,27 +274,21 @@ impl PhysicalBuffer {
     ) -> Result<Self, AllocZeroedBufferError> {
         let layout = Layout::from_size_align(len_bytes, alignment)
             .map_err(AllocZeroedBufferError::LayoutError)?;
-        let address = KERNEL_PHYSICAL_ALLOCATOR
+        let ptr = KERNEL_PHYSICAL_ALLOCATOR
             .allocate_zeroed(layout)
             .map_err(AllocZeroedBufferError::AllocError)?;
-        Ok(Self {
-            addr: PhysAddr::new(address.addr().get() as u64),
-            len_bytes,
-        })
+        Ok(Self { ptr })
     }
 
     pub(crate) fn allocate_value<T>(val: T) -> Result<Self, AllocZeroedBufferError> {
         let layout = Layout::new::<T>();
-        let address = KERNEL_PHYSICAL_ALLOCATOR
+        let ptr = KERNEL_PHYSICAL_ALLOCATOR
             .allocate_zeroed(layout)
             .map_err(AllocZeroedBufferError::AllocError)?;
         unsafe {
-            ptr::write_volatile(address.as_ptr().cast::<T>(), val);
+            ptr::write_volatile(ptr.as_ptr().cast::<T>(), val);
         }
-        Ok(Self {
-            addr: PhysAddr::new(address.addr().get() as u64),
-            len_bytes: layout.size(),
-        })
+        Ok(Self { ptr })
     }
 
     /// Consumes the buffer and returns the underlying physical address and
@@ -301,11 +297,14 @@ impl PhysicalBuffer {
     /// `PhysicalBuffer::from_raw_parts` and letting that `Drop`.
     pub(crate) fn into_raw_parts(self) -> (PhysAddr, usize) {
         let buf = core::mem::ManuallyDrop::new(self);
-        (buf.addr, buf.len_bytes)
+        let addr = PhysAddr::new(buf.ptr.addr().get() as u64);
+        let len_bytes = buf.ptr.len();
+        (addr, len_bytes)
     }
 
     pub(crate) unsafe fn from_raw_parts(addr: PhysAddr, len_bytes: usize) -> Self {
-        Self { addr, len_bytes }
+        let ptr = unsafe { nonnull_ptr_slice_from_addr_len(addr.as_u64() as usize, len_bytes) };
+        Self { ptr }
     }
 }
 
@@ -314,12 +313,12 @@ impl Drop for PhysicalBuffer {
         // TODO: Is this correct? DRY with the `deallocate`, and perhaps add
         // some types to ensure that we are converting to pages correctly. Also
         // ensure that we do indeed "own" the entire page we are de-allocating.
-        let addr = self.addr.as_u64() as usize;
-        let size = self.len_bytes;
-        KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
-            let start_page = addr / PhysicalMemoryAllocator::PAGE_SIZE;
-            let num_pages = size.div_ceil(PhysicalMemoryAllocator::PAGE_SIZE);
-            allocator.allocator.free_contiguous(start_page, num_pages);
-        });
+        let layout = unsafe {
+            Layout::from_size_align_unchecked(self.ptr.len(), PhysicalMemoryAllocator::PAGE_SIZE)
+        };
+        let u8_ptr = self.ptr.cast::<u8>();
+        unsafe {
+            KERNEL_PHYSICAL_ALLOCATOR.deallocate(u8_ptr, layout);
+        };
     }
 }
