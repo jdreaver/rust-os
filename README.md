@@ -93,9 +93,11 @@ make test
 
 - VirtIO improvements:
   - Abstract and improve request/response queue from rng
+  - Don't leak memory on purpose in virtio-blk device
   - Ensure we zero out descriptors after using them so we don't accidentally reuse the buffer
   - Improve memory "ownership" ergonomics, ensuring buffers are dropped after use. Maybe abstract into a common layer somehow?
   - Create a physically contiguous heap, or slab allocator, or something for virtio buffer requests so we don't waste an entire page per tiny allocation.
+    - Ensure we are still satisfying any alignment requirements for buffers. Read the spec!
   - Locking: we need to lock writes (I think?), but we should be able to read from the queue without locking. This should be ergonomic. I don't necessarily want to bury a mutex deep in the code.
     - Investigate how Linux or other OS virtio drivers do locking
   - Ensure we don't accidentally reuse descriptors while we are waiting for a response from the device. Don't automatically just wrap around! This is what might require a mutex rather than just atomic integers?

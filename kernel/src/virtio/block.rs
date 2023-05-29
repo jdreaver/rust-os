@@ -1,19 +1,18 @@
 use alloc::vec::Vec;
 use bitflags::bitflags;
-use core::{mem, ptr};
+use core::mem;
 use spin::RwLock;
-use x86_64::{PhysAddr, VirtAddr};
+use x86_64::PhysAddr;
 
 use crate::interrupts::InterruptHandlerID;
 use crate::memory::PhysicalBuffer;
 use crate::registers::RegisterRO;
-use crate::{memory, register_struct, serial_println, strings};
+use crate::{register_struct, serial_println, strings};
 
 use super::device::VirtIOInitializedDevice;
 use super::queue::{ChainedVirtQueueDescriptorElem, VirtQueueDescriptorFlags, VirtQueueIndex};
 use super::VirtIODeviceConfig;
 
-// TODO: Support multiple block devices
 static VIRTIO_BLOCK: RwLock<Vec<VirtIOBlockDevice>> = RwLock::new(Vec::new());
 
 pub(crate) fn try_init_virtio_block(device_config: VirtIODeviceConfig) {
@@ -47,8 +46,6 @@ pub(crate) fn virtio_block_print_devices() {
     serial_println!("virtio block devices: {:#x?}", devices);
 }
 
-static READ_BUFFER: [u8; 512] = [0; 512];
-
 pub(crate) fn virtio_block_get_id(device_index: usize) {
     let device_lock = VIRTIO_BLOCK.read();
     let device = device_lock.get(device_index).expect("invalid device index");
@@ -78,18 +75,16 @@ pub(crate) fn virtio_block_read(device_index: usize, sector: u64) {
         .initialized_device
         .get_virtqueue(VirtQueueIndex(0))
         .unwrap();
-    let buffer_virt_addr = VirtAddr::new(ptr::addr_of!(READ_BUFFER) as u64);
-    let buffer_phys_addr = memory::translate_addr(buffer_virt_addr)
-        .expect("failed to get VirtIO device ID buffer physical address");
-    let buffer_size = core::mem::size_of_val(&READ_BUFFER) as u32;
 
-    let request = BlockRequest::Read {
-        sector,
-        data_addr: buffer_phys_addr,
-        data_len: buffer_size,
-    };
+    let data_addr = PhysicalBuffer::allocate_zeroed(BlockRequest::READ_DATA_LEN as usize)
+        .expect("failed to allocate GetID buffer")
+        // TODO: Don't leak here
+        .leak();
+
+    let request = BlockRequest::Read { sector, data_addr };
     let raw_request = request.to_raw();
-    virtq.add_buffer(&raw_request.to_descriptor_chain());
+    let desc_chain = raw_request.to_descriptor_chain();
+    virtq.add_buffer(&desc_chain);
     virtq.notify_device();
 }
 
@@ -115,10 +110,12 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
             BlockRequest::Read {
                 sector: _,
                 data_addr,
-                data_len,
             } => {
                 let buffer = unsafe {
-                    core::slice::from_raw_parts(data_addr.as_u64() as *const u8, data_len as usize)
+                    core::slice::from_raw_parts(
+                        data_addr.as_u64() as *const u8,
+                        BlockRequest::READ_DATA_LEN as usize,
+                    )
                 };
                 serial_println!("Read response: {:x?}", buffer);
 
@@ -264,33 +261,26 @@ struct BlockConfigTopology {
 
 #[derive(Debug)]
 enum BlockRequest {
-    Read {
-        sector: u64,
-        data_addr: PhysAddr,
-        data_len: u32,
-    },
-    GetID {
-        data_addr: PhysAddr,
-    },
+    Read { sector: u64, data_addr: PhysAddr },
+    GetID { data_addr: PhysAddr },
 }
 
 impl BlockRequest {
     /// All GET_ID requests MUST have a length of 20 bytes.
     const GET_ID_DATA_LEN: u32 = 20;
 
+    /// All read requests MUST be a multiple of 512 bytes. We just use 512 for
+    /// now.
+    const READ_DATA_LEN: u32 = 512;
+
     fn to_raw(&self) -> RawBlockRequest {
         match self {
-            Self::Read {
-                sector,
-                data_addr,
-                data_len,
-            } => {
-                assert!(
-                    *data_len % 512 == 0,
-                    "Data length for read requests must be a multiple of 512"
-                );
-                RawBlockRequest::new(BlockRequestType::In, *sector, *data_addr, *data_len)
-            }
+            Self::Read { sector, data_addr } => RawBlockRequest::new(
+                BlockRequestType::In,
+                *sector,
+                *data_addr,
+                Self::READ_DATA_LEN,
+            ),
             Self::GetID { data_addr } => RawBlockRequest::new(
                 BlockRequestType::GetID,
                 0,
@@ -305,7 +295,6 @@ impl BlockRequest {
             BlockRequestType::In => Self::Read {
                 sector: raw.sector,
                 data_addr: raw.data_addr,
-                data_len: raw.data_len,
             },
             BlockRequestType::GetID => Self::GetID {
                 data_addr: raw.data_addr,
