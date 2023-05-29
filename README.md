@@ -93,8 +93,9 @@ make test
 
 - VirtIO improvements:
   - Proper request queue/response. Shell should be able to enqueue a request and poll for a response.
-    - Each device can have a request queue, and a method that can be called synchronously to check on a request
-    - When a request is enqueued, we add the descriptor and avail ring entry.
+    - Each device can have a request queue that stores a callback function to be called with the response
+    - When a request is enqueued, we add the descriptor and avail ring entry, and record the descriptor entry so we know which descriptor to watch.
+    - The interrupt with go through new used ring entries, and will call a callback function if one exists for that descriptor.
   - Allocate buffers on the fly instead of using static buffers, or have client provide buffer
     - Reuse them if we are reusing a descriptor, or free them.
   - Allocation and pointers: avoid manually calling `memory` alloc functions and passing around pointers
@@ -105,6 +106,9 @@ make test
   - Ensure we don't accidentally reuse descriptors while we are waiting for a response from the device. Don't automatically just wrap around! This is what might require a mutex rather than just atomic integers?
   - I think there is a race condition with the interrupts with the current non-locking mechanism. Ensure that if there are concurrent writes while an interrupt, then an interrupt won't miss a read (e.g. there will at least be a followup interrupt)
   - Remember features we negotiate, and ensure we are accounting for the different features in the logic (especially around notifications)
+- Create `sync` module that has synchronization primitives
+  - Wrapper around `spin::Mutex` that also disables interrupts, similar to Linux's `spin_lock_irqsave` (`x86_64::interrupts::without_interrupts` is handy here). Might need our own custom `MutexGuard` wrapper that handles re-enabling interrupts on `drop()`
+  - Queues wrapped by spinlocks, useful for device drivers?
 - bitmap-alloc
   - Make page vs byte address part of the API b/c conversion is tricky and requires `div_ceil`. Newtypes/functions for both?
     - We could embrace `PhysAddr`, `PhysFrame`, `Size4KiB`, etc, but that would introduce dep on `x86_64` crate

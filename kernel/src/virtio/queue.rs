@@ -126,7 +126,11 @@ impl VirtQueue {
         let used_elem = self.used_ring.get_used_elem(index);
 
         // Load the associated descriptor
-        let chain = VirtQueueDescriptorChainIterator::new(&self.descriptors, used_elem.id as u16);
+        let idx = match u16::try_from(used_elem.id) {
+            Ok(idx) => DescIndex(idx),
+            Err(e) => panic!("used ring id entry {} is invalid: {}", used_elem.id, e),
+        };
+        let chain = VirtQueueDescriptorChainIterator::new(&self.descriptors, idx);
 
         (used_elem, chain)
     }
@@ -151,6 +155,10 @@ pub(super) struct VirtQueueDescriptorTable {
     /// Array of descriptors.
     descriptors: VolatileArrayRW<RawVirtQueueDescriptor>,
 }
+
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+pub(crate) struct DescIndex(u16);
 
 impl VirtQueueDescriptorTable {
     pub(super) unsafe fn allocate(queue_size: u16) -> Result<Self, AllocZeroedBufferError> {
@@ -197,19 +205,20 @@ impl VirtQueueDescriptorTable {
 
     /// Adds a group of chained descriptors to the descriptor table. Returns the
     /// index of the first descriptor.
-    fn add_descriptor(&self, descriptors: &[ChainedVirtQueueDescriptorElem]) -> u16 {
-        let mut first_idx: Option<u16> = None;
-        let mut prev_idx: Option<u16> = None;
+    fn add_descriptor(&self, descriptors: &[ChainedVirtQueueDescriptorElem]) -> DescIndex {
+        let mut first_idx: Option<DescIndex> = None;
+        let mut prev_idx: Option<DescIndex> = None;
 
         for desc in descriptors.iter() {
             let idx = self
                 .next_index()
                 .to_elem_index(self.descriptors.len() as u16);
+            let idx = DescIndex(idx);
             first_idx.get_or_insert(idx);
 
             // Modify the previous descriptor to point to this one.
             if let Some(prev_index) = prev_idx {
-                self.descriptors.modify_mut(prev_index as usize, |desc| {
+                self.descriptors.modify_mut(prev_index.0 as usize, |desc| {
                     desc.flags.set_next(true);
                     desc.next = idx;
                 });
@@ -224,10 +233,10 @@ impl VirtQueueDescriptorTable {
                 addr: desc.addr,
                 len: desc.len,
                 flags: desc.flags,
-                next: 0,
+                next: DescIndex(0),
             };
 
-            self.descriptors.write(idx as usize, descriptor);
+            self.descriptors.write(idx.0 as usize, descriptor);
 
             prev_idx = Some(idx);
         }
@@ -235,8 +244,8 @@ impl VirtQueueDescriptorTable {
         first_idx.expect("can't add empty descriptor")
     }
 
-    fn get_descriptor(&self, index: u16) -> RawVirtQueueDescriptor {
-        self.descriptors.read(index as usize)
+    fn get_descriptor(&self, index: DescIndex) -> RawVirtQueueDescriptor {
+        self.descriptors.read(index.0 as usize)
     }
 }
 
@@ -254,13 +263,13 @@ pub(super) struct ChainedVirtQueueDescriptorElem {
 /// Iterator over a chain of descriptors.
 pub(super) struct VirtQueueDescriptorChainIterator<'a> {
     descriptors: &'a VirtQueueDescriptorTable,
-    current_index: Option<u16>,
+    current_index: Option<DescIndex>,
 }
 
 impl VirtQueueDescriptorChainIterator<'_> {
     pub(super) fn new(
         descriptors: &VirtQueueDescriptorTable,
-        start_index: u16,
+        start_index: DescIndex,
     ) -> VirtQueueDescriptorChainIterator {
         VirtQueueDescriptorChainIterator {
             descriptors,
@@ -301,7 +310,7 @@ struct RawVirtQueueDescriptor {
     pub(super) len: u32,
     pub(super) flags: VirtQueueDescriptorFlags,
     /// Next field if flags & NEXT
-    pub(super) next: u16,
+    pub(super) next: DescIndex,
 }
 
 #[bitfield(u16)]
@@ -346,7 +355,7 @@ pub(super) struct VirtQueueAvailRing {
     /// in the ring (modulo the queue size). This starts at 0, and increases.
     idx: RegisterRW<WrappingIndex>,
 
-    ring: VolatileArrayRW<u16>,
+    ring: VolatileArrayRW<DescIndex>,
 
     /// Only if VIRTIO_F_EVENT_IDX
     _used_event: RegisterRW<u16>,
@@ -396,7 +405,7 @@ impl VirtQueueAvailRing {
         self.physical_address
     }
 
-    fn add_entry(&self, desc_index: u16) {
+    fn add_entry(&self, desc_index: DescIndex) {
         // 2.7.13.2 Updating The Available Ring
         //
         // TODO: Check that the driver doesn't add more entries than are
