@@ -1,4 +1,5 @@
 use core::alloc::{AllocError, Allocator, Layout, LayoutError};
+use core::ptr;
 use core::ptr::NonNull;
 
 use spin::Mutex;
@@ -205,7 +206,8 @@ unsafe impl Allocator for LockedPhysicalMemoryAllocator<'_> {
         let alignment = layout.align() as u64;
         assert!(
             alignment <= PhysicalMemoryAllocator::PAGE_SIZE as u64,
-            "alignment must be <= page size. What the hell are we aligning???"
+            "alignment {alignment} must be <= page size {}. What the hell are we aligning???",
+            PhysicalMemoryAllocator::PAGE_SIZE,
         );
         let start_page = self.with_lock(|allocator| {
             allocator
@@ -255,27 +257,69 @@ pub(crate) enum AllocZeroedBufferError {
     AllocError(AllocError),
 }
 
-/// Allocates a physically contiguous, zeroed buffer of the given size and
-/// alignment. Useful for IO buffers for e.g. VirtIO.
-pub(crate) fn allocate_physically_contiguous_zeroed_buffer(
-    size: usize,
-    alignment: usize,
-) -> Result<PhysAddr, AllocZeroedBufferError> {
-    let layout =
-        Layout::from_size_align(size, alignment).map_err(AllocZeroedBufferError::LayoutError)?;
-    let address = KERNEL_PHYSICAL_ALLOCATOR
-        .allocate_zeroed(layout)
-        .map_err(AllocZeroedBufferError::AllocError)?;
-    Ok(PhysAddr::new(address.addr().get() as u64))
+/// Physically contiguous buffer of memory. Useful for e.g. Direct Memory Access
+/// (DMA) like with VirtIO buffers.
+#[derive(Debug)]
+pub(crate) struct PhysicalBuffer {
+    addr: PhysAddr,
+    len_bytes: usize,
 }
 
-// TODO: Is this correct? DRY with the `deallocate`, and perhaps add some types
-// to ensure that we are converting to pages correctly. Also ensure that we do
-// indeed "own" the entire page we are de-allocating.
-pub(crate) fn free_physically_contiguous_buffer(addr: PhysAddr, size: usize) {
-    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
-        let start_page = addr.as_u64() as usize / PhysicalMemoryAllocator::PAGE_SIZE;
-        let num_pages = size.div_ceil(PhysicalMemoryAllocator::PAGE_SIZE);
-        allocator.allocator.free_contiguous(start_page, num_pages);
-    });
+impl PhysicalBuffer {
+    pub(crate) fn allocate(
+        len_bytes: usize,
+        alignment: usize,
+    ) -> Result<Self, AllocZeroedBufferError> {
+        let layout = Layout::from_size_align(len_bytes, alignment)
+            .map_err(AllocZeroedBufferError::LayoutError)?;
+        let address = KERNEL_PHYSICAL_ALLOCATOR
+            .allocate_zeroed(layout)
+            .map_err(AllocZeroedBufferError::AllocError)?;
+        Ok(Self {
+            addr: PhysAddr::new(address.addr().get() as u64),
+            len_bytes,
+        })
+    }
+
+    pub(crate) fn allocate_value<T>(val: T) -> Result<Self, AllocZeroedBufferError> {
+        let layout = Layout::new::<T>();
+        let address = KERNEL_PHYSICAL_ALLOCATOR
+            .allocate_zeroed(layout)
+            .map_err(AllocZeroedBufferError::AllocError)?;
+        unsafe {
+            ptr::write_volatile(address.as_ptr().cast::<T>(), val);
+        }
+        Ok(Self {
+            addr: PhysAddr::new(address.addr().get() as u64),
+            len_bytes: layout.size(),
+        })
+    }
+
+    /// Consumes the buffer and returns the underlying physical address and
+    /// length in bytes. NOTE: It is up to the caller to free this memory,
+    /// ideally by constructing a new buffer with
+    /// `PhysicalBuffer::from_raw_parts` and letting that `Drop`.
+    pub(crate) fn into_raw_parts(self) -> (PhysAddr, usize) {
+        let buf = core::mem::ManuallyDrop::new(self);
+        (buf.addr, buf.len_bytes)
+    }
+
+    pub(crate) unsafe fn from_raw_parts(addr: PhysAddr, len_bytes: usize) -> Self {
+        Self { addr, len_bytes }
+    }
+}
+
+impl Drop for PhysicalBuffer {
+    fn drop(&mut self) {
+        // TODO: Is this correct? DRY with the `deallocate`, and perhaps add
+        // some types to ensure that we are converting to pages correctly. Also
+        // ensure that we do indeed "own" the entire page we are de-allocating.
+        let addr = self.addr.as_u64() as usize;
+        let size = self.len_bytes;
+        KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
+            let start_page = addr / PhysicalMemoryAllocator::PAGE_SIZE;
+            let num_pages = size.div_ceil(PhysicalMemoryAllocator::PAGE_SIZE);
+            allocator.allocator.free_contiguous(start_page, num_pages);
+        });
+    }
 }

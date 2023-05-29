@@ -5,6 +5,7 @@ use spin::RwLock;
 use x86_64::{PhysAddr, VirtAddr};
 
 use crate::interrupts::InterruptHandlerID;
+use crate::memory::PhysicalBuffer;
 use crate::registers::RegisterRO;
 use crate::{memory, register_struct, serial_println, strings};
 
@@ -378,30 +379,23 @@ impl RawBlockRequest {
     ///
     /// TODO: Ensure we de-allocate the components when done with the descriptor.
     fn to_descriptor_chain(&self) -> [ChainedVirtQueueDescriptorElem; 3] {
+        // TODO: Ensure all of these descriptor components are dropped!
+
         // Allocate header
-        let header_addr = memory::allocate_physically_contiguous_zeroed_buffer(
-            mem::size_of::<RawBlockRequestHeader>(),
-            mem::align_of::<RawBlockRequestHeader>(),
-        )
+        let header_buffer = PhysicalBuffer::allocate_value(RawBlockRequestHeader {
+            request_type: self.request_type as u32,
+            reserved: 0,
+            sector: self.sector,
+        })
         .expect("failed to allocate RawBlockRequest header");
-
-        // Set header fields
-        let header_ptr = header_addr.as_u64() as *mut RawBlockRequestHeader;
-        unsafe {
-            header_ptr.write_volatile(RawBlockRequestHeader {
-                request_type: self.request_type as u32,
-                reserved: 0,
-                sector: self.sector,
-            });
-        };
-
-        let header_desc = ChainedVirtQueueDescriptorElem {
-            addr: header_addr,
-            len: mem::size_of::<RawBlockRequestHeader>() as u32,
-            flags: VirtQueueDescriptorFlags::new().with_device_write(false),
-        };
+        let header_desc = ChainedVirtQueueDescriptorElem::from_buffer(
+            header_buffer,
+            VirtQueueDescriptorFlags::new().with_device_write(false),
+        );
 
         // Buffer descriptor
+        //
+        // TODO: Allocate the buffer here.
         let buffer_desc = ChainedVirtQueueDescriptorElem {
             addr: self.data_addr,
             len: self.data_len,
@@ -409,19 +403,16 @@ impl RawBlockRequest {
         };
 
         // Allocate status
-        let status_addr = memory::allocate_physically_contiguous_zeroed_buffer(1, 1)
+        //
+        // TODO: This is a waste of an entire page! We should allocate this
+        // along with the header. We should probably also just use a slab
+        // allocator or a sort of physically contiguous heap for this.
+        let status_buffer = PhysicalBuffer::allocate_value(self.status as u8)
             .expect("failed to allocate RawBlockRequest status");
-        let status_ptr = status_addr.as_u64() as *mut u8;
-        unsafe {
-            status_ptr.write_volatile(self.status as u8);
-        };
-        serial_println!("status_addr: {:#x}", status_addr);
-
-        let status_desc = ChainedVirtQueueDescriptorElem {
-            addr: status_addr,
-            len: 1,
-            flags: VirtQueueDescriptorFlags::new().with_device_write(true),
-        };
+        let status_desc = ChainedVirtQueueDescriptorElem::from_buffer(
+            status_buffer,
+            VirtQueueDescriptorFlags::new().with_device_write(true),
+        );
 
         [header_desc, buffer_desc, status_desc]
     }
@@ -434,6 +425,7 @@ impl RawBlockRequest {
         let status_desc = chain.next().expect("missing status descriptor");
         assert!(chain.next().is_none(), "too many descriptors");
 
+        // TODO: Ensure all of these descriptor components are dropped!
         assert!(header_desc.len == mem::size_of::<RawBlockRequestHeader>() as u32);
         let header_ptr = header_desc.addr.as_u64() as *const RawBlockRequestHeader;
         let header = unsafe { header_ptr.read_volatile() };

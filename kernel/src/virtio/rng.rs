@@ -5,8 +5,9 @@ use hashbrown::HashMap;
 use spin::Mutex;
 
 use crate::interrupts::InterruptHandlerID;
+use crate::memory::PhysicalBuffer;
+use crate::serial_println;
 use crate::sync::InitCell;
-use crate::{memory, serial_println};
 
 use super::device::VirtIOInitializedDevice;
 use super::queue::{
@@ -84,19 +85,20 @@ impl VirtIORNG {
     }
 
     fn request_random_numbers(&self, num_bytes: u32) -> Arc<InitCell<Vec<u8>>> {
+        assert!(num_bytes > 0, "cannot request zero bytes from RNG!");
+
         let virtq = self
             .initialized_device
             .get_virtqueue(Self::QUEUE_INDEX)
             .unwrap();
 
         // Create a descriptor chain for the buffer
-        let addr = memory::allocate_physically_contiguous_zeroed_buffer(num_bytes as usize, 4)
-            .expect("failed to allocate rng buffer");
-        let desc = ChainedVirtQueueDescriptorElem {
-            addr,
-            len: num_bytes,
-            flags: VirtQueueDescriptorFlags::new().with_device_write(true),
-        };
+        let buffer =
+            PhysicalBuffer::allocate(num_bytes as usize, 4).expect("failed to allocate rng buffer");
+        let desc = ChainedVirtQueueDescriptorElem::from_buffer(
+            buffer,
+            VirtQueueDescriptorFlags::new().with_device_write(true),
+        );
         let desc_index = virtq.add_buffer(&[desc]);
 
         // Disable interrupts so IRQ doesn't deadlock the mutex
@@ -169,14 +171,9 @@ fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
 
         cell.init(buffer.to_vec());
 
-        // Free the buffer
-        //
-        // TODO: It would be pretty sweet to be able to pass the buffer back to
-        // the caller and let the cell free it when dropped, instead of copying
-        // it and then dropping this allocation. However, we have to make sure
-        // we aren't mixing up the heap with the physical memory allocator, and
-        // also ensure we aren't mixing up physical and virtual addresses.
-        serial_println!("Freeing {:x?} (size {})", descriptor.addr, descriptor.len);
-        memory::free_physically_contiguous_buffer(descriptor.addr, descriptor.len as usize);
+        // Free the buffer by creating it and dropping it
+        let buffer =
+            unsafe { PhysicalBuffer::from_raw_parts(descriptor.addr, descriptor.len as usize) };
+        drop(buffer);
     });
 }

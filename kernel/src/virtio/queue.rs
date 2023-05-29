@@ -6,8 +6,7 @@ use spin::Mutex;
 use x86_64::PhysAddr;
 
 use crate::barrier::barrier;
-use crate::memory;
-use crate::memory::AllocZeroedBufferError;
+use crate::memory::{AllocZeroedBufferError, PhysicalBuffer};
 use crate::registers::{RegisterRW, VolatileArrayRW};
 
 use super::config::VirtIONotifyConfig;
@@ -189,13 +188,12 @@ impl VirtQueueDescriptorTable {
 
         // VirtIO buffers must be physically contiguous, and they use physical
         // addresses.
-        let physical_address =
-            memory::allocate_physically_contiguous_zeroed_buffer(mem_size, VIRTQ_DESC_ALIGN)?;
+        let (addr, _) = PhysicalBuffer::allocate(mem_size, VIRTQ_DESC_ALIGN)?.into_raw_parts();
 
-        let descriptors = VolatileArrayRW::new(physical_address.as_u64() as usize, queue_size);
+        let descriptors = VolatileArrayRW::new(addr.as_u64() as usize, queue_size);
 
         Ok(Self {
-            physical_address,
+            physical_address: addr,
             raw_next_index: AtomicU16::new(0),
             descriptors,
         })
@@ -259,12 +257,26 @@ impl VirtQueueDescriptorTable {
 /// See "2.7.5 The Virtqueue Descriptor Table". This is a virtqueue descriptor
 /// without the `next` field, and is meant to be used in an array to represent a
 /// single descriptor.
+#[derive(Debug)]
 pub(super) struct ChainedVirtQueueDescriptorElem {
     /// Physical address for the buffer.
     pub(super) addr: PhysAddr,
     /// Length of the buffer, in bytes.
     pub(super) len: u32,
     pub(super) flags: VirtQueueDescriptorFlags,
+}
+
+impl ChainedVirtQueueDescriptorElem {
+    pub(super) fn from_buffer(buffer: PhysicalBuffer, flags: VirtQueueDescriptorFlags) -> Self {
+        let (addr, len) = buffer.into_raw_parts();
+        let len = match u32::try_from(len) {
+            Ok(len) => len,
+            Err(e) => {
+                panic!("PhysicalBuffer of size {len} is too large for virtqueue descriptor: {e}")
+            }
+        };
+        Self { addr, len, flags }
+    }
 }
 
 /// Iterator over a chain of descriptors.
@@ -389,8 +401,8 @@ impl VirtQueueAvailRing {
 
         // VirtIO buffers must be physically contiguous, and they use physical
         // addresses.
-        let physical_address =
-            memory::allocate_physically_contiguous_zeroed_buffer(struct_size, VIRTQ_AVAIL_ALIGN)?;
+        let (physical_address, _) =
+            PhysicalBuffer::allocate(struct_size, VIRTQ_AVAIL_ALIGN)?.into_raw_parts();
 
         let phys_addr_usize = physical_address.as_u64() as usize;
         let flags = RegisterRW::from_address(phys_addr_usize + flags_offset);
@@ -521,8 +533,8 @@ impl VirtQueueUsedRing {
 
         // VirtIO buffers must be physically contiguous, and they use physical
         // addresses.
-        let physical_address =
-            memory::allocate_physically_contiguous_zeroed_buffer(struct_size, VIRTQ_USED_ALIGN)?;
+        let (physical_address, _) =
+            PhysicalBuffer::allocate(struct_size, VIRTQ_USED_ALIGN)?.into_raw_parts();
 
         let phys_addr_usize = physical_address.as_u64() as usize;
         let flags = RegisterRW::from_address(phys_addr_usize + flags_offset);

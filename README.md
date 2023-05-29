@@ -95,6 +95,7 @@ make test
   - Abstract and improve request/response queue from rng
   - Allocate buffers on the fly instead of using static buffers, or have client provide buffer
     - Reuse them if we are reusing a descriptor, or free them.
+    - If the VirtIO device always owns the memory it uses, it is easier to reason about alloc/free, ensure buffers are the right size, and ensure provided buffers are physically contiguous
   - Allocation and pointers: avoid manually calling `memory` alloc functions and passing around pointers
     - Have virtqueues "own" their buffers and handle alloc/dealloc. Devices that need to alloc for descriptors, like virtio-blk, can do the same.
     - We can use `Box<T, KERNEL_PHYSICAL_ALLOC>` to ensure we are using physical memory.
@@ -103,6 +104,10 @@ make test
   - Ensure we don't accidentally reuse descriptors while we are waiting for a response from the device. Don't automatically just wrap around! This is what might require a mutex rather than just atomic integers?
   - I think there is a race condition with the interrupts with the current non-locking mechanism. Ensure that if there are concurrent writes while an interrupt, then an interrupt won't miss a read (e.g. there will at least be a followup interrupt)
   - Remember features we negotiate, and ensure we are accounting for the different features in the logic (especially around notifications)
+- Ensure `PhysicalBuffer` allocation and deallocation is safe, and that page and size math is correct (particularly in `drop()`). Make it foolproof.
+  - Maybe keep the `Layout` around? Ensure `Layout::size()` and actual buffer size are what we think they are! As long as we use the same logic for alloc/dealloc we should be fine.
+  - Problem is rehydrating `Layout`. We need alignment to do that. Maybe we should just store actual pages? We can convert to/from PhysAddr and len just fine. The contract is then that `PhysicalBuffer` may allocate more than asked for. VirtIO will need to make sure it just uses a smaller `len` than necessary.
+    - Don't use `allocate` for this. Use the underlying bitmap directly. DRY with `allocate` if needed but don't use it.
 - Create `sync` module that has synchronization primitives
   - Wrapper around `spin::Mutex` that also disables interrupts, similar to Linux's `spin_lock_irqsave` (`x86_64::interrupts::without_interrupts` is handy here). Might need our own custom `MutexGuard` wrapper that handles re-enabling interrupts on `drop()`
   - In the future we should disable preemption when spin locks are taken
