@@ -63,12 +63,12 @@ impl VirtIORNG {
 
         let initialized_device =
             VirtIOInitializedDevice::new(device_config, |_: &mut RNGFeatureBits| {});
-        let inner_virtqueue = initialized_device.get_virtqueue(Self::QUEUE_INDEX).unwrap();
-        let virtqueue = VirtQueueData::new(inner_virtqueue);
+        let virtqueue = initialized_device.get_virtqueue(Self::QUEUE_INDEX).unwrap();
+        let virtqueue_data = VirtQueueData::new(virtqueue);
 
         Self {
             initialized_device,
-            virtqueue_data: Mutex::new(virtqueue),
+            virtqueue_data: Mutex::new(virtqueue_data),
         }
     }
 

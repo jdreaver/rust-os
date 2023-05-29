@@ -1,8 +1,7 @@
 use alloc::vec::Vec;
 use bitflags::bitflags;
 use core::mem;
-use spin::RwLock;
-use x86_64::PhysAddr;
+use spin::{Mutex, RwLock};
 
 use crate::interrupts::InterruptHandlerID;
 use crate::memory::PhysicalBuffer;
@@ -10,7 +9,9 @@ use crate::registers::RegisterRO;
 use crate::{register_struct, serial_println, strings};
 
 use super::device::VirtIOInitializedDevice;
-use super::queue::{ChainedVirtQueueDescriptorElem, VirtQueueDescriptorFlags, VirtQueueIndex};
+use super::queue::{
+    ChainedVirtQueueDescriptorElem, VirtQueueData, VirtQueueDescriptorFlags, VirtQueueIndex,
+};
 use super::VirtIODeviceConfig;
 
 static VIRTIO_BLOCK: RwLock<Vec<VirtIOBlockDevice>> = RwLock::new(Vec::new());
@@ -30,7 +31,7 @@ pub(crate) fn try_init_virtio_block(device_config: VirtIODeviceConfig) {
     let device_index = devices.len();
     let handler_id = device_index as u32; // Use device index to disambiguate devices
     device.initialized_device.install_virtqueue_msix_handler(
-        VirtQueueIndex(0),
+        VirtIOBlockDevice::QUEUE_INDEX,
         0,
         0,
         handler_id,
@@ -50,42 +51,42 @@ pub(crate) fn virtio_block_get_id(device_index: usize) {
     let device_lock = VIRTIO_BLOCK.read();
     let device = device_lock.get(device_index).expect("invalid device index");
 
-    let virtq = device
+    let virtqueue = device
         .initialized_device
-        .get_virtqueue(VirtQueueIndex(0))
+        .get_virtqueue(VirtIOBlockDevice::QUEUE_INDEX)
         .unwrap();
 
-    let data_addr = PhysicalBuffer::allocate_zeroed(BlockRequest::GET_ID_DATA_LEN as usize)
-        .expect("failed to allocate GetID buffer")
-        // TODO: Don't leak here
-        .leak();
-
-    let request = BlockRequest::GetID { data_addr };
+    let request = BlockRequest::GetID;
     let raw_request = request.to_raw();
-    let desc_chain = raw_request.to_descriptor_chain();
-    virtq.add_buffer(&desc_chain);
-    virtq.notify_device();
+    let (desc_chain, buffer) = raw_request.to_descriptor_chain();
+
+    // Disable interrupts so IRQ doesn't deadlock the mutex
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let mut virtqueue_data = device.virtqueue_data.lock();
+        virtqueue_data.add_buffer(virtqueue, &desc_chain, buffer);
+        virtqueue.notify_device();
+    });
 }
 
 pub(crate) fn virtio_block_read(device_index: usize, sector: u64) {
     let device_lock = VIRTIO_BLOCK.read();
     let device = device_lock.get(device_index).expect("invalid device index");
 
-    let virtq = device
+    let virtqueue = device
         .initialized_device
-        .get_virtqueue(VirtQueueIndex(0))
+        .get_virtqueue(VirtIOBlockDevice::QUEUE_INDEX)
         .unwrap();
 
-    let data_addr = PhysicalBuffer::allocate_zeroed(BlockRequest::READ_DATA_LEN as usize)
-        .expect("failed to allocate GetID buffer")
-        // TODO: Don't leak here
-        .leak();
-
-    let request = BlockRequest::Read { sector, data_addr };
+    let request = BlockRequest::Read { sector };
     let raw_request = request.to_raw();
-    let desc_chain = raw_request.to_descriptor_chain();
-    virtq.add_buffer(&desc_chain);
-    virtq.notify_device();
+    let (desc_chain, buffer) = raw_request.to_descriptor_chain();
+
+    // Disable interrupts so IRQ doesn't deadlock the mutex
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let mut virtqueue_data = device.virtqueue_data.lock();
+        virtqueue_data.add_buffer(virtqueue, &desc_chain, buffer);
+        virtqueue.notify_device();
+    });
 }
 
 fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
@@ -96,41 +97,44 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
         .get(handler_id as usize)
         .expect("invalid device index");
 
-    let virtq = device
+    let mut virtqueue_data = device.virtqueue_data.lock();
+    let virtqueue = device
         .initialized_device
-        .get_virtqueue(VirtQueueIndex(0))
+        .get_virtqueue(VirtIOBlockDevice::QUEUE_INDEX)
         .unwrap();
 
-    virtq.process_new_entries(|_, mut descriptor_chain| {
+    virtqueue_data.process_new_entries(virtqueue, |used_entry, mut descriptor_chain, buffer| {
+        let Some(buffer) = buffer else {
+            serial_println!("VirtIO Block: no virtqueue data entry for used entry: {used_entry:#x?}");
+            return;
+        };
+
         let raw_request = RawBlockRequest::from_descriptor_chain(&mut descriptor_chain);
         let request = BlockRequest::from_raw(&raw_request);
         serial_println!("Got response: {:#x?}", request);
 
         match request {
-            BlockRequest::Read {
-                sector: _,
-                data_addr,
-            } => {
-                let buffer = unsafe {
+            BlockRequest::Read { sector: _ } => {
+                let bytes = unsafe {
                     core::slice::from_raw_parts(
-                        data_addr.as_u64() as *const u8,
+                        buffer.address().as_u64() as *const u8,
                         BlockRequest::READ_DATA_LEN as usize,
                     )
                 };
-                serial_println!("Read response: {:x?}", buffer);
+                serial_println!("Read response: {:x?}", bytes);
 
                 // If we detect a FAT filesystem, print out the BIOS Parameter Block
                 //
                 // TODO: Abstract this out of here
-                if let [0xeb, 0x3c, 0x90] = &buffer[..3] {
+                if let [0xeb, 0x3c, 0x90] = &bytes[..3] {
                     let bios_param_block: fat::BIOSParameterBlock = unsafe {
-                        let ptr = data_addr.as_u64() as *const fat::BIOSParameterBlock;
+                        let ptr = buffer.address().as_u64() as *const fat::BIOSParameterBlock;
                         ptr.read()
                     };
                     serial_println!("BIOS Parameter Block: {:#x?}", bios_param_block);
                 }
             }
-            BlockRequest::GetID { data_addr } => {
+            BlockRequest::GetID => {
                 // The used entry should be using the exact same buffer we just
                 // created, but let's pretend we didn't know that.
                 let s = unsafe {
@@ -138,13 +142,16 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
                     // size of the buffer size (if the string size == buffer size, there
                     // is no null terminator)
                     strings::c_str_from_pointer(
-                        data_addr.as_u64() as *const u8,
+                        buffer.address().as_u64() as *const u8,
                         BlockRequest::GET_ID_DATA_LEN as usize,
                     )
                 };
                 serial_println!("Device ID response: {s}");
             }
         }
+
+        // N.B. Buffer gets dropped here. Do it explicitly.
+        drop(buffer);
     });
 }
 
@@ -153,10 +160,11 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
 struct VirtIOBlockDevice {
     initialized_device: VirtIOInitializedDevice,
     _block_config: BlockConfigRegisters,
+    virtqueue_data: Mutex<VirtQueueData<PhysicalBuffer>>,
 }
 
 impl VirtIOBlockDevice {
-    // There is just a single virtqueue
+    const QUEUE_INDEX: VirtQueueIndex = VirtQueueIndex(0);
     const VENDOR_IDS: [u16; 2] = [0x1001, 0x1042];
 
     fn from_device(device_config: VirtIODeviceConfig) -> Self {
@@ -178,9 +186,13 @@ impl VirtIOBlockDevice {
             )
         };
 
+        let virtqueue = initialized_device.get_virtqueue(Self::QUEUE_INDEX).unwrap();
+        let virtqueue_data = VirtQueueData::new(virtqueue);
+
         Self {
             initialized_device,
             _block_config: block_config,
+            virtqueue_data: Mutex::new(virtqueue_data),
         }
     }
 }
@@ -261,8 +273,8 @@ struct BlockConfigTopology {
 
 #[derive(Debug)]
 enum BlockRequest {
-    Read { sector: u64, data_addr: PhysAddr },
-    GetID { data_addr: PhysAddr },
+    Read { sector: u64 },
+    GetID,
 }
 
 impl BlockRequest {
@@ -275,30 +287,17 @@ impl BlockRequest {
 
     fn to_raw(&self) -> RawBlockRequest {
         match self {
-            Self::Read { sector, data_addr } => RawBlockRequest::new(
-                BlockRequestType::In,
-                *sector,
-                *data_addr,
-                Self::READ_DATA_LEN,
-            ),
-            Self::GetID { data_addr } => RawBlockRequest::new(
-                BlockRequestType::GetID,
-                0,
-                *data_addr,
-                Self::GET_ID_DATA_LEN,
-            ),
+            Self::Read { sector } => {
+                RawBlockRequest::new(BlockRequestType::In, *sector, Self::READ_DATA_LEN)
+            }
+            Self::GetID => RawBlockRequest::new(BlockRequestType::GetID, 0, Self::GET_ID_DATA_LEN),
         }
     }
 
     fn from_raw(raw: &RawBlockRequest) -> Self {
         match raw.request_type {
-            BlockRequestType::In => Self::Read {
-                sector: raw.sector,
-                data_addr: raw.data_addr,
-            },
-            BlockRequestType::GetID => Self::GetID {
-                data_addr: raw.data_addr,
-            },
+            BlockRequestType::In => Self::Read { sector: raw.sector },
+            BlockRequestType::GetID => Self::GetID,
             _ => panic!("Unsupported block request type: {:?}", raw.request_type),
         }
     }
@@ -326,7 +325,6 @@ impl BlockRequest {
 struct RawBlockRequest {
     request_type: BlockRequestType,
     sector: u64,
-    data_addr: PhysAddr,
     data_len: u32,
     status: BlockRequestStatus,
 }
@@ -340,16 +338,10 @@ struct RawBlockRequestHeader {
 }
 
 impl RawBlockRequest {
-    fn new(
-        request_type: BlockRequestType,
-        sector: u64,
-        data_addr: PhysAddr,
-        data_len: u32,
-    ) -> Self {
+    fn new(request_type: BlockRequestType, sector: u64, data_len: u32) -> Self {
         Self {
             request_type,
             sector,
-            data_addr,
             data_len,
 
             // Trick: write 111 to status, which is invalid, so we can be certain
@@ -359,19 +351,28 @@ impl RawBlockRequest {
         }
     }
 
-    /// Creates a descriptor (that is chained) for the block request.
-    ///
-    /// TODO: Ensure we de-allocate the components when done with the descriptor.
-    fn to_descriptor_chain(&self) -> [ChainedVirtQueueDescriptorElem; 3] {
-        // TODO: Ensure all of these descriptor components are dropped!
-
-        // Allocate header
+    /// Creates a descriptor (that is chained) for the block request. The
+    /// returned buffer holds the underlying data for the descriptor chain. It
+    /// is important that the buffer is not dropped before the descriptor chain.
+    fn to_descriptor_chain(&self) -> ([ChainedVirtQueueDescriptorElem; 3], PhysicalBuffer) {
+        // Compute how much data we need
+        let header_align = core::mem::align_of::<RawBlockRequestHeader>();
+        let header_offset = self.data_len + (self.data_len % header_align as u32);
         let header_size = core::mem::size_of::<RawBlockRequestHeader>() as u32;
-        let mut header_buffer = PhysicalBuffer::allocate_zeroed(header_size as usize)
-            .expect("failed to allocate RawBlockRequest header");
+
+        let status_align = core::mem::align_of::<BlockRequestStatus>();
+        let status_raw_offset = header_offset + header_size;
+        let status_offset = status_raw_offset + (status_raw_offset % status_align as u32);
+        let status_size = core::mem::size_of::<BlockRequestStatus>() as u32;
+
+        let total_size = status_offset + core::mem::size_of::<BlockRequestStatus>() as u32;
+        let mut buffer = PhysicalBuffer::allocate_zeroed(total_size as usize)
+            .expect("failed to allocate block request buffer");
+
+        // Put header right after data
         unsafe {
-            header_buffer.write_offset(
-                0,
+            buffer.write_offset(
+                header_offset as usize,
                 RawBlockRequestHeader {
                     request_type: self.request_type as u32,
                     reserved: 0,
@@ -379,43 +380,33 @@ impl RawBlockRequest {
                 },
             );
         };
-
+        let header_addr = buffer.address() + u64::from(header_offset);
         let header_desc = ChainedVirtQueueDescriptorElem {
-            // TODO: Don't leak
-            addr: header_buffer.leak(),
+            addr: header_addr,
             len: header_size,
             flags: VirtQueueDescriptorFlags::new().with_device_write(false),
         };
 
-        // Buffer descriptor
-        //
-        // TODO: Allocate the buffer here.
+        // Buffer descriptor. Data is located right at the beginning of the
+        // buffer.
         let buffer_desc = ChainedVirtQueueDescriptorElem {
-            addr: self.data_addr,
+            addr: buffer.address(),
             len: self.data_len,
             flags: VirtQueueDescriptorFlags::new().with_device_write(true),
         };
 
-        // Allocate status
-        //
-        // TODO: This is a waste of an entire page! We should allocate this
-        // along with the header. We should probably also just use a slab
-        // allocator or a sort of physically contiguous heap for this.
-        let status_size = core::mem::size_of::<BlockRequestStatus>() as u32;
-        let mut status_buffer = PhysicalBuffer::allocate_zeroed(status_size as usize)
-            .expect("failed to allocate RawBlockRequest status");
+        // Put status right after header
         unsafe {
-            status_buffer.write_offset(0, self.status);
+            buffer.write_offset(status_offset as usize, self.status);
         };
-
+        let status_addr = buffer.address() + u64::from(status_offset);
         let status_desc = ChainedVirtQueueDescriptorElem {
-            // TODO: Don't leak
-            addr: status_buffer.leak(),
+            addr: status_addr,
             len: status_size,
             flags: VirtQueueDescriptorFlags::new().with_device_write(true),
         };
 
-        [header_desc, buffer_desc, status_desc]
+        ([header_desc, buffer_desc, status_desc], buffer)
     }
 
     fn from_descriptor_chain(
@@ -426,7 +417,6 @@ impl RawBlockRequest {
         let status_desc = chain.next().expect("missing status descriptor");
         assert!(chain.next().is_none(), "too many descriptors");
 
-        // TODO: Ensure all of these descriptor components are dropped!
         assert!(header_desc.len == mem::size_of::<RawBlockRequestHeader>() as u32);
         let header_ptr = header_desc.addr.as_u64() as *const RawBlockRequestHeader;
         let header = unsafe { header_ptr.read_volatile() };
@@ -443,7 +433,6 @@ impl RawBlockRequest {
         Self {
             request_type,
             sector: header.sector,
-            data_addr: buffer_desc.addr,
             data_len: buffer_desc.len,
             status,
         }

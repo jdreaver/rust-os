@@ -311,12 +311,6 @@ impl PhysicalBuffer {
         let ptr = (self.address().as_u64() + offset as u64) as *mut T;
         ptr::write_volatile(ptr, val);
     }
-
-    // TODO: Don't allow leaking. We are only doing this temporarily.
-    pub(crate) fn leak(self) -> PhysAddr {
-        let buf = core::mem::ManuallyDrop::new(self);
-        buf.address()
-    }
 }
 
 impl Drop for PhysicalBuffer {

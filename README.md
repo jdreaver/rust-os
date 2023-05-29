@@ -93,7 +93,6 @@ make test
 
 - VirtIO improvements:
   - Abstract and improve request/response queue from rng
-  - Don't leak memory on purpose in virtio-blk device
   - Ensure we zero out descriptors after using them so we don't accidentally reuse the buffer
   - Improve memory "ownership" ergonomics, ensuring buffers are dropped after use. Maybe abstract into a common layer somehow?
   - Create a physically contiguous heap, or slab allocator, or something for virtio buffer requests so we don't waste an entire page per tiny allocation.
