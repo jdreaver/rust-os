@@ -268,3 +268,14 @@ pub(crate) fn allocate_physically_contiguous_zeroed_buffer(
         .map_err(AllocZeroedBufferError::AllocError)?;
     Ok(PhysAddr::new(address.addr().get() as u64))
 }
+
+// TODO: Is this correct? DRY with the `deallocate`, and perhaps add some types
+// to ensure that we are converting to pages correctly. Also ensure that we do
+// indeed "own" the entire page we are de-allocating.
+pub(crate) fn free_physically_contiguous_buffer(addr: PhysAddr, size: usize) {
+    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
+        let start_page = addr.as_u64() as usize / PhysicalMemoryAllocator::PAGE_SIZE;
+        let num_pages = size.div_ceil(PhysicalMemoryAllocator::PAGE_SIZE);
+        allocator.allocator.free_contiguous(start_page, num_pages);
+    });
+}

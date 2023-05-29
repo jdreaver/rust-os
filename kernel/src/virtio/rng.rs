@@ -1,11 +1,8 @@
-use core::ptr;
-
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::bitflags;
 use hashbrown::HashMap;
 use spin::Mutex;
-use x86_64::VirtAddr;
 
 use crate::interrupts::InterruptHandlerID;
 use crate::sync::InitCell;
@@ -18,10 +15,6 @@ use super::queue::{
 use super::VirtIODeviceConfig;
 
 static VIRTIO_RNG: InitCell<VirtIORNG> = InitCell::new();
-
-// TODO: Use separate buffers so we can have multiple requests in flight at
-// once. Currently all requests will use the same buffer.
-static VIRTIO_RNG_BUFFER: [u8; 16] = [0; 16];
 
 pub(crate) fn try_init_virtio_rng(device_config: VirtIODeviceConfig) {
     let device_id = device_config.pci_config().device_id();
@@ -40,11 +33,11 @@ pub(crate) fn try_init_virtio_rng(device_config: VirtIODeviceConfig) {
     VIRTIO_RNG.init(virtio_rng);
 }
 
-pub(crate) fn request_random_numbers() -> Arc<InitCell<Vec<u8>>> {
+pub(crate) fn request_random_numbers(num_bytes: u32) -> Arc<InitCell<Vec<u8>>> {
     VIRTIO_RNG
         .get()
         .expect("VirtIO RNG not initialized")
-        .request_random_numbers()
+        .request_random_numbers(num_bytes)
 }
 
 /// See "5.4 Entropy Device" in the VirtIO spec. The virtio entropy device
@@ -90,20 +83,19 @@ impl VirtIORNG {
         );
     }
 
-    fn request_random_numbers(&self) -> Arc<InitCell<Vec<u8>>> {
+    fn request_random_numbers(&self, num_bytes: u32) -> Arc<InitCell<Vec<u8>>> {
         let virtq = self
             .initialized_device
             .get_virtqueue(Self::QUEUE_INDEX)
             .unwrap();
-        let buffer_virt_addr = VirtAddr::new(ptr::addr_of!(VIRTIO_RNG_BUFFER) as u64);
-        let buffer_phys_addr = memory::translate_addr(buffer_virt_addr)
-            .expect("failed to get VirtIO RNG buffer physical address");
-        let buffer_size = core::mem::size_of_val(&VIRTIO_RNG_BUFFER);
-        let flags = VirtQueueDescriptorFlags::new().with_device_write(true);
+
+        // Create a descriptor chain for the buffer
+        let addr = memory::allocate_physically_contiguous_zeroed_buffer(num_bytes as usize, 4)
+            .expect("failed to allocate rng buffer");
         let desc = ChainedVirtQueueDescriptorElem {
-            addr: buffer_phys_addr,
-            len: buffer_size as u32,
-            flags,
+            addr,
+            len: num_bytes,
+            flags: VirtQueueDescriptorFlags::new().with_device_write(true),
         };
         let desc_index = virtq.add_buffer(&[desc]);
 
@@ -176,5 +168,15 @@ fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
         };
 
         cell.init(buffer.to_vec());
+
+        // Free the buffer
+        //
+        // TODO: It would be pretty sweet to be able to pass the buffer back to
+        // the caller and let the cell free it when dropped, instead of copying
+        // it and then dropping this allocation. However, we have to make sure
+        // we aren't mixing up the heap with the physical memory allocator, and
+        // also ensure we aren't mixing up physical and virtual addresses.
+        serial_println!("Freeing {:x?} (size {})", descriptor.addr, descriptor.len);
+        memory::free_physically_contiguous_buffer(descriptor.addr, descriptor.len as usize);
     });
 }

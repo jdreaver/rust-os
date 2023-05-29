@@ -106,7 +106,7 @@ enum Command<'a> {
     ListVirtIO,
     BootInfo,
     PrintACPI,
-    RNG,
+    RNG(u32),
     VirtIOBlockList,
     VirtIOBlockRead { device_id: usize, sector: u64 },
     VirtIOBlockID { device_id: usize },
@@ -129,7 +129,10 @@ fn next_command(buffer: &[u8]) -> Option<Command> {
         ["list-virtio"] => Some(Command::ListVirtIO),
         ["boot-info"] => Some(Command::BootInfo),
         ["print-acpi"] => Some(Command::PrintACPI),
-        ["rng"] => Some(Command::RNG),
+        ["rng", num_bytes_str] => {
+            let num_bytes = parse_or_print_error(num_bytes_str, "number of bytes")?;
+            Some(Command::RNG(num_bytes))
+        }
         ["virtio-block", "list"] => Some(Command::VirtIOBlockList),
         ["virtio-block", "read", device_id_str, sector_str] => {
             let device_id = parse_or_print_error(device_id_str, "device ID")?;
@@ -219,9 +222,9 @@ fn run_command(command: &Command) {
             serial_println!("Printing ACPI info...");
             acpi::print_acpi_info();
         }
-        Command::RNG => {
+        Command::RNG(num_bytes) => {
             serial_println!("Generating random numbers...");
-            let cell = virtio::request_random_numbers();
+            let cell = virtio::request_random_numbers(*num_bytes);
             let buffer = cell.wait_spin();
             serial_println!("Got RNG buffer: {buffer:x?}");
         }
