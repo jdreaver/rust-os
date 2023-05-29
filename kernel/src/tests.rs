@@ -91,14 +91,6 @@ pub(crate) fn run_misc_tests() {
     serial_println!("vec at {:p}: {vec:?}", vec.as_slice());
     assert_eq!(vec.into_iter().sum::<u32>(), 45);
 
-    // Create a Box value with the `Allocator` API
-    let my_box = Box::new_in(42, &memory::KERNEL_PHYSICAL_ALLOCATOR);
-    serial_println!("Allocator alloc'ed my_box {my_box:?} at {my_box:p}");
-
-    drop(my_box);
-    let other_box = Box::new_in(42, &memory::KERNEL_PHYSICAL_ALLOCATOR);
-    serial_println!("Allocator alloc'ed other_box at {other_box:?} at {other_box:p}");
-
     // Trigger a page fault, which should trigger a double fault if we don't
     // have a page fault handler.
     // unsafe {

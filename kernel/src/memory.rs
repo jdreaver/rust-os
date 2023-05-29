@@ -1,6 +1,5 @@
-use core::alloc::{AllocError, Allocator, Layout};
+use core::alloc::AllocError;
 use core::ptr;
-use core::ptr::NonNull;
 
 use spin::Mutex;
 use x86_64::structures::paging::mapper::{MapToError, Translate};
@@ -16,7 +15,7 @@ use bitmap_alloc::{bootstrap_allocator, BitmapAllocator, MemoryRegion};
 static KERNEL_MAPPER: KernelMapper = KernelMapper::new();
 
 /// Physical memory frame allocator used by all kernel contexts.
-pub(crate) static KERNEL_PHYSICAL_ALLOCATOR: LockedPhysicalMemoryAllocator =
+static KERNEL_PHYSICAL_ALLOCATOR: LockedPhysicalMemoryAllocator =
     LockedPhysicalMemoryAllocator::new();
 
 /// Initialize the `KERNEL_MAPPER` with the passed `physical_memory_offset`.
@@ -195,52 +194,61 @@ impl LockedPhysicalMemoryAllocator<'_> {
     }
 }
 
-/// We implement the `Allocator` trait for `PhysicalMemoryAllocator`
-/// so that we can use it for custom allocations for physically contiguous
-/// memory.
-unsafe impl Allocator for LockedPhysicalMemoryAllocator<'_> {
-    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-        let size = layout.size();
-        let num_pages = size.div_ceil(PhysicalMemoryAllocator::PAGE_SIZE);
+// I'm not sure this is 100% correct, so I'm not doing it. In particular, I
+// worry that deallocate is incorrect because I'm not sure what the
+// characteristics of Layout are. It is better to be explicit that the physical
+// memory allocator deals with pages. If we want contiguous heap-like
+// allocation, we should implement a heap on top of physically contiguous
+// memory, or do something like slab allocation on top of physically contiguous
+// memory.
+//
+//
+// /// We implement the `Allocator` trait for `PhysicalMemoryAllocator`
+// /// so that we can use it for custom allocations for physically contiguous
+// /// memory.
+// unsafe impl Allocator for LockedPhysicalMemoryAllocator<'_> {
+//     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+//         let size = layout.size();
+//         let num_pages = size.div_ceil(PhysicalMemoryAllocator::PAGE_SIZE);
 
-        let alignment = layout.align() as u64;
-        assert!(
-            alignment <= PhysicalMemoryAllocator::PAGE_SIZE as u64,
-            "alignment {alignment} must be <= page size {}. What the hell are we aligning???",
-            PhysicalMemoryAllocator::PAGE_SIZE,
-        );
-        let start_page = self.with_lock(|allocator| {
-            allocator
-                .allocator
-                .allocate_contiguous(num_pages)
-                .ok_or(AllocError)
-        })?;
-        let start_address = start_page * PhysicalMemoryAllocator::PAGE_SIZE;
-        let actual_size = num_pages * PhysicalMemoryAllocator::PAGE_SIZE;
-        let ptr = unsafe { nonnull_ptr_slice_from_addr_len(start_address, actual_size) };
+//         let alignment = layout.align() as u64;
+//         assert!(
+//             alignment <= PhysicalMemoryAllocator::PAGE_SIZE as u64,
+//             "alignment {alignment} must be <= page size {}. What the hell are we aligning???",
+//             PhysicalMemoryAllocator::PAGE_SIZE,
+//         );
+//         let start_page = self.with_lock(|allocator| {
+//             allocator
+//                 .allocator
+//                 .allocate_contiguous(num_pages)
+//                 .ok_or(AllocError)
+//         })?;
+//         let start_address = start_page * PhysicalMemoryAllocator::PAGE_SIZE;
+//         let actual_size = num_pages * PhysicalMemoryAllocator::PAGE_SIZE;
+//         let ptr = unsafe { nonnull_ptr_slice_from_addr_len(start_address, actual_size) };
 
-        Ok(ptr)
-    }
+//         Ok(ptr)
+//     }
 
-    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-        let size = layout.size();
-        let num_pages = size.div_ceil(PhysicalMemoryAllocator::PAGE_SIZE);
-        let start_addr = ptr.as_ptr() as usize;
-        assert!(
-            start_addr % PhysicalMemoryAllocator::PAGE_SIZE == 0,
-            "somehow start address of {start_addr} is not page aligned"
-        );
-        let start_page = start_addr / PhysicalMemoryAllocator::PAGE_SIZE;
-        self.with_lock(|allocator| {
-            allocator.allocator.free_contiguous(start_page, num_pages);
-        });
-    }
-}
+//     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+//         let size = layout.size();
+//         let num_pages = size.div_ceil(PhysicalMemoryAllocator::PAGE_SIZE);
+//         let start_addr = ptr.as_ptr() as usize;
+//         assert!(
+//             start_addr % PhysicalMemoryAllocator::PAGE_SIZE == 0,
+//             "somehow start address of {start_addr} is not page aligned"
+//         );
+//         let start_page = start_addr / PhysicalMemoryAllocator::PAGE_SIZE;
+//         self.with_lock(|allocator| {
+//             allocator.allocator.free_contiguous(start_page, num_pages);
+//         });
+//     }
+// }
 
-unsafe fn nonnull_ptr_slice_from_addr_len(addr: usize, len_bytes: usize) -> NonNull<[u8]> {
-    let ptr = addr as *mut u8;
-    NonNull::new_unchecked(core::slice::from_raw_parts_mut(ptr, len_bytes))
-}
+// unsafe fn nonnull_ptr_slice_from_addr_len(addr: usize, len_bytes: usize) -> NonNull<[u8]> {
+//     let ptr = addr as *mut u8;
+//     NonNull::new_unchecked(core::slice::from_raw_parts_mut(ptr, len_bytes))
+// }
 
 unsafe impl<S: PageSize> FrameAllocator<S> for LockedPhysicalMemoryAllocator<'_> {
     fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
