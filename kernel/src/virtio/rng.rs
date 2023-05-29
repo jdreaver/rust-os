@@ -1,9 +1,9 @@
 use core::ptr;
 
-use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::bitflags;
+use hashbrown::HashMap;
 use spin::Mutex;
 use x86_64::VirtAddr;
 
@@ -12,7 +12,9 @@ use crate::sync::InitCell;
 use crate::{memory, serial_println};
 
 use super::device::VirtIOInitializedDevice;
-use super::queue::{ChainedVirtQueueDescriptorElem, VirtQueueDescriptorFlags, VirtQueueIndex};
+use super::queue::{
+    ChainedVirtQueueDescriptorElem, DescIndex, VirtQueueDescriptorFlags, VirtQueueIndex,
+};
 use super::VirtIODeviceConfig;
 
 static VIRTIO_RNG: InitCell<VirtIORNG> = InitCell::new();
@@ -52,7 +54,7 @@ struct VirtIORNG {
     initialized_device: VirtIOInitializedDevice,
     // TODO: The only reason we use Vec is so we have a sized type. We shouldn't
     // need Vec here.
-    requests: Mutex<VecDeque<Arc<InitCell<Vec<u8>>>>>,
+    requests: Mutex<HashMap<DescIndex, Arc<InitCell<Vec<u8>>>>>,
 }
 
 impl VirtIORNG {
@@ -72,7 +74,7 @@ impl VirtIORNG {
 
         Self {
             initialized_device,
-            requests: Mutex::new(VecDeque::new()),
+            requests: Mutex::new(HashMap::new()),
         }
     }
 
@@ -89,15 +91,6 @@ impl VirtIORNG {
     }
 
     fn request_random_numbers(&self) -> Arc<InitCell<Vec<u8>>> {
-        // Disable interrupts so IRQ doesn't deadlock the mutex
-        let cell = x86_64::instructions::interrupts::without_interrupts(|| {
-            let mut requests = self.requests.lock();
-            let cell = Arc::new(InitCell::new());
-            let copied_cell = cell.clone();
-            requests.push_back(cell);
-            copied_cell
-        });
-
         let virtq = self
             .initialized_device
             .get_virtqueue(Self::QUEUE_INDEX)
@@ -112,7 +105,29 @@ impl VirtIORNG {
             len: buffer_size as u32,
             flags,
         };
-        virtq.add_buffer(&[desc]);
+        let desc_index = virtq.add_buffer(&[desc]);
+
+        // Disable interrupts so IRQ doesn't deadlock the mutex
+        let cell = x86_64::instructions::interrupts::without_interrupts(|| {
+            let mut requests = self.requests.lock();
+            let cell = Arc::new(InitCell::new());
+            let copied_cell = cell.clone();
+            requests.insert(desc_index, cell);
+            copied_cell
+        });
+
+        // Now that the cell is created, we can notify the device of the new
+        // buffer
+        //
+        // TODO: I think there is a race condition here and we could still miss
+        // the notification if the device is fast enough. I think according to
+        // the spec, even telling the device to not send notifications could be
+        // ignored. Before returning, we should check if the device has already
+        // notified us. Long term, it is probably better to be more robust and
+        // not rely 100% on interrupts when checking on the virtqueue; maybe we
+        // should periodically check on a timer.
+        virtq.notify_device();
+
         cell
     }
 }
@@ -137,7 +152,7 @@ fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
     let mut requests = rng.requests.lock();
 
     virtq.process_new_entries(|used_entry, mut descriptor_chain| {
-        let Some(cell) = requests.pop_front() else {
+        let Some(cell) = requests.remove(&used_entry.desc_index()) else {
             serial_println!("VirtIO RNG: no request for used entry: {used_entry:#x?}");
             return;
         };

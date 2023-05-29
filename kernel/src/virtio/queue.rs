@@ -91,9 +91,19 @@ impl VirtQueue {
     }
 
     /// See "2.7.13 Supplying Buffers to The Device"
-    pub(super) fn add_buffer(&self, descriptors: &[ChainedVirtQueueDescriptorElem]) {
+    ///
+    /// The caller must also call `notify_device` once they are done adding
+    /// buffers.
+    pub(super) fn add_buffer(&self, descriptors: &[ChainedVirtQueueDescriptorElem]) -> DescIndex {
         let desc_index = self.descriptors.add_descriptor(descriptors);
         self.avail_ring.add_entry(desc_index);
+        desc_index
+    }
+
+    /// Notify the device that we have written new data.
+    pub(super) fn notify_device(&self) {
+        // Ensures that any previous writes to the virtqueue are visible to the
+        // device before we notify it.
         barrier();
         unsafe {
             self.device_notify_config
@@ -126,10 +136,7 @@ impl VirtQueue {
         let used_elem = self.used_ring.get_used_elem(index);
 
         // Load the associated descriptor
-        let idx = match u16::try_from(used_elem.id) {
-            Ok(idx) => DescIndex(idx),
-            Err(e) => panic!("used ring id entry {} is invalid: {}", used_elem.id, e),
-        };
+        let idx = used_elem.desc_index();
         let chain = VirtQueueDescriptorChainIterator::new(&self.descriptors, idx);
 
         (used_elem, chain)
@@ -156,7 +163,7 @@ pub(super) struct VirtQueueDescriptorTable {
     descriptors: VolatileArrayRW<RawVirtQueueDescriptor>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 #[repr(transparent)]
 pub(crate) struct DescIndex(u16);
 
@@ -475,11 +482,22 @@ pub(super) struct VirtQueueUsedRingFlags {
 #[repr(C)]
 pub(super) struct VirtQueueUsedElem {
     /// Index of start of used descriptor chain.
-    pub(super) id: u32,
+    id: u32,
 
     /// The number of bytes written into the device writable portion of the
     /// buffer described by the descriptor chain.
     pub(super) len: u32,
+}
+
+impl VirtQueueUsedElem {
+    // For some reason, the spec says that the id field is a u32, but descriptor
+    // indices are u16.
+    pub(super) fn desc_index(self) -> DescIndex {
+        match u16::try_from(self.id) {
+            Ok(idx) => DescIndex(idx),
+            Err(e) => panic!("used ring id entry {} is invalid: {e}", self.id),
+        }
+    }
 }
 
 impl VirtQueueUsedRing {
