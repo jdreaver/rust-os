@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use alloc::vec::Vec;
 use core::fmt;
 
 use spin::Mutex;
@@ -222,25 +222,11 @@ fn run_command(command: &Command) {
         Command::RNG => {
             serial_println!("Generating random numbers...");
 
-            let buffer: Arc<Mutex<Option<Box<[u8]>>>> = Arc::new(Mutex::new(None));
-
-            let closure_buf = buffer.clone();
-            virtio::request_random_numbers(move |buf| {
-                x86_64::instructions::interrupts::without_interrupts(|| {
-                    closure_buf.lock().replace(buf);
-                });
-            });
+            let response_cell = virtio::request_random_numbers();
 
             loop {
-                // Disable interrupts so RNG IRQ doesn't deadlock the mutex
-                let done = x86_64::instructions::interrupts::without_interrupts(|| {
-                    let guard = buffer.lock();
-                    guard.is_some()
-                });
-
-                if done {
-                    let buf = buffer.lock().take().unwrap();
-                    serial_println!("Got RNG buffer: {buf:x?}");
+                if let Some(buffer) = response_cell.get() {
+                    serial_println!("Got RNG buffer: {buffer:x?}");
                     return;
                 }
                 core::hint::spin_loop();

@@ -1,13 +1,14 @@
-use core::fmt;
 use core::ptr;
 
-use alloc::boxed::Box;
 use alloc::collections::VecDeque;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use bitflags::bitflags;
 use spin::{Mutex, RwLock};
 use x86_64::VirtAddr;
 
 use crate::interrupts::InterruptHandlerID;
+use crate::sync::InitCell;
 use crate::{memory, serial_println};
 
 use super::device::VirtIOInitializedDevice;
@@ -42,12 +43,12 @@ pub(crate) fn try_init_virtio_rng(device_config: VirtIODeviceConfig) {
     VIRTIO_RNG.write().replace(virtio_rng);
 }
 
-pub(crate) fn request_random_numbers<F: FnOnce(Box<[u8]>) + 'static>(callback: F) {
+pub(crate) fn request_random_numbers() -> Arc<InitCell<Vec<u8>>> {
     VIRTIO_RNG
         .read()
         .as_ref()
         .expect("VirtIO RNG not initialized")
-        .request_random_numbers(Box::new(callback));
+        .request_random_numbers()
 }
 
 /// See "5.4 Entropy Device" in the VirtIO spec. The virtio entropy device
@@ -55,7 +56,9 @@ pub(crate) fn request_random_numbers<F: FnOnce(Box<[u8]>) + 'static>(callback: F
 #[derive(Debug)]
 struct VirtIORNG {
     initialized_device: VirtIOInitializedDevice,
-    requests: Mutex<VecDeque<VirtIORNGRequest>>,
+    // TODO: The only reason we use Vec is so we have a sized type. We shouldn't
+    // need Vec here.
+    requests: Mutex<VecDeque<Arc<InitCell<Vec<u8>>>>>,
 }
 
 impl VirtIORNG {
@@ -91,11 +94,14 @@ impl VirtIORNG {
         );
     }
 
-    fn request_random_numbers(&self, callback: Box<dyn FnOnce(Box<[u8]>)>) {
+    fn request_random_numbers(&self) -> Arc<InitCell<Vec<u8>>> {
         // Disable interrupts so IRQ doesn't deadlock the mutex
-        x86_64::instructions::interrupts::without_interrupts(|| {
+        let cell = x86_64::instructions::interrupts::without_interrupts(|| {
             let mut requests = self.requests.lock();
-            requests.push_back(VirtIORNGRequest { callback });
+            let cell = Arc::new(InitCell::new());
+            let copied_cell = cell.clone();
+            requests.push_back(cell);
+            copied_cell
         });
 
         let virtq = self
@@ -113,6 +119,7 @@ impl VirtIORNG {
             flags,
         };
         virtq.add_buffer(&[desc]);
+        cell
     }
 }
 
@@ -122,20 +129,6 @@ bitflags! {
     /// VirtIO RNG device has no device-specific feature bits. See "5.4.3
     /// Feature bits".
     struct RNGFeatureBits: u128 {
-    }
-}
-
-/// A request to the VirtIO RNG device.
-struct VirtIORNGRequest {
-    callback: Box<dyn FnOnce(Box<[u8]>)>,
-}
-
-// FnOnce doesn't implement Send.
-unsafe impl Send for VirtIORNGRequest {}
-
-impl fmt::Debug for VirtIORNGRequest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("VirtIORNGRequest").finish()
     }
 }
 
@@ -151,7 +144,7 @@ fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
     let mut requests = rng.requests.lock();
 
     virtq.process_new_entries(|used_entry, mut descriptor_chain| {
-        let Some(request) = requests.pop_front() else {
+        let Some(cell) = requests.pop_front() else {
             serial_println!("VirtIO RNG: no request for used entry: {used_entry:#x?}");
             return;
         };
@@ -174,6 +167,6 @@ fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
             )
         };
 
-        (request.callback)(buffer.into());
+        cell.init(buffer.to_vec());
     });
 }

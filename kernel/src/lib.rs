@@ -48,6 +48,7 @@ pub(crate) mod scheduler;
 pub(crate) mod serial;
 pub(crate) mod shell;
 pub(crate) mod strings;
+pub(crate) mod sync;
 pub(crate) mod tests;
 pub(crate) mod virtio;
 
