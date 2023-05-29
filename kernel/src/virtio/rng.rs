@@ -1,7 +1,7 @@
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::bitflags;
-use hashbrown::HashMap;
+
 use spin::Mutex;
 
 use crate::interrupts::InterruptHandlerID;
@@ -11,7 +11,7 @@ use crate::sync::InitCell;
 
 use super::device::VirtIOInitializedDevice;
 use super::queue::{
-    ChainedVirtQueueDescriptorElem, DescIndex, VirtQueueDescriptorFlags, VirtQueueIndex,
+    ChainedVirtQueueDescriptorElem, VirtQueueData, VirtQueueDescriptorFlags, VirtQueueIndex,
 };
 use super::VirtIODeviceConfig;
 
@@ -46,9 +46,7 @@ pub(crate) fn request_random_numbers(num_bytes: u32) -> Arc<InitCell<Vec<u8>>> {
 #[derive(Debug)]
 struct VirtIORNG {
     initialized_device: VirtIOInitializedDevice,
-    // TODO: The only reason we use Vec is so we have a sized type. We shouldn't
-    // need Vec here.
-    requests: Mutex<HashMap<DescIndex, VirtIORNGRequest>>,
+    virtqueue_data: Mutex<VirtQueueData<VirtIORNGRequest>>,
 }
 
 impl VirtIORNG {
@@ -65,10 +63,12 @@ impl VirtIORNG {
 
         let initialized_device =
             VirtIOInitializedDevice::new(device_config, |_: &mut RNGFeatureBits| {});
+        let inner_virtqueue = initialized_device.get_virtqueue(Self::QUEUE_INDEX).unwrap();
+        let virtqueue = VirtQueueData::new(inner_virtqueue);
 
         Self {
             initialized_device,
-            requests: Mutex::new(HashMap::new()),
+            virtqueue_data: Mutex::new(virtqueue),
         }
     }
 
@@ -87,11 +87,6 @@ impl VirtIORNG {
     fn request_random_numbers(&self, num_bytes: u32) -> Arc<InitCell<Vec<u8>>> {
         assert!(num_bytes > 0, "cannot request zero bytes from RNG!");
 
-        let virtq = self
-            .initialized_device
-            .get_virtqueue(Self::QUEUE_INDEX)
-            .unwrap();
-
         // Create a descriptor chain for the buffer
         let buffer = PhysicalBuffer::allocate_zeroed(num_bytes as usize)
             .expect("failed to allocate rng buffer");
@@ -100,33 +95,24 @@ impl VirtIORNG {
             len: num_bytes,
             flags: VirtQueueDescriptorFlags::new().with_device_write(true),
         };
-        let desc_index = virtq.add_buffer(&[desc]);
+        let request = VirtIORNGRequest {
+            _descriptor_buffer: buffer,
+            cell: Arc::new(InitCell::new()),
+        };
+        let copied_cell = request.cell.clone();
 
         // Disable interrupts so IRQ doesn't deadlock the mutex
-        let cell = x86_64::instructions::interrupts::without_interrupts(|| {
-            let mut requests = self.requests.lock();
-            let request = VirtIORNGRequest {
-                _descriptor_buffer: buffer,
-                cell: Arc::new(InitCell::new()),
-            };
-            let copied_cell = request.cell.clone();
-            requests.insert(desc_index, request);
-            copied_cell
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            let mut virtqueue_data = self.virtqueue_data.lock();
+            let virtqueue = self
+                .initialized_device
+                .get_virtqueue(Self::QUEUE_INDEX)
+                .expect("failed to get RNG virtqueue");
+            virtqueue_data.add_buffer(virtqueue, &[desc], request);
+            virtqueue.notify_device();
         });
 
-        // Now that the cell is created, we can notify the device of the new
-        // buffer
-        //
-        // TODO: I think there is a race condition here and we could still miss
-        // the notification if the device is fast enough. I think according to
-        // the spec, even telling the device to not send notifications could be
-        // ignored. Before returning, we should check if the device has already
-        // notified us. Long term, it is probably better to be more robust and
-        // not rely 100% on interrupts when checking on the virtqueue; maybe we
-        // should periodically check on a timer.
-        virtq.notify_device();
-
-        cell
+        copied_cell
     }
 }
 
@@ -149,15 +135,14 @@ struct VirtIORNGRequest {
 fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
     let rng = VIRTIO_RNG.get().expect("VirtIO RNG not initialized");
 
-    let virtq = rng
+    let mut virtqueue_data = rng.virtqueue_data.lock();
+    let virtqueue = rng
         .initialized_device
         .get_virtqueue(VirtIORNG::QUEUE_INDEX)
-        .unwrap();
+        .expect("failed to get RNG virtqueue");
 
-    let mut requests = rng.requests.lock();
-
-    virtq.process_new_entries(|used_entry, mut descriptor_chain| {
-        let Some(request) = requests.remove(&used_entry.desc_index()) else {
+    virtqueue_data.process_new_entries(virtqueue, |used_entry, mut descriptor_chain, request| {
+        let Some(request) = request else {
             serial_println!("VirtIO RNG: no request for used entry: {used_entry:#x?}");
             return;
         };

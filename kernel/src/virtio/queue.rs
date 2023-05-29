@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use core::alloc::AllocError;
 use core::mem;
 use core::sync::atomic::{AtomicU16, Ordering};
@@ -11,6 +12,57 @@ use crate::memory::PhysicalBuffer;
 use crate::registers::{RegisterRW, VolatileArrayRW};
 
 use super::config::VirtIONotifyConfig;
+
+/// Wrapper around `VirtQueue` that supports associating extra data with each
+/// descriptor.
+///
+/// TODO: It would be better if we could entirely own the virtqueue we are
+/// wrapping.
+#[derive(Debug)]
+pub(super) struct VirtQueueData<D> {
+    data: Vec<Option<D>>,
+}
+
+impl<D> VirtQueueData<D> {
+    pub(super) fn new(queue: &VirtQueue) -> Self {
+        let queue_size = queue.descriptors.descriptors.len();
+        let mut data = Vec::with_capacity(queue_size);
+        for _ in 0..queue_size {
+            data.push(None);
+        }
+
+        Self { data }
+    }
+
+    pub(super) fn add_buffer(
+        &mut self,
+        queue: &VirtQueue,
+        descriptors: &[ChainedVirtQueueDescriptorElem],
+        data: D,
+    ) {
+        let desc_index = queue.add_buffer(descriptors);
+        assert!(
+            self.data[desc_index.0 as usize].is_none(),
+            "descriptor index {} already has data",
+            desc_index.0
+        );
+
+        // TODO: There is a race condition here, because the device could see
+        // the descriptor before we set the data.
+        self.data[desc_index.0 as usize] = Some(data);
+    }
+
+    pub(super) fn process_new_entries<F>(&mut self, queue: &VirtQueue, mut f: F)
+    where
+        F: FnMut(VirtQueueUsedElem, VirtQueueDescriptorChainIterator, Option<D>),
+    {
+        queue.process_new_entries(|used_entry, descriptor_chain| {
+            let desc_index = used_entry.desc_index();
+            let data = self.data[desc_index.0 as usize].take();
+            f(used_entry, descriptor_chain, data);
+        });
+    }
+}
 
 /// Wrapper around allocated virt queues for a an initialized VirtIO device.
 #[derive(Debug)]
