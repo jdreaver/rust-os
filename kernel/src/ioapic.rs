@@ -1,23 +1,22 @@
 use core::fmt;
 
 use bitfield_struct::bitfield;
-use spin::RwLock;
 
 use crate::acpi::ACPIInfo;
 use crate::registers::RegisterRW;
+use crate::sync::InitCell;
 use crate::{register_struct, serial_println};
 
-static IOAPIC: RwLock<Option<IOAPIC>> = RwLock::new(None);
+static IOAPIC: InitCell<IOAPIC> = InitCell::new();
 
 pub(crate) fn init(acpi_info: &ACPIInfo) {
     let ioapic = IOAPIC::from_acpi_info(acpi_info);
     serial_println!("IO APIC: {ioapic:#x?}");
-    IOAPIC.write().replace(ioapic);
+    IOAPIC.init(ioapic);
 }
 
 pub(crate) fn install_irq(interrupt_vector: u8, irq_entry: u8) {
-    let lock = IOAPIC.read();
-    let ioapic = lock.as_ref().expect("IOAPIC not initialized!");
+    let ioapic = IOAPIC.get().expect("IOAPIC not initialized!");
 
     ioapic.write_ioredtbl(
         irq_entry,

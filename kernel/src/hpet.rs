@@ -1,18 +1,18 @@
 use core::fmt;
 
 use bitfield_struct::bitfield;
-use spin::RwLock;
 
 use crate::interrupts::{InterruptHandler, InterruptHandlerID};
 use crate::registers::{RegisterRO, RegisterRW};
+use crate::sync::InitCell;
 use crate::{interrupts, ioapic, register_struct, serial_println};
 
-static HPET: RwLock<Option<HPET>> = RwLock::new(None);
+static HPET: InitCell<HPET> = InitCell::new();
 
 pub(crate) unsafe fn init(hpet_apic_base_address: usize) {
     let hpet = unsafe { HPET::from_base_address(hpet_apic_base_address) };
     serial_println!("HPET: {:#x?}", hpet);
-    HPET.write().replace(hpet);
+    HPET.init(hpet);
 }
 
 pub(crate) fn enable_periodic_timer_handler(
@@ -25,8 +25,7 @@ pub(crate) fn enable_periodic_timer_handler(
     let interrupt_vector = interrupts::install_interrupt(handler_id, handler);
     ioapic::install_irq(interrupt_vector, ioapic_irq_number);
 
-    let lock = HPET.read();
-    let hpet = lock.as_ref().expect("HPET not initialized");
+    let hpet = HPET.get().expect("HPET not initialized");
 
     let interval_femtoseconds = interval.femtoseconds();
     hpet.enable_periodic_timer(timer_number, ioapic_irq_number, interval_femtoseconds);
@@ -62,8 +61,7 @@ impl fmt::Display for Milliseconds {
 /// TODO: We should probably ensure the HPET can't be reset if we are relying on
 /// this.
 pub(crate) fn elapsed_milliseconds() -> Milliseconds {
-    let lock = HPET.read();
-    let hpet = lock.as_ref().expect("HPET not initialized");
+    let hpet = HPET.get().expect("HPET not initialized");
 
     let caps = hpet.registers.general_capabilities_and_id().read();
     let interval_femtoseconds = caps.counter_clock_period();

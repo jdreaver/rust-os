@@ -4,7 +4,7 @@ use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::bitflags;
-use spin::{Mutex, RwLock};
+use spin::Mutex;
 use x86_64::VirtAddr;
 
 use crate::interrupts::InterruptHandlerID;
@@ -15,7 +15,7 @@ use super::device::VirtIOInitializedDevice;
 use super::queue::{ChainedVirtQueueDescriptorElem, VirtQueueDescriptorFlags, VirtQueueIndex};
 use super::VirtIODeviceConfig;
 
-static VIRTIO_RNG: RwLock<Option<VirtIORNG>> = RwLock::new(None);
+static VIRTIO_RNG: InitCell<VirtIORNG> = InitCell::new();
 
 // TODO: Use separate buffers so we can have multiple requests in flight at
 // once. Currently all requests will use the same buffer.
@@ -30,23 +30,17 @@ pub(crate) fn try_init_virtio_rng(device_config: VirtIODeviceConfig) {
         return;
     }
 
-    assert!(
-        !VIRTIO_RNG.read().is_some(),
-        "VirtIO RNG already initialized"
-    );
-
     let mut virtio_rng = VirtIORNG::from_device(device_config);
     virtio_rng.enable_msix(0);
 
     serial_println!("VirtIO RNG initialized: {virtio_rng:#x?}");
 
-    VIRTIO_RNG.write().replace(virtio_rng);
+    VIRTIO_RNG.init(virtio_rng);
 }
 
 pub(crate) fn request_random_numbers() -> Arc<InitCell<Vec<u8>>> {
     VIRTIO_RNG
-        .read()
-        .as_ref()
+        .get()
         .expect("VirtIO RNG not initialized")
         .request_random_numbers()
 }
@@ -133,8 +127,7 @@ bitflags! {
 }
 
 fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
-    let rng_lock = VIRTIO_RNG.read();
-    let rng = rng_lock.as_ref().expect("VirtIO RNG not initialized");
+    let rng = VIRTIO_RNG.get().expect("VirtIO RNG not initialized");
 
     let virtq = rng
         .initialized_device
