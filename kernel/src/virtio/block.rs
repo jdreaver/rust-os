@@ -47,9 +47,6 @@ pub(crate) fn virtio_block_print_devices() {
     serial_println!("virtio block devices: {:#x?}", devices);
 }
 
-// N.B. The drive MUST provide a 20 byte buffer when requesting device ID.
-static DEVICE_ID_BUFFER: [u8; 20] = [0; 20];
-
 static READ_BUFFER: [u8; 512] = [0; 512];
 
 pub(crate) fn virtio_block_get_id(device_index: usize) {
@@ -60,15 +57,12 @@ pub(crate) fn virtio_block_get_id(device_index: usize) {
         .initialized_device
         .get_virtqueue(VirtQueueIndex(0))
         .unwrap();
-    let buffer_virt_addr = VirtAddr::new(ptr::addr_of!(DEVICE_ID_BUFFER) as u64);
-    let buffer_phys_addr = memory::translate_addr(buffer_virt_addr)
-        .expect("failed to get VirtIO device ID buffer physical address");
-    let buffer_size = core::mem::size_of_val(&DEVICE_ID_BUFFER) as u32;
 
-    let request = BlockRequest::GetID {
-        data_addr: buffer_phys_addr,
-        data_len: buffer_size,
-    };
+    let (data_addr, _) = PhysicalBuffer::allocate(BlockRequest::GET_ID_DATA_LEN as usize, 8)
+        .expect("failed to allocate GetID buffer")
+        .into_raw_parts();
+
+    let request = BlockRequest::GetID { data_addr };
     let raw_request = request.to_raw();
     virtq.add_buffer(&raw_request.to_descriptor_chain());
     virtq.notify_device();
@@ -137,17 +131,17 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
                     serial_println!("BIOS Parameter Block: {:#x?}", bios_param_block);
                 }
             }
-            BlockRequest::GetID {
-                data_addr,
-                data_len,
-            } => {
+            BlockRequest::GetID { data_addr } => {
                 // The used entry should be using the exact same buffer we just
                 // created, but let's pretend we didn't know that.
                 let s = unsafe {
                     // The device ID response is a null-terminated string with a max
                     // size of the buffer size (if the string size == buffer size, there
                     // is no null terminator)
-                    strings::c_str_from_pointer(data_addr.as_u64() as *const u8, data_len as usize)
+                    strings::c_str_from_pointer(
+                        data_addr.as_u64() as *const u8,
+                        BlockRequest::GET_ID_DATA_LEN as usize,
+                    )
                 };
                 serial_println!("Device ID response: {s}");
             }
@@ -275,11 +269,13 @@ enum BlockRequest {
     },
     GetID {
         data_addr: PhysAddr,
-        data_len: u32,
     },
 }
 
 impl BlockRequest {
+    /// All GET_ID requests MUST have a length of 20 bytes.
+    const GET_ID_DATA_LEN: u32 = 20;
+
     fn to_raw(&self) -> RawBlockRequest {
         match self {
             Self::Read {
@@ -293,16 +289,12 @@ impl BlockRequest {
                 );
                 RawBlockRequest::new(BlockRequestType::In, *sector, *data_addr, *data_len)
             }
-            Self::GetID {
-                data_addr,
-                data_len,
-            } => {
-                assert!(
-                    *data_len == 20,
-                    "GetID requests MUST have a data buffer of exactly 20 bytes"
-                );
-                RawBlockRequest::new(BlockRequestType::GetID, 0, *data_addr, *data_len)
-            }
+            Self::GetID { data_addr } => RawBlockRequest::new(
+                BlockRequestType::GetID,
+                0,
+                *data_addr,
+                Self::GET_ID_DATA_LEN,
+            ),
         }
     }
 
@@ -315,7 +307,6 @@ impl BlockRequest {
             },
             BlockRequestType::GetID => Self::GetID {
                 data_addr: raw.data_addr,
-                data_len: raw.data_len,
             },
             _ => panic!("Unsupported block request type: {:?}", raw.request_type),
         }

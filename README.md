@@ -106,6 +106,7 @@ make test
   - Remember features we negotiate, and ensure we are accounting for the different features in the logic (especially around notifications)
 - Ensure `PhysicalBuffer` allocation and deallocation is safe, and that page and size math is correct (particularly in `drop()`). Make it foolproof.
   - Perhaps introduce page <-> address translation layer in a single spot.
+- Does `PhysicalBuffer::allocate` need an alignment argument? Does anything ever need more than page alignment?
 - Create `sync` module that has synchronization primitives
   - Wrapper around `spin::Mutex` that also disables interrupts, similar to Linux's `spin_lock_irqsave` (`x86_64::interrupts::without_interrupts` is handy here). Might need our own custom `MutexGuard` wrapper that handles re-enabling interrupts on `drop()`
   - In the future we should disable preemption when spin locks are taken
