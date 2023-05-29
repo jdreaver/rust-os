@@ -30,6 +30,17 @@ impl<T> InitCell<T> {
     pub(crate) fn get(&self) -> Option<&T> {
         unsafe { self.ptr.load(Ordering::SeqCst).as_ref() }
     }
+
+    /// Wait (via a spin loop) until the value is initialized, then return a
+    /// reference to it.
+    pub(crate) fn wait_spin(&self) -> &T {
+        loop {
+            if let Some(value) = self.get() {
+                return value;
+            }
+            core::hint::spin_loop();
+        }
+    }
 }
 
 impl<T> Drop for InitCell<T> {

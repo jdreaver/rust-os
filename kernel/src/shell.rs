@@ -221,16 +221,9 @@ fn run_command(command: &Command) {
         }
         Command::RNG => {
             serial_println!("Generating random numbers...");
-
-            let response_cell = virtio::request_random_numbers();
-
-            loop {
-                if let Some(buffer) = response_cell.get() {
-                    serial_println!("Got RNG buffer: {buffer:x?}");
-                    return;
-                }
-                core::hint::spin_loop();
-            }
+            let cell = virtio::request_random_numbers();
+            let buffer = cell.wait_spin();
+            serial_println!("Got RNG buffer: {buffer:x?}");
         }
         Command::VirtIOBlockList => {
             virtio::virtio_block_print_devices();
