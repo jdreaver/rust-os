@@ -93,6 +93,7 @@ make test
 
 - VirtIO improvements:
   - Abstract and improve request/response queue from rng
+  - Ensure we zero out descriptors after using them so we don't accidentally reuse the buffer
   - Allocate buffers on the fly instead of using static buffers, or have client provide buffer
     - Reuse them if we are reusing a descriptor, or free them.
     - If the VirtIO device always owns the memory it uses, it is easier to reason about alloc/free, ensure buffers are the right size, and ensure provided buffers are physically contiguous
@@ -104,8 +105,10 @@ make test
   - Ensure we don't accidentally reuse descriptors while we are waiting for a response from the device. Don't automatically just wrap around! This is what might require a mutex rather than just atomic integers?
   - I think there is a race condition with the interrupts with the current non-locking mechanism. Ensure that if there are concurrent writes while an interrupt, then an interrupt won't miss a read (e.g. there will at least be a followup interrupt)
   - Remember features we negotiate, and ensure we are accounting for the different features in the logic (especially around notifications)
-- Ensure `PhysicalBuffer` allocation and deallocation is safe, and that page and size math is correct (particularly in `drop()`). Make it foolproof.
-  - Perhaps introduce page <-> address translation layer in a single spot.
+- Physical memory allocation
+  - Ensure `PhysicalBuffer` allocation and deallocation is safe, and that page and size math is correct (particularly in `drop()`). Make it foolproof.
+    - Be explicit about it allocating pages. Don't pretend it is just addresses. Perhaps put page <-> address translation layer in a single spot.
+    - In fact, maybe `LockedPhysicalMemoryAllocator` should _not_ implement `Allocator`. If we want a malloc-like behavior on top of contiguous physical memory, we should explicitly use e.g. `LockedHeap` on top of some allocated physical pages (basically an arena).
 - Does `PhysicalBuffer::allocate` need an alignment argument? Does anything ever need more than page alignment?
 - Create `sync` module that has synchronization primitives
   - Wrapper around `spin::Mutex` that also disables interrupts, similar to Linux's `spin_lock_irqsave` (`x86_64::interrupts::without_interrupts` is handy here). Might need our own custom `MutexGuard` wrapper that handles re-enabling interrupts on `drop()`

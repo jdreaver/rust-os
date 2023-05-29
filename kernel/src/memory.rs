@@ -1,4 +1,4 @@
-use core::alloc::{AllocError, Allocator, Layout, LayoutError};
+use core::alloc::{AllocError, Allocator, Layout};
 use core::ptr;
 use core::ptr::NonNull;
 
@@ -252,73 +252,74 @@ unsafe impl<S: PageSize> FrameAllocator<S> for LockedPhysicalMemoryAllocator<'_>
     }
 }
 
-/// Error type used in `allocate_zeroed_buffer`.
-#[derive(Debug, Clone)]
-pub(crate) enum AllocZeroedBufferError {
-    LayoutError(LayoutError),
-    AllocError(AllocError),
-}
-
 /// Physically contiguous buffer of memory. Allocates by page, so it can
 /// allocate more memory than requested. Useful for e.g. Direct Memory Access
 /// (DMA) like with VirtIO buffers.
+///
+/// NOTE: This type implements `Drop` and will free the allocated memory when
+/// it goes out of scope.
 #[derive(Debug)]
 pub(crate) struct PhysicalBuffer {
-    ptr: NonNull<[u8]>,
+    start_page: usize,
+    num_pages: usize,
 }
 
 impl PhysicalBuffer {
-    pub(crate) fn allocate(
-        len_bytes: usize,
-        alignment: usize,
-    ) -> Result<Self, AllocZeroedBufferError> {
-        let layout = Layout::from_size_align(len_bytes, alignment)
-            .map_err(AllocZeroedBufferError::LayoutError)?;
-        let ptr = KERNEL_PHYSICAL_ALLOCATOR
-            .allocate_zeroed(layout)
-            .map_err(AllocZeroedBufferError::AllocError)?;
-        Ok(Self { ptr })
+    // Don't need to expose this b/c allocate_zeroed is safer.
+    fn allocate(min_bytes: usize) -> Result<Self, AllocError> {
+        let num_pages = min_bytes.div_ceil(PhysicalMemoryAllocator::PAGE_SIZE);
+        let start_page = KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
+            allocator
+                .allocator
+                .allocate_contiguous(num_pages)
+                .ok_or(AllocError)
+        })?;
+        Ok(Self {
+            start_page,
+            num_pages,
+        })
     }
 
-    pub(crate) fn allocate_value<T>(val: T) -> Result<Self, AllocZeroedBufferError> {
-        let layout = Layout::new::<T>();
-        let ptr = KERNEL_PHYSICAL_ALLOCATOR
-            .allocate_zeroed(layout)
-            .map_err(AllocZeroedBufferError::AllocError)?;
+    pub(crate) fn allocate_zeroed(min_bytes: usize) -> Result<Self, AllocError> {
+        let buffer = Self::allocate(min_bytes)?;
+        let ptr = buffer.address().as_u64() as *mut u8;
         unsafe {
-            ptr::write_volatile(ptr.as_ptr().cast::<T>(), val);
+            ptr::write_bytes(ptr, 0, buffer.len_bytes());
         }
-        Ok(Self { ptr })
+        Ok(buffer)
     }
 
-    /// Consumes the buffer and returns the underlying physical address and
-    /// length in bytes. NOTE: It is up to the caller to free this memory,
-    /// ideally by constructing a new buffer with
-    /// `PhysicalBuffer::from_raw_parts` and letting that `Drop`.
-    pub(crate) fn into_raw_parts(self) -> (PhysAddr, usize) {
+    pub(crate) fn address(&self) -> PhysAddr {
+        PhysAddr::new(self.start_page as u64 * PhysicalMemoryAllocator::PAGE_SIZE as u64)
+    }
+
+    pub(crate) fn len_bytes(&self) -> usize {
+        self.num_pages * PhysicalMemoryAllocator::PAGE_SIZE
+    }
+
+    pub(crate) unsafe fn write_offset<T>(&mut self, offset: usize, val: T) {
+        let buffer_len = self.len_bytes();
+        assert!(
+            offset < self.len_bytes(),
+            "tried to write value at offset {offset} but buffer only has {buffer_len} bytes"
+        );
+        let ptr = (self.address().as_u64() + offset as u64) as *mut T;
+        ptr::write_volatile(ptr, val);
+    }
+
+    // TODO: Don't allow leaking. We are only doing this temporarily.
+    pub(crate) fn leak(self) -> PhysAddr {
         let buf = core::mem::ManuallyDrop::new(self);
-        let addr = PhysAddr::new(buf.ptr.addr().get() as u64);
-        let len_bytes = buf.ptr.len();
-        (addr, len_bytes)
-    }
-
-    pub(crate) unsafe fn from_raw_parts(addr: PhysAddr, len_bytes: usize) -> Self {
-        let ptr = unsafe { nonnull_ptr_slice_from_addr_len(addr.as_u64() as usize, len_bytes) };
-        Self { ptr }
+        buf.address()
     }
 }
 
 impl Drop for PhysicalBuffer {
     fn drop(&mut self) {
-        // TODO: Is this correct? DRY with the `deallocate`, and perhaps add
-        // some types to ensure that we are converting to pages correctly. Also
-        // ensure that we do indeed "own" the entire page we are de-allocating.
-        let layout = unsafe {
-            Layout::from_size_align_unchecked(self.ptr.len(), PhysicalMemoryAllocator::PAGE_SIZE)
-        };
-        let u8_ptr = self.ptr.cast::<u8>();
-        unsafe {
-            KERNEL_PHYSICAL_ALLOCATOR.deallocate(u8_ptr, layout);
-        };
+        KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
+            allocator
+                .allocator
+                .free_contiguous(self.start_page, self.num_pages);
+        });
     }
 }

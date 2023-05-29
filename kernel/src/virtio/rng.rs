@@ -48,7 +48,7 @@ struct VirtIORNG {
     initialized_device: VirtIOInitializedDevice,
     // TODO: The only reason we use Vec is so we have a sized type. We shouldn't
     // need Vec here.
-    requests: Mutex<HashMap<DescIndex, Arc<InitCell<Vec<u8>>>>>,
+    requests: Mutex<HashMap<DescIndex, VirtIORNGRequest>>,
 }
 
 impl VirtIORNG {
@@ -93,21 +93,24 @@ impl VirtIORNG {
             .unwrap();
 
         // Create a descriptor chain for the buffer
-        let buffer =
-            PhysicalBuffer::allocate(num_bytes as usize, 4).expect("failed to allocate rng buffer");
-        let desc = ChainedVirtQueueDescriptorElem::from_buffer(
-            buffer,
-            num_bytes,
-            VirtQueueDescriptorFlags::new().with_device_write(true),
-        );
+        let buffer = PhysicalBuffer::allocate_zeroed(num_bytes as usize)
+            .expect("failed to allocate rng buffer");
+        let desc = ChainedVirtQueueDescriptorElem {
+            addr: buffer.address(),
+            len: num_bytes,
+            flags: VirtQueueDescriptorFlags::new().with_device_write(true),
+        };
         let desc_index = virtq.add_buffer(&[desc]);
 
         // Disable interrupts so IRQ doesn't deadlock the mutex
         let cell = x86_64::instructions::interrupts::without_interrupts(|| {
             let mut requests = self.requests.lock();
-            let cell = Arc::new(InitCell::new());
-            let copied_cell = cell.clone();
-            requests.insert(desc_index, cell);
+            let request = VirtIORNGRequest {
+                _descriptor_buffer: buffer,
+                cell: Arc::new(InitCell::new()),
+            };
+            let copied_cell = request.cell.clone();
+            requests.insert(desc_index, request);
             copied_cell
         });
 
@@ -136,6 +139,13 @@ bitflags! {
     }
 }
 
+#[derive(Debug)]
+struct VirtIORNGRequest {
+    // Buffer is kept here so we can drop it when we are done with the request.
+    _descriptor_buffer: PhysicalBuffer,
+    cell: Arc<InitCell<Vec<u8>>>,
+}
+
 fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
     let rng = VIRTIO_RNG.get().expect("VirtIO RNG not initialized");
 
@@ -147,7 +157,7 @@ fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
     let mut requests = rng.requests.lock();
 
     virtq.process_new_entries(|used_entry, mut descriptor_chain| {
-        let Some(cell) = requests.remove(&used_entry.desc_index()) else {
+        let Some(request) = requests.remove(&used_entry.desc_index()) else {
             serial_println!("VirtIO RNG: no request for used entry: {used_entry:#x?}");
             return;
         };
@@ -170,11 +180,9 @@ fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
             )
         };
 
-        cell.init(buffer.to_vec());
+        request.cell.init(buffer.to_vec());
 
-        // Free the buffer by creating it and dropping it
-        let buffer =
-            unsafe { PhysicalBuffer::from_raw_parts(descriptor.addr, descriptor.len as usize) };
-        drop(buffer);
+        // N.B. The request's buffer gets dropped here! Just being explicit.
+        drop(request);
     });
 }

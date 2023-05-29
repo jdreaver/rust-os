@@ -58,13 +58,15 @@ pub(crate) fn virtio_block_get_id(device_index: usize) {
         .get_virtqueue(VirtQueueIndex(0))
         .unwrap();
 
-    let (data_addr, _) = PhysicalBuffer::allocate(BlockRequest::GET_ID_DATA_LEN as usize, 8)
+    let data_addr = PhysicalBuffer::allocate_zeroed(BlockRequest::GET_ID_DATA_LEN as usize)
         .expect("failed to allocate GetID buffer")
-        .into_raw_parts();
+        // TODO: Don't leak here
+        .leak();
 
     let request = BlockRequest::GetID { data_addr };
     let raw_request = request.to_raw();
-    virtq.add_buffer(&raw_request.to_descriptor_chain());
+    let desc_chain = raw_request.to_descriptor_chain();
+    virtq.add_buffer(&desc_chain);
     virtq.notify_device();
 }
 
@@ -375,17 +377,26 @@ impl RawBlockRequest {
         // TODO: Ensure all of these descriptor components are dropped!
 
         // Allocate header
-        let header_buffer = PhysicalBuffer::allocate_value(RawBlockRequestHeader {
-            request_type: self.request_type as u32,
-            reserved: 0,
-            sector: self.sector,
-        })
-        .expect("failed to allocate RawBlockRequest header");
-        let header_desc = ChainedVirtQueueDescriptorElem::from_buffer(
-            header_buffer,
-            core::mem::size_of::<RawBlockRequestHeader>() as u32,
-            VirtQueueDescriptorFlags::new().with_device_write(false),
-        );
+        let header_size = core::mem::size_of::<RawBlockRequestHeader>() as u32;
+        let mut header_buffer = PhysicalBuffer::allocate_zeroed(header_size as usize)
+            .expect("failed to allocate RawBlockRequest header");
+        unsafe {
+            header_buffer.write_offset(
+                0,
+                RawBlockRequestHeader {
+                    request_type: self.request_type as u32,
+                    reserved: 0,
+                    sector: self.sector,
+                },
+            );
+        };
+
+        let header_desc = ChainedVirtQueueDescriptorElem {
+            // TODO: Don't leak
+            addr: header_buffer.leak(),
+            len: header_size,
+            flags: VirtQueueDescriptorFlags::new().with_device_write(false),
+        };
 
         // Buffer descriptor
         //
@@ -401,13 +412,19 @@ impl RawBlockRequest {
         // TODO: This is a waste of an entire page! We should allocate this
         // along with the header. We should probably also just use a slab
         // allocator or a sort of physically contiguous heap for this.
-        let status_buffer = PhysicalBuffer::allocate_value(self.status as u8)
+        let status_size = core::mem::size_of::<BlockRequestStatus>() as u32;
+        let mut status_buffer = PhysicalBuffer::allocate_zeroed(status_size as usize)
             .expect("failed to allocate RawBlockRequest status");
-        let status_desc = ChainedVirtQueueDescriptorElem::from_buffer(
-            status_buffer,
-            core::mem::size_of::<u8>() as u32,
-            VirtQueueDescriptorFlags::new().with_device_write(true),
-        );
+        unsafe {
+            status_buffer.write_offset(0, self.status);
+        };
+
+        let status_desc = ChainedVirtQueueDescriptorElem {
+            // TODO: Don't leak
+            addr: status_buffer.leak(),
+            len: status_size,
+            flags: VirtQueueDescriptorFlags::new().with_device_write(true),
+        };
 
         [header_desc, buffer_desc, status_desc]
     }
