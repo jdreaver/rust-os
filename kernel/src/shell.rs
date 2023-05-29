@@ -233,11 +233,32 @@ fn run_command(command: &Command) {
         }
         Command::VirtIOBlockRead { device_id, sector } => {
             serial_println!("Reading VirtIO block sector {sector}...");
-            virtio::virtio_block_read(*device_id, *sector);
+            let cell = virtio::virtio_block_read(*device_id, *sector);
+            let response = cell.wait_spin();
+            let virtio::VirtIOBlockResponse::Read{ data } = response else {
+                serial_println!("Unexpected response from block request: {response:x?}");
+                return;
+            };
+            serial_println!("Got block data: {data:x?}");
+
+            // If we detect a FAT filesystem, print out the BIOS Parameter Block
+            if let [0xeb, 0x3c, 0x90] = &data[..3] {
+                let bios_param_block: fat::BIOSParameterBlock = unsafe {
+                    let ptr = data.as_ptr().cast::<fat::BIOSParameterBlock>();
+                    ptr.read()
+                };
+                serial_println!("BIOS Parameter Block: {:#x?}", bios_param_block);
+            }
         }
         Command::VirtIOBlockID { device_id } => {
             serial_println!("Reading VirtIO block device ID...");
-            virtio::virtio_block_get_id(*device_id);
+            let cell = virtio::virtio_block_get_id(*device_id);
+            let response = cell.wait_spin();
+            let virtio::VirtIOBlockResponse::GetID{ id } = response else {
+                serial_println!("Unexpected response from block request: {response:x?}");
+                return;
+            };
+            serial_println!("Got block ID: {id}");
         }
         Command::Unknown(command) => {
             serial_println!("Unknown command: {}", command);

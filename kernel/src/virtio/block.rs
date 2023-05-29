@@ -1,3 +1,5 @@
+use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::bitflags;
 use core::mem;
@@ -6,6 +8,7 @@ use spin::{Mutex, RwLock};
 use crate::interrupts::InterruptHandlerID;
 use crate::memory::PhysicalBuffer;
 use crate::registers::RegisterRO;
+use crate::sync::InitCell;
 use crate::{register_struct, serial_println, strings};
 
 use super::device::VirtIOInitializedDevice;
@@ -47,51 +50,22 @@ pub(crate) fn virtio_block_print_devices() {
     serial_println!("virtio block devices: {:#x?}", devices);
 }
 
-pub(crate) fn virtio_block_get_id(device_index: usize) {
+pub(crate) fn virtio_block_get_id(device_index: usize) -> Arc<InitCell<VirtIOBlockResponse>> {
     let device_lock = VIRTIO_BLOCK.read();
     let device = device_lock.get(device_index).expect("invalid device index");
-
-    let virtqueue = device
-        .initialized_device
-        .get_virtqueue(VirtIOBlockDevice::QUEUE_INDEX)
-        .unwrap();
-
-    let request = BlockRequest::GetID;
-    let raw_request = request.to_raw();
-    let (desc_chain, buffer) = raw_request.to_descriptor_chain();
-
-    // Disable interrupts so IRQ doesn't deadlock the mutex
-    x86_64::instructions::interrupts::without_interrupts(|| {
-        let mut virtqueue_data = device.virtqueue_data.lock();
-        virtqueue_data.add_buffer(virtqueue, &desc_chain, buffer);
-        virtqueue.notify_device();
-    });
+    device.add_request(&BlockRequest::GetID)
 }
 
-pub(crate) fn virtio_block_read(device_index: usize, sector: u64) {
+pub(crate) fn virtio_block_read(
+    device_index: usize,
+    sector: u64,
+) -> Arc<InitCell<VirtIOBlockResponse>> {
     let device_lock = VIRTIO_BLOCK.read();
     let device = device_lock.get(device_index).expect("invalid device index");
-
-    let virtqueue = device
-        .initialized_device
-        .get_virtqueue(VirtIOBlockDevice::QUEUE_INDEX)
-        .unwrap();
-
-    let request = BlockRequest::Read { sector };
-    let raw_request = request.to_raw();
-    let (desc_chain, buffer) = raw_request.to_descriptor_chain();
-
-    // Disable interrupts so IRQ doesn't deadlock the mutex
-    x86_64::instructions::interrupts::without_interrupts(|| {
-        let mut virtqueue_data = device.virtqueue_data.lock();
-        virtqueue_data.add_buffer(virtqueue, &desc_chain, buffer);
-        virtqueue.notify_device();
-    });
+    device.add_request(&BlockRequest::Read { sector })
 }
 
 fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
-    serial_println!("!!! virtio_block_interrupt !!!");
-
     let device_lock = VIRTIO_BLOCK.read();
     let device = device_lock
         .get(handler_id as usize)
@@ -103,15 +77,15 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
         .get_virtqueue(VirtIOBlockDevice::QUEUE_INDEX)
         .unwrap();
 
-    virtqueue_data.process_new_entries(virtqueue, |used_entry, mut descriptor_chain, buffer| {
-        let Some(buffer) = buffer else {
+    virtqueue_data.process_new_entries(virtqueue, |used_entry, mut descriptor_chain, data| {
+        let Some(data) = data else {
             serial_println!("VirtIO Block: no virtqueue data entry for used entry: {used_entry:#x?}");
             return;
         };
+        let buffer = data.buffer;
 
         let raw_request = RawBlockRequest::from_descriptor_chain(&mut descriptor_chain);
         let request = BlockRequest::from_raw(&raw_request);
-        serial_println!("Got response: {:#x?}", request);
 
         match request {
             BlockRequest::Read { sector: _ } => {
@@ -121,22 +95,9 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
                         BlockRequest::READ_DATA_LEN as usize,
                     )
                 };
-                serial_println!("Read response: {:x?}", bytes);
-
-                // If we detect a FAT filesystem, print out the BIOS Parameter Block
-                //
-                // TODO: Abstract this out of here
-                if let [0xeb, 0x3c, 0x90] = &bytes[..3] {
-                    let bios_param_block: fat::BIOSParameterBlock = unsafe {
-                        let ptr = buffer.address().as_u64() as *const fat::BIOSParameterBlock;
-                        ptr.read()
-                    };
-                    serial_println!("BIOS Parameter Block: {:#x?}", bios_param_block);
-                }
+                data.cell.init(VirtIOBlockResponse::Read { data: bytes.to_vec() });
             }
             BlockRequest::GetID => {
-                // The used entry should be using the exact same buffer we just
-                // created, but let's pretend we didn't know that.
                 let s = unsafe {
                     // The device ID response is a null-terminated string with a max
                     // size of the buffer size (if the string size == buffer size, there
@@ -146,7 +107,7 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
                         BlockRequest::GET_ID_DATA_LEN as usize,
                     )
                 };
-                serial_println!("Device ID response: {s}");
+                data.cell.init(VirtIOBlockResponse::GetID { id: String::from(s) });
             }
         }
 
@@ -160,7 +121,7 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
 struct VirtIOBlockDevice {
     initialized_device: VirtIOInitializedDevice,
     _block_config: BlockConfigRegisters,
-    virtqueue_data: Mutex<VirtQueueData<PhysicalBuffer>>,
+    virtqueue_data: Mutex<VirtQueueData<BlockDeviceDescData>>,
 }
 
 impl VirtIOBlockDevice {
@@ -194,6 +155,30 @@ impl VirtIOBlockDevice {
             _block_config: block_config,
             virtqueue_data: Mutex::new(virtqueue_data),
         }
+    }
+
+    fn add_request(&self, request: &BlockRequest) -> Arc<InitCell<VirtIOBlockResponse>> {
+        let raw_request = request.to_raw();
+        let (desc_chain, buffer) = raw_request.to_descriptor_chain();
+
+        // Disable interrupts so IRQ doesn't deadlock the mutex
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            let mut virtqueue_data = self.virtqueue_data.lock();
+            let data = BlockDeviceDescData {
+                buffer,
+                cell: Arc::new(InitCell::new()),
+            };
+            let copied_cell = data.cell.clone();
+
+            let virtqueue = self
+                .initialized_device
+                .get_virtqueue(Self::QUEUE_INDEX)
+                .unwrap();
+
+            virtqueue_data.add_buffer(virtqueue, &desc_chain, data);
+            virtqueue.notify_device();
+            copied_cell
+        })
     }
 }
 
@@ -492,4 +477,17 @@ impl BlockRequestStatus {
             _ => None,
         }
     }
+}
+
+#[derive(Debug)]
+struct BlockDeviceDescData {
+    // Buffer is kept here so we can drop it when we are done with the request.
+    buffer: PhysicalBuffer,
+    cell: Arc<InitCell<VirtIOBlockResponse>>,
+}
+
+#[derive(Debug)]
+pub(crate) enum VirtIOBlockResponse {
+    Read { data: Vec<u8> },
+    GetID { id: String },
 }

@@ -91,10 +91,10 @@ make test
 
 ## TODO
 
+- Multi-tasking (see resources below)
+  - Task sleep
+  - Have shell be its own task and it waits on sub-tasks
 - VirtIO improvements:
-  - Abstract and improve request/response queue from rng
-  - Ensure we zero out descriptors after using them so we don't accidentally reuse the buffer
-  - Improve memory "ownership" ergonomics, ensuring buffers are dropped after use. Maybe abstract into a common layer somehow?
   - Create a physically contiguous heap, or slab allocator, or something for virtio buffer requests so we don't waste an entire page per tiny allocation.
     - Ensure we are still satisfying any alignment requirements for buffers. Read the spec!
   - Locking: we need to lock writes (I think?), but we should be able to read from the queue without locking. This should be ergonomic. I don't necessarily want to bury a mutex deep in the code.
@@ -109,7 +109,6 @@ make test
 - bitmap-alloc
   - Make page vs byte address part of the API b/c conversion is tricky and requires `div_ceil`. Newtypes/functions for both?
     - We could embrace `PhysAddr`, `PhysFrame`, `Size4KiB`, etc, but that would introduce dep on `x86_64` crate
-- Multi-tasking (see resources below)
 - Make a simple shell that runs hard-coded program names (not separate processes yet! Just inline code on the current thread)
   - Integrate with multi-tasking. Make a new task for the thing being run, and the shell's task simply waits for the sub-task to complete.
   - Show register values, internal structures, etc
