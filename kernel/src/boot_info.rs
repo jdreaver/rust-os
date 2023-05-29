@@ -25,7 +25,6 @@ pub(crate) struct BootInfo {
 
 // We need to implement Send for BootInfo so it can be used with `Once`.
 // `LimineFramebuffer` uses `core::ptr::NonNull` which is not `Send`.
-#[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for BootInfo {}
 
 impl BootInfo {

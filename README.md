@@ -92,10 +92,9 @@ make test
 ## TODO
 
 - VirtIO improvements:
-  - Proper request queue/response. Shell should be able to enqueue a request and poll for a response.
-    - Each device can have a request queue that stores a callback function to be called with the response
-    - When a request is enqueued, we add the descriptor and avail ring entry, and record the descriptor entry so we know which descriptor to watch.
-    - The interrupt with go through new used ring entries, and will call a callback function if one exists for that descriptor.
+  - Abstract and improve request/response queue from rng
+    - Instead of `VecDeque`, have a `HashMap<DescIndex, Request>`. Requires adding callback _before_ informing device of new buffer.
+    - Instead of a callback function, consider returning an `Arc<Mutex<response_type>>`. Then client thread can wait. Maybe even a wrapper type that helps with spin loop. In the future we can replace it with actual thread sleeping.
   - Allocate buffers on the fly instead of using static buffers, or have client provide buffer
     - Reuse them if we are reusing a descriptor, or free them.
   - Allocation and pointers: avoid manually calling `memory` alloc functions and passing around pointers

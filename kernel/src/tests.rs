@@ -5,7 +5,7 @@ use core::fmt::Write;
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 use x86_64::structures::paging::{Size2MiB, Size4KiB};
 
-use crate::{boot_info, hpet, interrupts, memory, scheduler, serial_println, virtio};
+use crate::{boot_info, hpet, interrupts, memory, scheduler, serial_println};
 
 static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
 
@@ -26,10 +26,6 @@ pub(crate) fn run_misc_tests() {
     writeln!(text_buffer, "World!").expect("failed to write to text buffer");
 
     text_buffer.flush(&mut framebuffer);
-
-    // Request some VirtIO RNG bytes
-    virtio::request_random_numbers();
-    virtio::request_random_numbers();
 
     // Print out some test addresses
     let addresses = [

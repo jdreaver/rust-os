@@ -1,7 +1,10 @@
+use core::fmt;
 use core::ptr;
 
+use alloc::boxed::Box;
+use alloc::collections::VecDeque;
 use bitflags::bitflags;
-use spin::RwLock;
+use spin::{Mutex, RwLock};
 use x86_64::VirtAddr;
 
 use crate::interrupts::InterruptHandlerID;
@@ -39,12 +42,12 @@ pub(crate) fn try_init_virtio_rng(device_config: VirtIODeviceConfig) {
     VIRTIO_RNG.write().replace(virtio_rng);
 }
 
-pub(crate) fn request_random_numbers() {
+pub(crate) fn request_random_numbers<F: FnOnce(Box<[u8]>) + 'static>(callback: F) {
     VIRTIO_RNG
         .read()
         .as_ref()
         .expect("VirtIO RNG not initialized")
-        .request_random_numbers();
+        .request_random_numbers(Box::new(callback));
 }
 
 /// See "5.4 Entropy Device" in the VirtIO spec. The virtio entropy device
@@ -52,6 +55,7 @@ pub(crate) fn request_random_numbers() {
 #[derive(Debug)]
 struct VirtIORNG {
     initialized_device: VirtIOInitializedDevice,
+    requests: Mutex<VecDeque<VirtIORNGRequest>>,
 }
 
 impl VirtIORNG {
@@ -69,7 +73,10 @@ impl VirtIORNG {
         let initialized_device =
             VirtIOInitializedDevice::new(device_config, |_: &mut RNGFeatureBits| {});
 
-        Self { initialized_device }
+        Self {
+            initialized_device,
+            requests: Mutex::new(VecDeque::new()),
+        }
     }
 
     fn enable_msix(&mut self, processor_id: u8) {
@@ -84,7 +91,13 @@ impl VirtIORNG {
         );
     }
 
-    fn request_random_numbers(&self) {
+    fn request_random_numbers(&self, callback: Box<dyn FnOnce(Box<[u8]>)>) {
+        // Disable interrupts so IRQ doesn't deadlock the mutex
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            let mut requests = self.requests.lock();
+            requests.push_back(VirtIORNGRequest { callback });
+        });
+
         let virtq = self
             .initialized_device
             .get_virtqueue(Self::QUEUE_INDEX)
@@ -112,15 +125,21 @@ bitflags! {
     }
 }
 
-fn virtio_rng_interrupt(vector: u8, handler_id: InterruptHandlerID) {
-    serial_println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    serial_println!(
-        "!! VirtIO RNG interrupt (vec={}, id={}) !!!!!!!",
-        vector,
-        handler_id
-    );
-    serial_println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+/// A request to the VirtIO RNG device.
+struct VirtIORNGRequest {
+    callback: Box<dyn FnOnce(Box<[u8]>)>,
+}
 
+// FnOnce doesn't implement Send.
+unsafe impl Send for VirtIORNGRequest {}
+
+impl fmt::Debug for VirtIORNGRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VirtIORNGRequest").finish()
+    }
+}
+
+fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
     let rng_lock = VIRTIO_RNG.read();
     let rng = rng_lock.as_ref().expect("VirtIO RNG not initialized");
 
@@ -129,9 +148,19 @@ fn virtio_rng_interrupt(vector: u8, handler_id: InterruptHandlerID) {
         .get_virtqueue(VirtIORNG::QUEUE_INDEX)
         .unwrap();
 
+    let mut requests = rng.requests.lock();
+
     virtq.process_new_entries(|used_entry, mut descriptor_chain| {
+        let Some(request) = requests.pop_front() else {
+            serial_println!("VirtIO RNG: no request for used entry: {used_entry:#x?}");
+            return;
+        };
+
         let descriptor = descriptor_chain.next().expect("no descriptor in chain");
-        // serial_println!("Got used entry: {:#x?}", (used_entry, descriptor));
+        assert!(
+            descriptor_chain.next().is_none(),
+            "more than one descriptor in RNG chain"
+        );
 
         // The used entry should be using the exact same buffer we just
         // created, but let's pretend we didn't know that.
@@ -144,6 +173,7 @@ fn virtio_rng_interrupt(vector: u8, handler_id: InterruptHandlerID) {
                 used_entry.len as usize,
             )
         };
-        serial_println!("RNG buffer: {:x?}", buffer);
+
+        (request.callback)(buffer.into());
     });
 }
