@@ -126,22 +126,19 @@ struct PhysicalMemoryAllocator<'a> {
     allocator: BitmapAllocator<'a>,
 }
 
-impl PhysicalMemoryAllocator<'_> {
-    const PAGE_SIZE: usize = Size4KiB::SIZE as usize;
+pub(crate) const PAGE_SIZE: usize = Size4KiB::SIZE as usize;
 
+impl PhysicalMemoryAllocator<'_> {
     unsafe fn new<I, R>(memory_regions: R) -> Self
     where
         I: Iterator<Item = MemoryRegion>,
         R: Fn() -> I,
     {
-        let allocator = bootstrap_allocator(
-            Self::PAGE_SIZE,
-            memory_regions,
-            |bitmap_addr, bitmap_len| {
+        let allocator =
+            bootstrap_allocator(PAGE_SIZE, memory_regions, |bitmap_addr, bitmap_len| {
                 let ptr = bitmap_addr as *mut u64;
                 core::slice::from_raw_parts_mut(ptr, bitmap_len)
-            },
-        );
+            });
         Self { allocator }
     }
 }
@@ -149,14 +146,14 @@ impl PhysicalMemoryAllocator<'_> {
 unsafe impl<S: PageSize> FrameAllocator<S> for PhysicalMemoryAllocator<'_> {
     fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
         assert!(
-            S::SIZE as usize % Self::PAGE_SIZE == 0,
+            S::SIZE as usize % PAGE_SIZE == 0,
             "frame size {:?} must be a multiple of page size {}",
             S::SIZE,
-            Self::PAGE_SIZE
+            PAGE_SIZE
         );
-        let num_pages = S::SIZE as usize / Self::PAGE_SIZE;
+        let num_pages = S::SIZE as usize / PAGE_SIZE;
         let frame_page = self.allocator.allocate_contiguous(num_pages)?;
-        let frame_address = PhysAddr::new(frame_page as u64 * Self::PAGE_SIZE as u64);
+        let frame_address = PhysAddr::new(frame_page as u64 * PAGE_SIZE as u64);
         let frame: PhysFrame<S> = PhysFrame::containing_address(frame_address);
         Some(frame)
     }
@@ -275,7 +272,7 @@ pub(crate) struct PhysicalBuffer {
 impl PhysicalBuffer {
     // Don't need to expose this b/c allocate_zeroed is safer.
     fn allocate(min_bytes: usize) -> Result<Self, AllocError> {
-        let num_pages = min_bytes.div_ceil(PhysicalMemoryAllocator::PAGE_SIZE);
+        let num_pages = min_bytes.div_ceil(PAGE_SIZE);
         let start_page = KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
             allocator
                 .allocator
@@ -298,11 +295,11 @@ impl PhysicalBuffer {
     }
 
     pub(crate) fn address(&self) -> PhysAddr {
-        PhysAddr::new(self.start_page as u64 * PhysicalMemoryAllocator::PAGE_SIZE as u64)
+        PhysAddr::new(self.start_page as u64 * PAGE_SIZE as u64)
     }
 
     pub(crate) fn len_bytes(&self) -> usize {
-        self.num_pages * PhysicalMemoryAllocator::PAGE_SIZE
+        self.num_pages * PAGE_SIZE
     }
 
     pub(crate) unsafe fn write_offset<T>(&mut self, offset: usize, val: T) {
