@@ -71,6 +71,7 @@ pub(crate) fn virtio_block_get_id(device_index: usize) {
     };
     let raw_request = request.to_raw();
     virtq.add_buffer(&raw_request.to_descriptor_chain());
+    virtq.notify_device();
 }
 
 pub(crate) fn virtio_block_read(device_index: usize, sector: u64) {
@@ -93,6 +94,7 @@ pub(crate) fn virtio_block_read(device_index: usize, sector: u64) {
     };
     let raw_request = request.to_raw();
     virtq.add_buffer(&raw_request.to_descriptor_chain());
+    virtq.notify_device();
 }
 
 fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
