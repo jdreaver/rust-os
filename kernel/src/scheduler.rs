@@ -64,9 +64,9 @@ pub fn start_multitasking() {
         // we'll deadlock.
         let mut queue = RUN_QUEUE.lock();
         let (_, next_task) = queue.set_next_pending_task_running();
-        next_task.kernel_stack_pointer.0
+        next_task.kernel_stack_pointer
     };
-    let current_task_ptr = core::ptr::addr_of!(current_task.kernel_stack_pointer.0);
+    let current_task_ptr = core::ptr::addr_of!(current_task.kernel_stack_pointer);
     unsafe {
         switch_to_task(current_task_ptr, next_task_ptr);
     }
@@ -83,8 +83,8 @@ pub(crate) fn run_scheduler() {
             let mut queue = RUN_QUEUE.lock();
             let (prev_task, next_task) = queue.set_next_pending_task_running();
             let prev_task = prev_task.expect("no previous task");
-            let prev_stack_ptr = core::ptr::addr_of!(prev_task.kernel_stack_pointer.0);
-            let next_stack_ptr = next_task.kernel_stack_pointer.0;
+            let prev_stack_ptr = core::ptr::addr_of!(prev_task.kernel_stack_pointer);
+            let next_stack_ptr = next_task.kernel_stack_pointer;
             (
                 prev_stack_ptr,
                 prev_task.name,
@@ -100,7 +100,7 @@ pub(crate) fn run_scheduler() {
                 return;
             }
             serial_println!(
-                "SCHEDULER: Switching from '{prev_name}' SP: {:#x?} (@ {:?}) to '{next_name}' SP: {:#x?}",
+                "SCHEDULER: Switching from '{prev_name}' SP: {:x?} (@ {:?}) to '{next_name}' SP: {:x?}",
                 *prev_stack_ptr,
                 prev_stack_ptr,
                 next_stack_ptr
@@ -156,14 +156,14 @@ impl Task {
 }
 
 #[repr(transparent)]
-#[derive(Debug)]
-pub(crate) struct TaskKernelStackPointer(pub(crate) usize);
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+struct TaskKernelStackPointer(usize);
 
 /// Architecture-specific assembly code to switch from one task to another.
 #[naked]
 unsafe extern "C" fn switch_to_task(
-    previous_task_stack_pointer: *const usize,
-    next_task_stack_pointer: usize,
+    previous_task_stack_pointer: *const TaskKernelStackPointer,
+    next_task_stack_pointer: TaskKernelStackPointer,
 ) {
     unsafe {
         asm!(
@@ -216,7 +216,10 @@ unsafe extern "C" fn switch_to_task(
             // Re-enable interrupts before returning
             //
             // TODO: Is this always correct? What if interrupts are supposed to
-            // be disabled in the new task?
+            // be disabled in the new task? I think we only need to do this the
+            // first time we switch to a task, because the new task isn't
+            // exiting from `run_scheduler`. Maybe we could just create a
+            // special setup function for new tasks.
             "sti",
             "ret",
             options(noreturn),
