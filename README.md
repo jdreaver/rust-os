@@ -107,7 +107,9 @@ make test
   - Remember features we negotiate, and ensure we are accounting for the different features in the logic (especially around notifications)
 - Create `sync` module that has synchronization primitives
   - Wrapper around `spin::Mutex` that also disables interrupts, similar to Linux's `spin_lock_irqsave` (`x86_64::interrupts::without_interrupts` is handy here). Might need our own custom `MutexGuard` wrapper that handles re-enabling interrupts on `drop()`
+  - In the future we should disable preemption when spin locks are taken
   - Queues wrapped by spinlocks, useful for device drivers?
+  - Replace a lot of my static mutexes with a wrapper around something like <https://docs.rs/atomic_ref/latest/atomic_ref/>, where an `init` function writes the correct value but after that we just fetch the value.
 - bitmap-alloc
   - Make page vs byte address part of the API b/c conversion is tricky and requires `div_ceil`. Newtypes/functions for both?
     - We could embrace `PhysAddr`, `PhysFrame`, `Size4KiB`, etc, but that would introduce dep on `x86_64` crate
