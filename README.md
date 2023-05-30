@@ -92,9 +92,7 @@ make test
 ## TODO
 
 - Multi-tasking (see resources below)
-  - Enabling interrupts in `switch_task`: we need to create a "task setup" function that new tasks jump to that enables interrupts
-    - Linux and xv6 both also release the scheduler lock here too. We could `force_unlock` the scheduler lock.
-  - Consider storing context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>
+  - Consider storing context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>. This makes it easier to manipulate during setup.
   - Wrap started threads so we remove their task from the task list when they exit
   - Task sleep
   - Have shell be its own task and it waits on sub-tasks
@@ -385,12 +383,30 @@ Other higher-level Linux resources:
   - [`finish_task_switch()`](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/sched/core.c#L5143)
   - [`__kthread_create_on_node()` (main part of `kthread_create()`)](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/kthread.c#L414)
     - [`kthreadd()`, main worker function of the `kthreadd` task](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/kthread.c#L718)
+    - [`create_kthread`](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/kthread.c#L399)
+      - Note how it calls `kernel_thread` with [`kthread`](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/kthread.c#L330) and then passes in the `create` value as an arg! That is, it runs `kthread`.
+      - We actually deal with `fn` and `fn_arg` below in `copy_thread`
     - [calls `kernel_thread()`](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/fork.c#L2732)
     - [`kernel_clone()`, primary kthread cloning function](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/fork.c#L2642)
     - [`copy_process()`](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/fork.c#L2012)
     - [`copy_thread()`](https://elixir.bootlin.com/linux/v6.3.2/source/arch/x86/kernel/process.c#L135)
+    - [`kthread_frame_init`](https://elixir.bootlin.com/linux/v6.3.2/source/arch/x86/include/asm/switch_to.h#L77) sets up the frame
     - [x86_64 `ret_from_fork`](https://elixir.bootlin.com/linux/v6.3.2/source/arch/x86/entry/entry_64.S#L279)
+      - This is where we call the passed in function w/ an arg, notably `kthread` with the kthread creation args:
+        ```asm
+        	testq	%rbx, %rbx			/* from kernel_thread? */
+        	jnz	1f				/* kernel threads are uncommon */
+
+                ...
+
+        1:
+        	/* kernel thread */
+        	UNWIND_HINT_EMPTY
+        	movq	%r12, %rdi
+        	CALL_NOSPEC rbx
+        ```
     - [`schedule_tail`, the first thing a forked thread must call](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/sched/core.c#L5230)
+    - When the kthread is done we call [`do_exit`](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/exit.c#L805) and then [`do_task_dead`](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/sched/core.c#L6635)
 - xv6
   - [`forkret()`, first think run by a process for the first time](https://github.com/IamAdiSri/xv6/blob/4cee212b832157fde3289f2088eb5a9d8713d777/proc.c#L406-L425)
 

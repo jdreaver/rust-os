@@ -73,25 +73,17 @@ pub fn start_multitasking() {
 }
 
 pub(crate) fn run_scheduler() {
-    // Disable interrupts while we mess around with the task queue. Note that
-    // switch_to_task re-enables them as well.
+    // Disable interrupts and take a lock on the the run queue. When a task is
+    // started for the very first time, `task_setup` handles re-enabling these.
+    // Otherwise, they will be re-enabled by the next task when `run_scheduler`
+    // is exited.
     x86_64::instructions::interrupts::without_interrupts(|| {
-        let (prev_stack_ptr, prev_name, next_stack_ptr, next_name) = {
-            // We only need to lock the task queue while we rearrange it. We
-            // must release this lock before we call `switch_to_task` or else it
-            // will never be released.
-            let mut queue = RUN_QUEUE.lock();
-            let (prev_task, next_task) = queue.set_next_pending_task_running();
-            let prev_task = prev_task.expect("no previous task");
-            let prev_stack_ptr = core::ptr::addr_of!(prev_task.kernel_stack_pointer);
-            let next_stack_ptr = next_task.kernel_stack_pointer;
-            (
-                prev_stack_ptr,
-                prev_task.name,
-                next_stack_ptr,
-                next_task.name,
-            )
-        };
+        let mut queue = RUN_QUEUE.lock();
+
+        let (prev_task, next_task) = queue.set_next_pending_task_running();
+        let prev_task = prev_task.expect("no previous task");
+        let prev_stack_ptr = core::ptr::addr_of!(prev_task.kernel_stack_pointer);
+        let next_stack_ptr = next_task.kernel_stack_pointer;
 
         unsafe {
             if *prev_stack_ptr == next_stack_ptr {
@@ -100,9 +92,11 @@ pub(crate) fn run_scheduler() {
                 return;
             }
             serial_println!(
-                "SCHEDULER: Switching from '{prev_name}' SP: {:x?} (@ {:?}) to '{next_name}' SP: {:x?}",
+                "SCHEDULER: Switching from '{}' SP: {:x?} (@ {:?}) to '{}' SP: {:x?}",
+                prev_task.name,
                 *prev_stack_ptr,
                 prev_stack_ptr,
+                next_task.name,
                 next_stack_ptr
             );
             switch_to_task(prev_stack_ptr, next_stack_ptr);
@@ -134,14 +128,23 @@ impl Task {
         // for when we run switch_to_task. The general purpose registers don't
         // matter, but the rip register must point to where we want to start
         // execution.
-        let rip_bytes_end = KERNEL_STACK_SIZE;
-        let rip_bytes_start = KERNEL_STACK_SIZE - 8;
+
+        // Push the RIP for the given start_fn function onto the stack.
+        let start_fn_rip_bytes_end = KERNEL_STACK_SIZE;
+        let start_fn_rip_bytes_start = KERNEL_STACK_SIZE - 8;
         let start_fn_address = start_fn as usize;
-        kernel_stack[rip_bytes_start..rip_bytes_end]
+        kernel_stack[start_fn_rip_bytes_start..start_fn_rip_bytes_end]
             .copy_from_slice(&(start_fn_address as u64).to_le_bytes());
 
+        // Push the RIP for the task_setup.
+        let task_setup_rip_bytes_end = KERNEL_STACK_SIZE - 8;
+        let task_setup_rip_bytes_start = KERNEL_STACK_SIZE - 16;
+        let task_setup_address = task_setup as usize;
+        kernel_stack[task_setup_rip_bytes_start..task_setup_rip_bytes_end]
+            .copy_from_slice(&(task_setup_address as u64).to_le_bytes());
+
         let num_general_purpose_registers = 15; // Ensure this matches `switch_to_task`!!!
-        let num_stored_registers = num_general_purpose_registers + 1; // +1 for RIP
+        let num_stored_registers = num_general_purpose_registers + 2; // +1 for start_fn_rip, +1 for task_start RIP
         let kernel_stack_pointer = TaskKernelStackPointer(
             // * 8 is because each register is 8 bytes
             kernel_stack.as_ptr() as usize + KERNEL_STACK_SIZE - num_stored_registers * 8,
@@ -158,6 +161,32 @@ impl Task {
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 struct TaskKernelStackPointer(usize);
+
+/// Code that is run when a task is switched to
+/// for the very first time.
+///
+/// This is similar to Linux's
+/// [`ret_from_fork`](https://elixir.bootlin.com/linux/v6.3.2/source/arch/x86/entry/entry_64.S#L279)
+/// and
+/// [`schedule_tail`](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/sched/core.c#L5230)
+/// functions, as well as xv6's
+/// [`forkret`](https://github.com/IamAdiSri/xv6/blob/4cee212b832157fde3289f2088eb5a9d8713d777/proc.c#L406-L425).
+
+// `extern "C"` is important here. We jump to this function via a `ret` in
+// `switch_to_task`. I don't know what kinds of things Rust would add or assume
+// without `extern "C"`, so this is just "safe" (I think).
+extern "C" fn task_setup() {
+    // Release the scheduler lock
+    unsafe {
+        RUN_QUEUE.force_unlock();
+    };
+
+    // Re-enable interrupts. Interrupts are disabled in `run_scheduler`. Ensure
+    // that we re-enable them.
+    x86_64::instructions::interrupts::enable();
+
+    // When we return, we will pop the RIP and jump to the task's actual start function.
+}
 
 /// Architecture-specific assembly code to switch from one task to another.
 #[naked]
@@ -213,14 +242,6 @@ unsafe extern "C" fn switch_to_task(
             "pop rcx",
             "pop rbx",
             "pop rax",
-            // Re-enable interrupts before returning
-            //
-            // TODO: Is this always correct? What if interrupts are supposed to
-            // be disabled in the new task? I think we only need to do this the
-            // first time we switch to a task, because the new task isn't
-            // exiting from `run_scheduler`. Maybe we could just create a
-            // special setup function for new tasks.
-            "sti",
             "ret",
             options(noreturn),
         );
