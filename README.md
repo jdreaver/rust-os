@@ -92,6 +92,10 @@ make test
 ## TODO
 
 - Multi-tasking (see resources below)
+  - Enabling interrupts in `switch_task`: we need to create a "task setup" function that new tasks jump to that enables interrupts
+    - Linux and xv6 both also release the scheduler lock here too. We could `force_unlock` the scheduler lock.
+  - Consider storing context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>
+  - Wrap started threads so we remove their task from the task list when they exit
   - Task sleep
   - Have shell be its own task and it waits on sub-tasks
 - VirtIO improvements:
@@ -375,6 +379,20 @@ Other higher-level Linux resources:
   - Video that goes over this same xv6 code: [Operating Systems Lecture 25: Context switching in xv6](https://www.youtube.com/watch?v=fEnWqibCwo0)
 - <https://stackoverflow.com/questions/12630214/context-switch-internals>
 - Excellent history of `switch_to` in Linux over the years <https://www.maizure.org/projects/evolution_x86_context_switch_linux/>
+- Linux source:
+  - [`__schedule()`](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/sched/core.c#L6506)
+  - [`context_switch()`](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/sched/core.c#L5255)
+  - [`finish_task_switch()`](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/sched/core.c#L5143)
+  - [`__kthread_create_on_node()` (main part of `kthread_create()`)](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/kthread.c#L414)
+    - [`kthreadd()`, main worker function of the `kthreadd` task](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/kthread.c#L718)
+    - [calls `kernel_thread()`](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/fork.c#L2732)
+    - [`kernel_clone()`, primary kthread cloning function](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/fork.c#L2642)
+    - [`copy_process()`](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/fork.c#L2012)
+    - [`copy_thread()`](https://elixir.bootlin.com/linux/v6.3.2/source/arch/x86/kernel/process.c#L135)
+    - [x86_64 `ret_from_fork`](https://elixir.bootlin.com/linux/v6.3.2/source/arch/x86/entry/entry_64.S#L279)
+    - [`schedule_tail`, the first thing a forked thread must call](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/sched/core.c#L5230)
+- xv6
+  - [`forkret()`, first think run by a process for the first time](https://github.com/IamAdiSri/xv6/blob/4cee212b832157fde3289f2088eb5a9d8713d777/proc.c#L406-L425)
 
 ### Clock sources and time
 
