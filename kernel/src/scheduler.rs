@@ -128,6 +128,8 @@ impl Task {
         // for when we run switch_to_task. The general purpose registers don't
         // matter, but the rip register must point to where we want to start
         // execution.
+        //
+        // TODO: This would be a lot easier if we used an actual struct for this.
 
         // Push the RIP for the given start_fn function onto the stack.
         let start_fn_rip_bytes_end = KERNEL_STACK_SIZE;
@@ -143,8 +145,17 @@ impl Task {
         kernel_stack[task_setup_rip_bytes_start..task_setup_rip_bytes_end]
             .copy_from_slice(&(task_setup_address as u64).to_le_bytes());
 
+        // Set rdi, which will end up as the first argument to task_setup when
+        // we `ret` to it in `switch_to_task` (this is the C calling
+        // convention).
+        let task_rdi_bytes_end = KERNEL_STACK_SIZE - (8 * 8);
+        let task_rdi_bytes_start = KERNEL_STACK_SIZE - (9 * 8);
+        let task_rdi = 0xdead_beef_u64;
+        kernel_stack[task_rdi_bytes_start..task_rdi_bytes_end]
+            .copy_from_slice(&task_rdi.to_le_bytes());
+
         let num_general_purpose_registers = 15; // Ensure this matches `switch_to_task`!!!
-        let num_stored_registers = num_general_purpose_registers + 2; // +1 for start_fn_rip, +1 for task_start RIP
+        let num_stored_registers = num_general_purpose_registers + 2; // +1 for start_fn_rip, +1 for task_setup RIP
         let kernel_stack_pointer = TaskKernelStackPointer(
             // * 8 is because each register is 8 bytes
             kernel_stack.as_ptr() as usize + KERNEL_STACK_SIZE - num_stored_registers * 8,
@@ -162,7 +173,7 @@ impl Task {
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 struct TaskKernelStackPointer(usize);
 
-/// Code that is run when a task is switched to
+/// Architecture-specific assembly code that is run when a task is switched to
 /// for the very first time.
 ///
 /// This is similar to Linux's
@@ -171,11 +182,12 @@ struct TaskKernelStackPointer(usize);
 /// [`schedule_tail`](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/sched/core.c#L5230)
 /// functions, as well as xv6's
 /// [`forkret`](https://github.com/IamAdiSri/xv6/blob/4cee212b832157fde3289f2088eb5a9d8713d777/proc.c#L406-L425).
+///
+/// `extern "C"` is important here. We get to this function via a `ret` in
+/// `switch_to_task`, and we need to pass in an argument via the rdi register.
+extern "C" fn task_setup(test_value: u64) {
+    serial_println!("task_setup test_value: {:#x}", test_value);
 
-// `extern "C"` is important here. We jump to this function via a `ret` in
-// `switch_to_task`. I don't know what kinds of things Rust would add or assume
-// without `extern "C"`, so this is just "safe" (I think).
-extern "C" fn task_setup() {
     // Release the scheduler lock
     unsafe {
         RUN_QUEUE.force_unlock();
