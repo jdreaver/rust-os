@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
+use core::marker::PhantomData;
 use core::ptr;
-use core::sync::atomic::{AtomicPtr, Ordering};
+use core::sync::atomic::{AtomicPtr, AtomicU8, Ordering};
 
 /// A cell that can be initialized only once. This is useful because we can
 /// share it between multiple threads without having to use a mutex, and since
@@ -71,10 +72,6 @@ impl<T> AtomicRef<T> {
         unsafe { self.ptr.load(Ordering::SeqCst).as_ref() }
     }
 
-    pub(crate) fn pop(&self) -> Option<T> {
-        self.swap(None)
-    }
-
     pub(crate) fn swap(&self, value: Option<T>) -> Option<T> {
         let ptr = value.map_or(ptr::null_mut(), |value| Box::into_raw(Box::new(value)));
         let prev = self.ptr.swap(ptr, Ordering::SeqCst);
@@ -94,5 +91,44 @@ impl<T> Drop for AtomicRef<T> {
         if !ptr.is_null() {
             unsafe { Box::from_raw(ptr) };
         }
+    }
+}
+
+/// Wrapper around an `AtomicU8` that supports transparently converting to/from
+/// an enum.
+#[derive(Debug)]
+pub(crate) struct AtomicU8Enum<T> {
+    val: AtomicU8,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> AtomicU8Enum<T>
+where
+    T: TryFrom<u8> + Into<u8>,
+{
+    pub(crate) fn new(val: T) -> Self {
+        Self {
+            val: AtomicU8::new(val.into()),
+            _phantom: PhantomData,
+        }
+    }
+
+    fn convert_from_u8(val: u8) -> T {
+        T::try_from(val).map_or_else(
+            |_| {
+                panic!("ERROR: Invalid enum value {val}");
+            },
+            |enum_val| enum_val,
+        )
+    }
+
+    pub(crate) fn get(&self) -> T {
+        let val = self.val.load(Ordering::SeqCst);
+        Self::convert_from_u8(val)
+    }
+
+    pub(crate) fn swap(&self, val: T) -> T {
+        let old_int = self.val.swap(val.into(), Ordering::SeqCst);
+        Self::convert_from_u8(old_int)
     }
 }

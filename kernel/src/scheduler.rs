@@ -6,7 +6,7 @@ use core::arch::asm;
 use spin::Mutex;
 
 use crate::acpi::ACPIInfo;
-use crate::sync::{AtomicRef, InitCell};
+use crate::sync::{AtomicRef, AtomicU8Enum, InitCell};
 use crate::{apic, serial_println};
 
 /// Currently running process on each CPU. The index is the CPU's LAPIC ID.
@@ -53,10 +53,6 @@ impl RunningCPUTasks {
 
     fn running_task(&self) -> Option<&Task> {
         self.cpu_task_ptr().get()
-    }
-
-    fn pop_running_task(&self) -> Option<Task> {
-        self.cpu_task_ptr().pop()
     }
 
     fn swap_running_task(&self, new_task: Task) -> Option<Task> {
@@ -143,7 +139,7 @@ pub(crate) fn run_scheduler() {
 
             // If the current task is killed, throw this task away and try
             // again.
-            if !next_task.killed {
+            if next_task.state.get() != TaskState::Killed {
                 break next_task;
             }
 
@@ -190,7 +186,7 @@ pub(crate) fn run_scheduler() {
 pub(crate) struct Task {
     name: &'static str,
     kernel_stack_pointer: TaskKernelStackPointer,
-    killed: bool,
+    state: AtomicU8Enum<TaskState>,
     _kernel_stack: Box<[u8; KERNEL_STACK_SIZE]>,
 }
 
@@ -262,7 +258,7 @@ impl Task {
         Self {
             name,
             kernel_stack_pointer,
-            killed: false,
+            state: AtomicU8Enum::new(TaskState::ReadyToRun),
             _kernel_stack: kernel_stack,
         }
     }
@@ -271,6 +267,33 @@ impl Task {
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 struct TaskKernelStackPointer(usize);
+
+#[derive(Debug, PartialEq, Eq)]
+#[repr(u8)]
+enum TaskState {
+    /// ReadyToRun covers both a running task and a task that is currently
+    /// running.
+    ReadyToRun,
+    Killed,
+}
+
+impl TryFrom<u8> for TaskState {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::ReadyToRun),
+            1 => Ok(Self::Killed),
+            _ => Err(()),
+        }
+    }
+}
+
+impl From<TaskState> for u8 {
+    fn from(value: TaskState) -> Self {
+        value as Self
+    }
+}
 
 /// Architecture-specific assembly code that is run when a task is switched to
 /// for the very first time.
@@ -301,11 +324,8 @@ extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *const ()) {
 
     // Mark the current task as dead and run the scheduler.
     x86_64::instructions::interrupts::without_interrupts(|| {
-        let mut current_task = running_cpu_tasks()
-            .pop_running_task()
-            .expect("no running task");
-        current_task.killed = true;
-        running_cpu_tasks().swap_running_task(current_task);
+        let current_task = running_cpu_tasks().running_task().expect("no running task");
+        current_task.state.swap(TaskState::Killed);
     });
 
     run_scheduler();
