@@ -3,46 +3,51 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use core::arch::asm;
 
-use spin::{Mutex, MutexGuard};
+use spin::Mutex;
 
 use crate::acpi::ACPIInfo;
-use crate::sync::InitCell;
+use crate::sync::{AtomicRef, InitCell};
 use crate::{apic, hlt_loop, serial_println};
 
 /// Currently running process on each CPU. The index is the CPU's LAPIC ID.
 static RUNNING_CPU_TASKS: InitCell<RunningCPUTasks> = InitCell::new();
 
+fn running_cpu_tasks() -> &'static RunningCPUTasks {
+    RUNNING_CPU_TASKS
+        .get()
+        .expect("running CPU tasks not initialized")
+}
+
 /// All pending tasks that aren't running on a CPU
 static RUN_QUEUE: Mutex<RunQueue> = Mutex::new(RunQueue::new());
 
 struct RunningCPUTasks {
-    tasks: Vec<Mutex<Option<Task>>>,
+    tasks: Vec<AtomicRef<Task>>,
 }
 
 impl RunningCPUTasks {
     fn new(max_lapic_id: u8) -> Self {
         let mut tasks = Vec::with_capacity(max_lapic_id as usize + 1);
         for _ in 0..=max_lapic_id {
-            tasks.push(Mutex::new(None));
+            tasks.push(AtomicRef::new());
         }
 
         Self { tasks }
     }
 
-    fn running_task_lock(&self) -> MutexGuard<Option<Task>> {
+    fn cpu_task_ptr(&self) -> &AtomicRef<Task> {
         let lapic_id = apic::lapic_id();
         self.tasks
             .get(lapic_id as usize)
             .expect("could not get running CPU task for the current LAPIC ID")
-            .lock()
     }
 
-    unsafe fn force_unlock_running_task(&self) {
-        let lapic_id = apic::lapic_id();
-        self.tasks
-            .get(lapic_id as usize)
-            .expect("could not get running CPU task for the current LAPIC ID")
-            .force_unlock();
+    fn running_task(&self) -> Option<&Task> {
+        self.cpu_task_ptr().get()
+    }
+
+    fn swap_running_task(&self, new_task: Task) -> Option<Task> {
+        self.cpu_task_ptr().swap(Some(new_task))
     }
 }
 
@@ -107,11 +112,7 @@ pub fn start_multitasking() {
             .pop_next_task()
             .expect("failed to initialize multi-tasking: no tasks to run");
         let stack_ptr = next_task.kernel_stack_pointer;
-        RUNNING_CPU_TASKS
-            .get()
-            .expect("running CPU tasks not initialized")
-            .running_task_lock()
-            .replace(next_task);
+        running_cpu_tasks().swap_running_task(next_task);
         stack_ptr
     };
     let current_task_ptr = core::ptr::addr_of!(current_task.kernel_stack_pointer);
@@ -127,25 +128,20 @@ pub(crate) fn run_scheduler() {
     // is exited.
     x86_64::instructions::interrupts::without_interrupts(|| {
         let mut queue = RUN_QUEUE.lock();
-        let mut running_task = RUNNING_CPU_TASKS
-            .get()
-            .expect("running CPU tasks not initialized")
-            .running_task_lock();
-
         // Move the current task to the back of the queue, pop the next task,
         // and mark the next task as the current task.
         let Some(next_task) = queue.pop_next_task() else {
             // No tasks to run, so just return.
             return;
         };
-        let Some(prev_task) = running_task.replace(next_task) else {
+        let Some(prev_task) = running_cpu_tasks().swap_running_task(next_task) else {
             panic!("tried switching tasks, but there was amazingly no currently running task on the CPU");
         };
         queue.push_task(prev_task);
 
         // Create new references to the next and previous tasks so we get stable
         // pointers to them.
-        let next_task = running_task.as_ref().expect("no task running on the CPU");
+        let next_task = running_cpu_tasks().running_task().expect("no running task");
         let prev_task = queue
             .pending_tasks
             .back()
@@ -262,10 +258,6 @@ extern "C" fn task_setup(task_fn: extern "C" fn() -> (), arg: u64) {
     // Release the scheduler lock
     unsafe {
         RUN_QUEUE.force_unlock();
-        RUNNING_CPU_TASKS
-            .get()
-            .expect("no running task")
-            .force_unlock_running_task();
     };
 
     // Re-enable interrupts. Interrupts are disabled in `run_scheduler`. Ensure

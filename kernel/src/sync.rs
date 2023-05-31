@@ -53,3 +53,42 @@ impl<T> Drop for InitCell<T> {
         }
     }
 }
+
+/// An atomic reference to heap allocated value of type `T`.
+#[derive(Debug)]
+pub(crate) struct AtomicRef<T> {
+    ptr: AtomicPtr<T>,
+}
+
+impl<T> AtomicRef<T> {
+    pub(crate) fn new() -> Self {
+        Self {
+            ptr: AtomicPtr::new(ptr::null_mut()),
+        }
+    }
+
+    pub(crate) fn get(&self) -> Option<&T> {
+        unsafe { self.ptr.load(Ordering::SeqCst).as_ref() }
+    }
+
+    pub(crate) fn swap(&self, value: Option<T>) -> Option<T> {
+        let ptr = value.map_or(ptr::null_mut(), |value| Box::into_raw(Box::new(value)));
+        let prev = self.ptr.swap(ptr, Ordering::SeqCst);
+        if prev.is_null() {
+            None
+        } else {
+            Some(unsafe { *Box::from_raw(prev) })
+        }
+    }
+}
+
+impl<T> Drop for AtomicRef<T> {
+    fn drop(&mut self) {
+        // If the pointer is set, drop the value by converting back into a Box
+        // and letting that drop.
+        let ptr = self.ptr.load(Ordering::SeqCst);
+        if !ptr.is_null() {
+            unsafe { Box::from_raw(ptr) };
+        }
+    }
+}
