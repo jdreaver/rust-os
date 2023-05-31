@@ -7,7 +7,7 @@ use spin::Mutex;
 
 use crate::acpi::ACPIInfo;
 use crate::sync::{AtomicRef, InitCell};
-use crate::{apic, hlt_loop, serial_println};
+use crate::{apic, serial_println};
 
 /// Currently running process on each CPU. The index is the CPU's LAPIC ID.
 static RUNNING_CPU_TASKS: InitCell<RunningCPUTasks> = InitCell::new();
@@ -104,18 +104,6 @@ pub(crate) fn push_task(name: &'static str, start_fn: extern "C" fn() -> ()) {
 }
 
 pub fn start_multitasking() {
-    extern "C" fn dummy_task_fn() {
-        serial_println!("FATAL: Dummy task was switched back to!");
-        hlt_loop();
-    }
-
-    // Create a dummy task that we can switch away from. We will never return
-    // here, so the values don't matter.
-    //
-    // TODO: The dummy task stack that we have to create in a Box never gets
-    // dropped because we never return here. This is a memory leak.
-    let current_task = Task::new("__START_MULTITASKING__", dummy_task_fn);
-
     // Just pick the next task in the queue and switch to it.
     let next_task_ptr = {
         // This lock must be dropped before we call `switch_to_task` or else
@@ -128,9 +116,12 @@ pub fn start_multitasking() {
         running_cpu_tasks().swap_running_task(next_task);
         stack_ptr
     };
-    let current_task_ptr = core::ptr::addr_of!(current_task.kernel_stack_pointer);
+
+    // This is a dummy pointer just so switch_to_task has somewhere to store the
+    // old stack pointer.
+    let dummy_current_task_ptr = TaskKernelStackPointer(0);
     unsafe {
-        switch_to_task(current_task_ptr, next_task_ptr);
+        switch_to_task(&dummy_current_task_ptr, next_task_ptr);
     }
 }
 
