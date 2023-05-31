@@ -15,11 +15,11 @@ pub(crate) fn init(acpi_info: &ACPIInfo) {
     IOAPIC.init(ioapic);
 }
 
-pub(crate) fn install_irq(interrupt_vector: u8, irq_entry: u8) {
+pub(crate) fn install_irq(interrupt_vector: u8, irq_entry: IOAPICIRQNumber) {
     let ioapic = IOAPIC.get().expect("IOAPIC not initialized!");
 
     ioapic.write_ioredtbl(
-        irq_entry,
+        irq_entry as u8,
         IOAPICRedirectionTableRegister::new()
             .with_interrupt_vector(interrupt_vector)
             .with_interrupt_mask(false)
@@ -28,6 +28,23 @@ pub(crate) fn install_irq(interrupt_vector: u8, irq_entry: u8) {
             .with_delivery_status(false)
             .with_destination_field(ioapic.ioapic_id().id()),
     );
+}
+
+/// Global list of registered IOAPIC IRQs to ensure we don't have collisions.
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub(crate) enum IOAPICIRQNumber {
+    _Reserved = 0,
+
+    /// Assumes that the keyboard IRQ for the IOAPIC is 1, which is the same as
+    /// if we were using the 8259 PIC. If we wanted to determine this
+    /// dynamically, we could read the IOAPIC redirection table entry for IRQ 1,
+    /// or if that doesn't exist I think we need to parse some ACPI AML.
+    Keyboard = 1,
+
+    // Some reserved numbers in the middle. I don't trust that these aren't
+    // already taken.
+    TestHPET = 10,
 }
 
 /// See <https://wiki.osdev.org/IOAPIC>

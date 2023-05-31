@@ -8,14 +8,8 @@ use crate::{interrupts, ioapic, serial_println};
 
 pub(crate) fn init_keyboard() {
     let interrupt_vector = interrupts::install_interrupt(1, keyboard_interrupt_handler);
-    ioapic::install_irq(interrupt_vector, KEYBOARD_IOAPIC_REDTBL_INDEX);
+    ioapic::install_irq(interrupt_vector, ioapic::IOAPICIRQNumber::Keyboard);
 }
-
-/// Assumes that the keyboard IRQ for the IOAPIC is 1, which is the same as if
-/// we were using the 8259 PIC. If we wanted to determine this dynamically, we
-/// could read the IOAPIC redirection table entry for IRQ 1, or if that doesn't
-/// exist I think we need to parse some ACPI AML.
-const KEYBOARD_IOAPIC_REDTBL_INDEX: u8 = 1;
 
 fn keyboard_interrupt_handler(_vector: u8, _handler_id: InterruptHandlerID) {
     // https://wiki.osdev.org/%228042%22_PS/2_Controller#PS.2F2_Controller_IO_Ports

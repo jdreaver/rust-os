@@ -92,9 +92,16 @@ make test
 ## TODO
 
 - Multi-tasking (see resources below)
-  - Consider storing context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>. This makes it easier to manipulate during setup.
   - Task sleep
+    - Create `tick` system that is always running, say at 100Hz
+    - Implement timers, which execute a callback function at the specified time with the specified data (similar to Linux's timers).
+    - Add `Sleeping` state to tasks, make sure to add sleeping tasks to back of scheduler queue (don't throw them away like killed tasks)
+    - Add a `sleep_millis` function like Linux's `schedule_timeout` that creates a timer that wakes up the task. Time timer can have a pointer to the task (wrapped in `Arc<>`).
+    - Hook up `sleep_millis` to some new test task in a loop.
+  - Add an idle task per CPU
   - Have shell be its own task and it waits on sub-tasks
+  - Create a wrapper around `InitCell`, or just something like `InitCell`, that holds a reference to a `Task` and sets its state to `ReadyToRun` when the cell value is set. This is what the shell task will use to wait.
+  - Consider storing context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>. This makes it easier to manipulate during setup.
 - VirtIO improvements:
   - Create a physically contiguous heap, or slab allocator, or something for virtio buffer requests so we don't waste an entire page per tiny allocation.
     - Ensure we are still satisfying any alignment requirements for buffers. Read the spec!
@@ -116,8 +123,7 @@ make test
   - Have help be meaningful
   - Split up tests and have subcommands like `test all` (all can be optional) `test interrupts`, `test memory-mappings`, etc
   - Eventually replace using the serial device with vsock or virtio-console for speed. Maybe the primary interface to the OS could be a TUI, which would be super neat!
-- IOAPIC: Make IOAPIC IRQ numbers an enum for better safety, and throw an error if IOAPIC enum assigned to twice
-  - Or, perhaps we dynamically assign these for the ones that don't need to be well-known, like the keyboard one
+- IOAPIC: Throw an error if IOAPIC number assigned to twice
 - Investigate if we should be doing `apic::end_of_interrupt` for handlers on their behalf or not.
   - Consider the timer when we do scheduling. I think we want to call EOI _before_ the end of the timer handler, because we will be calling `schedule()` and we will be off to a new process
     - This is what Linux does. It calls `schedule()` in the "exit" part of an interrupt handler. Maybe that is where we should put it: in the common handler routing after ACK'ing the interrupt.

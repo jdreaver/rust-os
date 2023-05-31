@@ -18,7 +18,7 @@ pub(crate) unsafe fn init(hpet_apic_base_address: usize) {
 pub(crate) fn enable_periodic_timer_handler(
     handler_id: InterruptHandlerID,
     handler: InterruptHandler,
-    ioapic_irq_number: u8,
+    ioapic_irq_number: ioapic::IOAPICIRQNumber,
     timer_number: u8,
     interval: &Milliseconds,
 ) {
@@ -28,7 +28,7 @@ pub(crate) fn enable_periodic_timer_handler(
     let hpet = HPET.get().expect("HPET not initialized");
 
     let interval_femtoseconds = interval.femtoseconds();
-    hpet.enable_periodic_timer(timer_number, ioapic_irq_number, interval_femtoseconds);
+    hpet.enable_periodic_timer(timer_number, ioapic_irq_number as u8, interval_femtoseconds);
 
     let timer = hpet.timer_registers(timer_number);
     serial_println!("intalled HPET timer {timer_number}: {timer:#x?}");
