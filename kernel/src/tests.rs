@@ -112,7 +112,7 @@ pub(crate) fn test_scheduler() {
     scheduler::start_multitasking();
 }
 
-fn task_1_test_task() {
+extern "C" fn task_1_test_task() {
     loop {
         serial_println!("task 1 is running!");
         let p = naive_nth_prime(2500);
@@ -121,7 +121,7 @@ fn task_1_test_task() {
     }
 }
 
-fn task_2_test_task() {
+extern "C" fn task_2_test_task() {
     loop {
         serial_println!("task 2 is running!");
         let p = naive_nth_prime(3000);

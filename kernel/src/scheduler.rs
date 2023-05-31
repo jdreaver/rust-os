@@ -40,13 +40,13 @@ impl RunQueue {
 }
 
 /// Pushes a task onto the task queue.
-pub(crate) fn push_task(name: &'static str, start_fn: fn() -> ()) {
+pub(crate) fn push_task(name: &'static str, start_fn: extern "C" fn() -> ()) {
     let task = Task::new(name, start_fn);
     RUN_QUEUE.lock().pending_tasks.push_back(task);
 }
 
 pub fn start_multitasking() {
-    fn dummy_task_fn() {
+    extern "C" fn dummy_task_fn() {
         serial_println!("FATAL: Dummy task was switched back to!");
         hlt_loop();
     }
@@ -120,7 +120,7 @@ const KERNEL_STACK_SIZE: usize = 4096 * 4;
 
 impl Task {
     /// Create a new task with the given ID and kernel stack pointer.
-    pub(crate) fn new(name: &'static str, start_fn: fn() -> ()) -> Self {
+    pub(crate) fn new(name: &'static str, start_fn: extern "C" fn() -> ()) -> Self {
         // Allocate a kernel stack
         let mut kernel_stack = Box::new([0; KERNEL_STACK_SIZE]);
 
@@ -131,31 +131,33 @@ impl Task {
         //
         // TODO: This would be a lot easier if we used an actual struct for this.
 
-        // Push the RIP for the given start_fn function onto the stack.
-        let start_fn_rip_bytes_end = KERNEL_STACK_SIZE;
-        let start_fn_rip_bytes_start = KERNEL_STACK_SIZE - 8;
-        let start_fn_address = start_fn as usize;
-        kernel_stack[start_fn_rip_bytes_start..start_fn_rip_bytes_end]
-            .copy_from_slice(&(start_fn_address as u64).to_le_bytes());
-
         // Push the RIP for the task_setup.
-        let task_setup_rip_bytes_end = KERNEL_STACK_SIZE - 8;
-        let task_setup_rip_bytes_start = KERNEL_STACK_SIZE - 16;
+        let task_setup_rip_bytes_end = KERNEL_STACK_SIZE;
+        let task_setup_rip_bytes_start = KERNEL_STACK_SIZE - 8;
         let task_setup_address = task_setup as usize;
         kernel_stack[task_setup_rip_bytes_start..task_setup_rip_bytes_end]
             .copy_from_slice(&(task_setup_address as u64).to_le_bytes());
 
-        // Set rdi, which will end up as the first argument to task_setup when
+        // Set rsi, which will end up as the second argument to task_setup when
         // we `ret` to it in `switch_to_task` (this is the C calling
         // convention).
-        let task_rdi_bytes_end = KERNEL_STACK_SIZE - (8 * 8);
-        let task_rdi_bytes_start = KERNEL_STACK_SIZE - (9 * 8);
+        let task_rdi_bytes_end = KERNEL_STACK_SIZE - (6 * 8);
+        let task_rdi_bytes_start = KERNEL_STACK_SIZE - (7 * 8);
         let task_rdi = 0xdead_beef_u64;
         kernel_stack[task_rdi_bytes_start..task_rdi_bytes_end]
             .copy_from_slice(&task_rdi.to_le_bytes());
 
+        // Set rdi, which will end up as the first argument to task_setup when
+        // we `ret` to it in `switch_to_task` (this is the C calling
+        // convention).
+        let task_rdi_bytes_end = KERNEL_STACK_SIZE - (7 * 8);
+        let task_rdi_bytes_start = KERNEL_STACK_SIZE - (8 * 8);
+        let task_rdi = start_fn as usize;
+        kernel_stack[task_rdi_bytes_start..task_rdi_bytes_end]
+            .copy_from_slice(&task_rdi.to_le_bytes());
+
         let num_general_purpose_registers = 15; // Ensure this matches `switch_to_task`!!!
-        let num_stored_registers = num_general_purpose_registers + 2; // +1 for start_fn_rip, +1 for task_setup RIP
+        let num_stored_registers = num_general_purpose_registers + 1; // +1 for task_setup RIP
         let kernel_stack_pointer = TaskKernelStackPointer(
             // * 8 is because each register is 8 bytes
             kernel_stack.as_ptr() as usize + KERNEL_STACK_SIZE - num_stored_registers * 8,
@@ -185,8 +187,8 @@ struct TaskKernelStackPointer(usize);
 ///
 /// `extern "C"` is important here. We get to this function via a `ret` in
 /// `switch_to_task`, and we need to pass in an argument via the rdi register.
-extern "C" fn task_setup(test_value: u64) {
-    serial_println!("task_setup test_value: {:#x}", test_value);
+extern "C" fn task_setup(task_fn: extern "C" fn() -> (), arg: u64) {
+    serial_println!("task_setup arg: {arg:#x}");
 
     // Release the scheduler lock
     unsafe {
@@ -197,7 +199,14 @@ extern "C" fn task_setup(test_value: u64) {
     // that we re-enable them.
     x86_64::instructions::interrupts::enable();
 
-    // When we return, we will pop the RIP and jump to the task's actual start function.
+    task_fn();
+
+    serial_println!("task_setup: task_fn returned, halting");
+
+    // TODO: Remove ourselves from the task queue and call `run_scheduler` to
+    // switch to the next task.
+
+    hlt_loop();
 }
 
 /// Architecture-specific assembly code to switch from one task to another.
