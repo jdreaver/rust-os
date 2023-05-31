@@ -3,6 +3,7 @@ use core::ptr::NonNull;
 
 use acpi::mcfg::{Mcfg, McfgEntry};
 use acpi::platform::interrupt::Apic;
+use acpi::platform::ProcessorInfo;
 use acpi::{AcpiHandler, AcpiTable, AcpiTables, HpetInfo, PhysicalMapping};
 use x86_64::PhysAddr;
 
@@ -81,6 +82,16 @@ impl ACPIInfo {
     pub(crate) fn hpet_info(&self) -> HpetInfo {
         HpetInfo::new(&self.tables).expect("failed to get HPET info")
     }
+
+    pub(crate) fn processor_info(&self) -> ProcessorInfo {
+        let platform_info = self
+            .tables
+            .platform_info()
+            .expect("failed to get ACPI platform info");
+        platform_info
+            .processor_info
+            .expect("failed to get ACPI processor info")
+    }
 }
 
 /// We need to implement `acpi::AcpiHandler` to use the `acpi` crate. This is
@@ -123,16 +134,14 @@ pub(crate) fn print_acpi_info() {
     let info = acpi_info();
 
     let acpi_tables = &info.tables;
-    let platform_info = acpi_tables
-        .platform_info()
-        .expect("failed to get platform info");
-    if let Some(processor_info) = platform_info.processor_info {
-        serial_println!("ACPI processor info: {:?}", processor_info.boot_processor);
-        for (i, processor) in processor_info.application_processors.iter().enumerate() {
-            serial_println!("  ACPI application processor {}: {:?}", i, processor);
-        }
+
+    let processor_info = info.processor_info();
+    serial_println!("ACPI processor info: {:?}", processor_info.boot_processor);
+    for (i, processor) in processor_info.application_processors.iter().enumerate() {
+        serial_println!("  ACPI application processor {}: {:?}", i, processor);
     }
-    serial_println!("ACPI power profile: {:?}", platform_info.power_profile);
+
+    // serial_println!("ACPI power profile: {:?}", platform_info.power_profile);
 
     serial_println!("ACPI SDTs:");
     for (signature, sdt) in &acpi_tables.sdts {

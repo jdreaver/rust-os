@@ -30,6 +30,17 @@ pub(crate) fn end_of_interrupt() {
         .end_of_interrupt();
 }
 
+/// Get the local APIC ID for the current processor.
+pub(crate) fn lapic_id() -> u8 {
+    LOCAL_APIC
+        .get()
+        .expect("Local APIC not initialized")
+        .registers
+        .local_apic_id()
+        .read()
+        .id()
+}
+
 #[derive(Debug, Clone)]
 struct LocalAPIC {
     registers: LocalAPICRegisters,
@@ -64,7 +75,7 @@ register_struct!(
     /// APIC Register Address Map" in the Intel 64 Manual Volume 3. Also see
     /// <https://wiki.osdev.org/APIC>.
     pub(crate) LocalAPICRegisters {
-        0x20 => local_apic_id: RegisterRW<APICId>,
+        0x20 => local_apic_id: RegisterRW<APICIdRegister>,
         0x30 => local_apic_version: RegisterRO<APICVersion>,
         0x80 => task_priority: RegisterRW<u32>,
         0x90 => arbitration_priority: RegisterRO<u32>,
@@ -120,7 +131,7 @@ register_struct!(
 
 #[bitfield(u32)]
 /// See "11.4.6 Local APIC ID" in the Intel 64 Manual Volume 3.
-pub(crate) struct APICId {
+pub(crate) struct APICIdRegister {
     #[bits(24)]
     __reserved: u32,
     id: u8,

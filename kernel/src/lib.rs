@@ -72,6 +72,7 @@ pub fn start() -> ! {
     let acpi_info = acpi::acpi_info();
     apic::init_local_apic(acpi_info);
     ioapic::init(acpi_info);
+    scheduler::init(acpi_info);
 
     unsafe {
         hpet::init(acpi_info.hpet_info().base_address);
