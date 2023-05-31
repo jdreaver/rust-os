@@ -109,9 +109,9 @@ pub(crate) fn run_misc_tests() {
 pub(crate) fn test_scheduler() {
     scheduler::push_task("task 1", task_1_test_task, 0xdead_beef as *const ());
     scheduler::push_task("task 2", task_2_test_task, 0xabab_cdcd as *const ());
-    // scheduler::push_task("task 3", sleep_loop_task, core::ptr::null::<()>());
+    scheduler::push_task("task 3", sleep_loop_task, core::ptr::null::<()>());
 
-    scheduler::start_multitasking();
+    scheduler::run_scheduler();
 }
 
 extern "C" fn task_1_test_task(arg: *const ()) {
@@ -131,7 +131,7 @@ extern "C" fn task_2_test_task(arg: *const ()) {
     serial_println!("TASK 2 DONE!!!");
 }
 
-extern "C" fn _sleep_loop_task(_arg: *const ()) {
+extern "C" fn sleep_loop_task(_arg: *const ()) {
     loop {
         serial_println!("sleep_loop_task about to sleep...");
         scheduler::sleep(Milliseconds::new(1000));
