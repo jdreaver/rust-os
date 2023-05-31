@@ -42,7 +42,6 @@ macro_rules! external_stub_interrupt_handler {
 ///   - [`DEFINE_IDTENTRY_IRQ` def](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/include/asm/idtentry.h#L191)
 ///
 fn common_external_interrupt_handler(vector: u8) {
-    serial_println!("DEBUG: Interrupt: vector: {vector}");
     let &(interrupt_id, handler) = EXTERNAL_INTERRUPT_HANDLERS
         .lock()
         .get(vector as usize)
