@@ -93,7 +93,6 @@ make test
 
 - Multi-tasking (see resources below)
   - Task sleep
-    - Implement timers, which execute a callback function at the specified time with the specified data (similar to Linux's timers).
     - Add `Sleeping` state to tasks, make sure to add sleeping tasks to back of scheduler queue (don't throw them away like killed tasks)
     - Add a `sleep_millis` function like Linux's `schedule_timeout` that creates a timer that wakes up the task. Time timer can have a pointer to the task (wrapped in `Arc<>`).
     - Hook up `sleep_millis` to some new test task in a loop.

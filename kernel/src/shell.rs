@@ -4,7 +4,8 @@ use core::fmt;
 use spin::Mutex;
 use uefi::table::{Runtime, SystemTable};
 
-use crate::{acpi, boot_info, pci, serial, serial_print, serial_println, tests, virtio};
+use crate::hpet::Milliseconds;
+use crate::{acpi, boot_info, pci, serial, serial_print, serial_println, tests, tick, virtio};
 
 static NEXT_COMMAND_BUFFER: Mutex<ShellBuffer> = Mutex::new(ShellBuffer::new());
 
@@ -110,6 +111,7 @@ enum Command<'a> {
     VirtIOBlockList,
     VirtIOBlockRead { device_id: usize, sector: u64 },
     VirtIOBlockID { device_id: usize },
+    Timer(Milliseconds),
     Invalid,
     Unknown(&'a str),
 }
@@ -143,6 +145,10 @@ fn next_command(buffer: &[u8]) -> Option<Command> {
             let device_id = parse_or_print_error(device_id_str, "device ID")?;
             Some(Command::VirtIOBlockID { device_id })
         }
+        ["timer", milliseconds_str] => {
+            let milliseconds = parse_or_print_error(milliseconds_str, "milliseconds")?;
+            Some(Command::Timer(Milliseconds::new(milliseconds)))
+        }
         _ => Some(Command::Unknown(command_str)),
     }
 }
@@ -162,6 +168,7 @@ where
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_command(command: &Command) {
     match command {
         Command::TestMisc => {
@@ -259,6 +266,13 @@ fn run_command(command: &Command) {
                 return;
             };
             serial_println!("Got block ID: {id}");
+        }
+        Command::Timer(ms) => {
+            let inner_ms = *ms;
+            tick::add_relative_timer(*ms, move || {
+                serial_println!("Timer that lasted {inner_ms} expired!");
+            });
+            serial_println!("Created a timer for {ms} from now");
         }
         Command::Unknown(command) => {
             serial_println!("Unknown command: {}", command);

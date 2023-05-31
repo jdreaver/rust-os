@@ -1,4 +1,5 @@
 use core::fmt;
+use core::ops::Add;
 
 use bitfield_struct::bitfield;
 
@@ -20,7 +21,7 @@ pub(crate) fn enable_periodic_timer_handler(
     handler: InterruptHandler,
     ioapic_irq_number: ioapic::IOAPICIRQNumber,
     timer_number: HPETTimerNumber,
-    interval: &Milliseconds,
+    interval: Milliseconds,
 ) {
     let interrupt_vector = interrupts::install_interrupt(handler_id, handler);
     ioapic::install_irq(interrupt_vector, ioapic_irq_number);
@@ -42,6 +43,7 @@ pub(crate) enum HPETTimerNumber {
     TestHPET = 1,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Milliseconds(u64);
 
 impl Milliseconds {
@@ -49,7 +51,7 @@ impl Milliseconds {
         Self(milliseconds)
     }
 
-    fn femtoseconds(&self) -> u64 {
+    fn femtoseconds(self) -> u64 {
         self.0 * 1_000_000_000_000
     }
 
@@ -61,6 +63,14 @@ impl Milliseconds {
 impl fmt::Display for Milliseconds {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}ms", self.0)
+    }
+}
+
+impl Add for Milliseconds {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
     }
 }
 

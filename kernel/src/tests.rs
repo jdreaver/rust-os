@@ -163,7 +163,7 @@ pub(crate) fn test_hpet() {
         test_hpet_interrupt_handler,
         ioapic::IOAPICIRQNumber::TestHPET,
         hpet::HPETTimerNumber::TestHPET,
-        &hpet::Milliseconds::new(1000),
+        hpet::Milliseconds::new(1000),
     );
 }
 
