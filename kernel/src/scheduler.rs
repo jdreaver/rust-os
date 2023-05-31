@@ -132,6 +132,7 @@ pub(crate) fn run_scheduler() {
         // Move the current task to the back of the queue, pop the next task,
         // and mark the next task as the current task.
 
+        let mut sleeping_tasks = VecDeque::new();
         let next_task = loop {
             let Some(next_task) = queue.pop_next_task() else {
                 // No tasks to run, so just return.
@@ -142,13 +143,14 @@ pub(crate) fn run_scheduler() {
                 // If it is ready to run, select it
                 TaskState::ReadyToRun => break next_task,
                 // Push sleeping task to the back of the queue
-                TaskState::Sleeping => queue.push_task(next_task),
+                TaskState::Sleeping => sleeping_tasks.push_back(next_task),
                 // Let killed task drop
                 TaskState::Killed => {
                     serial_println!("Task {} was killed", next_task.name);
                 }
             }
         };
+        queue.pending_tasks.append(&mut sleeping_tasks);
 
         let Some(prev_task) = running_cpu_tasks().swap_running_task(next_task) else {
             panic!("tried switching tasks, but there was amazingly no currently running task on the CPU");

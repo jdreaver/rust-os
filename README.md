@@ -91,6 +91,7 @@ make test
 
 ## TODO
 
+- AtomicRef is unsound! `get()` happily gives you a reference that may go out of scope. Maybe we need to always deal with `Box`es, or wrap in `Arc`, or something, but `get()` in its current form has to go.
 - Multi-tasking (see resources below)
   - Task sleep
     - Add `Sleeping` state to tasks, make sure to add sleeping tasks to back of scheduler queue (don't throw them away like killed tasks)
