@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use alloc::collections::VecDeque;
+use alloc::collections::{BTreeMap, VecDeque};
 use alloc::vec::Vec;
 use core::arch::asm;
 
@@ -18,8 +18,10 @@ fn tasks_mutex() -> &'static Mutex<Tasks> {
 
 /// Holds all tasks in the kernel.
 struct Tasks {
-    running_tasks_by_cpu: Vec<Option<Task>>,
-    pending_tasks: VecDeque<Task>,
+    next_task_id: TaskId,
+    tasks: BTreeMap<TaskId, Task>,
+    running_tasks_by_cpu: Vec<Option<TaskId>>,
+    pending_tasks: VecDeque<TaskId>,
 }
 
 impl Tasks {
@@ -30,13 +32,42 @@ impl Tasks {
         }
 
         Self {
+            next_task_id: TaskId(1),
+            tasks: BTreeMap::new(),
             running_tasks_by_cpu,
             pending_tasks: VecDeque::new(),
         }
     }
 
+    fn new_task(
+        &mut self,
+        name: &'static str,
+        start_fn: KernelTaskStartFunction,
+        arg: *const (),
+    ) -> TaskId {
+        let id = self.next_task_id;
+        self.next_task_id.0 += 1;
+
+        let task = Task::new(id, name, start_fn, arg);
+        self.tasks.insert(id, task);
+        self.pending_tasks.push_back(id);
+        id
+    }
+
+    fn get_task_assert(&self, id: TaskId) -> &Task {
+        self.tasks.get(&id).map_or_else(
+            || panic!("tried to fetch task ID {id:?} but it does not exist"),
+            |task| task,
+        )
+    }
+
     /// Gets the currently running task on the current CPU.
     fn current_task(&self) -> Option<&Task> {
+        let id = self.current_task_id()?;
+        self.tasks.get(&id)
+    }
+
+    fn current_task_id(&self) -> Option<TaskId> {
         // Assert that interrupts are disabled. Otherwise, we could get
         // rescheduled onto another CPU and the LAPIC ID could change. xv6 does
         // this, but is it necessary?
@@ -46,13 +77,13 @@ impl Tasks {
         );
 
         let lapic_id = apic::lapic_id();
-        self.running_tasks_by_cpu
+        *self
+            .running_tasks_by_cpu
             .get(lapic_id as usize)
             .expect("could not get running CPU task for the current LAPIC ID")
-            .as_ref()
     }
 
-    fn current_task_mut(&mut self) -> &mut Option<Task> {
+    fn current_task_id_mut(&mut self) -> &mut Option<TaskId> {
         // Assert that interrupts are disabled. Otherwise, we could get
         // rescheduled onto another CPU and the LAPIC ID could change. xv6 does
         // this, but is it necessary?
@@ -78,17 +109,18 @@ impl Tasks {
         );
 
         let mut sleeping_tasks = VecDeque::new();
-        let next_task = loop {
-            let Some(next_task) = self.pending_tasks.pop_front() else {
-                // No tasks to run, so just return.
-                return (None, None)
+        let next_task_id: Option<TaskId> = loop {
+            let Some(next_task_id) = self.pending_tasks.pop_front() else {
+                // No tasks to run
+                break None;
             };
 
+            let next_task = self.get_task_assert(next_task_id);
             match next_task.state.get() {
                 // If it is ready to run, select it
-                TaskState::ReadyToRun => break next_task,
+                TaskState::ReadyToRun => break Some(next_task_id),
                 // Push sleeping task to the back of the queue
-                TaskState::Sleeping => sleeping_tasks.push_back(next_task),
+                TaskState::Sleeping => sleeping_tasks.push_back(next_task_id),
                 // Let killed task drop
                 TaskState::Killed => {
                     serial_println!("Task {} was killed", next_task.name);
@@ -97,22 +129,28 @@ impl Tasks {
         };
         self.pending_tasks.append(&mut sleeping_tasks);
 
-        // Move the previous task to the end of the queue and get a reference to
-        // it.
-        let prev_task = self.current_task_mut().replace(next_task);
-        let prev_task = if let Some(prev_task) = prev_task {
-            self.pending_tasks.push_back(prev_task);
-            self.pending_tasks.back()
-        } else {
-            None
+        let Some(next_task_id) = next_task_id else {
+            // Give up if nothing to schedule
+            return (None, None);
         };
 
-        // Get a reference to the next task now that it is in place.
-        let next_task = self.current_task();
+        // Move the previous task to the end of the queue and get a reference to
+        // it.
+        let prev_task_id = self.current_task_id_mut().replace(next_task_id);
+        if let Some(prev_task_id) = prev_task_id {
+            self.pending_tasks.push_back(prev_task_id);
+        };
+
+        // Get references to the tasks
+        let prev_task = prev_task_id.map(|id| self.get_task_assert(id));
+        let next_task = Some(self.get_task_assert(next_task_id));
 
         (prev_task, next_task)
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TaskId(u32);
 
 pub(crate) fn init(acpi_info: &ACPIInfo) {
     let processor_info = acpi_info.processor_info();
@@ -127,9 +165,12 @@ pub(crate) fn init(acpi_info: &ACPIInfo) {
 }
 
 /// Pushes a task onto the task queue.
-pub(crate) fn push_task(name: &'static str, start_fn: KernelTaskStartFunction, arg: *const ()) {
-    let task = Task::new(name, start_fn, arg);
-    tasks_mutex().lock().pending_tasks.push_back(task);
+pub(crate) fn push_task(
+    name: &'static str,
+    start_fn: KernelTaskStartFunction,
+    arg: *const (),
+) -> TaskId {
+    tasks_mutex().lock().new_task(name, start_fn, arg)
 }
 
 pub(crate) fn run_scheduler() {
@@ -142,13 +183,11 @@ pub(crate) fn run_scheduler() {
 
         let (prev_task, next_task) = tasks.round_robin_current_cpu_tasks();
 
-        let (next_stack_ptr, next_task_name) = match next_task {
-            Some(task) => (task.kernel_stack_pointer, task.name),
+        let Some(next_task) = next_task else {
             // Nothing to schedule. Return
-            None => {
-                return;
-            }
+            return;
         };
+        let next_stack_ptr = next_task.kernel_stack_pointer;
 
         // Used in case there is no previous task.
         //
@@ -156,9 +195,19 @@ pub(crate) fn run_scheduler() {
         // scheduler. Maybe we should always have the idle task running on every
         // CPU.
         let dummy_stack_ptr = TaskKernelStackPointer(0);
-        let (prev_stack_ptr, prev_task_name) = prev_task.map_or(
-            (core::ptr::addr_of!(dummy_stack_ptr), "__NO_PREV_TASK__"),
-            |task| (core::ptr::addr_of!(task.kernel_stack_pointer), task.name),
+        let (prev_stack_ptr, prev_task_id, prev_task_name) = prev_task.map_or(
+            (
+                core::ptr::addr_of!(dummy_stack_ptr),
+                TaskId(0),
+                "__NO_PREV_TASK__",
+            ),
+            |task| {
+                (
+                    core::ptr::addr_of!(task.kernel_stack_pointer),
+                    task.id,
+                    task.name,
+                )
+            },
         );
 
         unsafe {
@@ -168,12 +217,11 @@ pub(crate) fn run_scheduler() {
                 return;
             }
             serial_println!(
-                "SCHEDULER: Switching from '{}' SP: {:x?} (@ {:?}) to '{}' SP: {:x?}",
-                prev_task_name,
+                "SCHEDULER: Switching from '{prev_task_name}' {:?} SP: {:x?} (@ {prev_stack_ptr:?}) to '{}' {:?} SP: {next_stack_ptr:x?}",
+                prev_task_id,
                 *prev_stack_ptr,
-                prev_stack_ptr,
-                next_task_name,
-                next_stack_ptr
+                next_task.name,
+                next_task.id,
             );
             switch_to_task(prev_stack_ptr, next_stack_ptr);
         }
@@ -183,6 +231,7 @@ pub(crate) fn run_scheduler() {
 /// A `Task` is a unit of work that can be scheduled, like a thread or a process.
 #[derive(Debug)]
 pub(crate) struct Task {
+    id: TaskId,
     name: &'static str,
     kernel_stack_pointer: TaskKernelStackPointer,
     state: AtomicU8Enum<TaskState>,
@@ -208,6 +257,7 @@ type KernelTaskStartFunction = extern "C" fn(*const ()) -> ();
 impl Task {
     /// Create a new task with the given ID and kernel stack pointer.
     pub(crate) fn new(
+        id: TaskId,
         name: &'static str,
         start_fn: KernelTaskStartFunction,
         arg: *const (),
@@ -255,6 +305,7 @@ impl Task {
         );
 
         Self {
+            id,
             name,
             kernel_stack_pointer,
             state: AtomicU8Enum::new(TaskState::ReadyToRun),
@@ -397,22 +448,24 @@ unsafe extern "C" fn switch_to_task(
 
 /// Puts the current task to sleep for the given number of milliseconds.
 pub(crate) fn sleep(timeout: Milliseconds) {
-    x86_64::instructions::interrupts::without_interrupts(|| {
+    let task_id = x86_64::instructions::interrupts::without_interrupts(|| {
         let lock = tasks_mutex().lock();
         let current_task = lock.current_task().expect("no running task");
         current_task.state.swap(TaskState::Sleeping);
+        current_task.id
     });
 
-    tick::add_relative_timer(timeout, || {
-        // TODO: This is incorrect
+    tick::add_relative_timer(timeout, move || {
+        // N.B. timers run in an interrupt context, so interrupts are already
+        // disabled.
         let lock = tasks_mutex().lock();
-        let current_task = lock.current_task().expect("no running task");
+        let task = lock.get_task_assert(task_id);
         serial_println!("sleep: waking up task");
-        current_task.state.swap(TaskState::ReadyToRun);
+        task.state.swap(TaskState::ReadyToRun);
         serial_println!(
-            "task status: {current_task:p}, {}, {:?}",
-            current_task.name,
-            current_task.state.get()
+            "sleep task status: {task_id:?}, {}, {:?}",
+            task.name,
+            task.state.get()
         );
     });
     run_scheduler();
