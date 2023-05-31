@@ -44,6 +44,7 @@ pub(crate) enum IOAPICIRQNumber {
 
     // Some reserved numbers in the middle. I don't trust that these aren't
     // already taken.
+    Tick = 9,
     TestHPET = 10,
 }
 

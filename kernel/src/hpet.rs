@@ -19,7 +19,7 @@ pub(crate) fn enable_periodic_timer_handler(
     handler_id: InterruptHandlerID,
     handler: InterruptHandler,
     ioapic_irq_number: ioapic::IOAPICIRQNumber,
-    timer_number: u8,
+    timer_number: HPETTimerNumber,
     interval: &Milliseconds,
 ) {
     let interrupt_vector = interrupts::install_interrupt(handler_id, handler);
@@ -28,10 +28,18 @@ pub(crate) fn enable_periodic_timer_handler(
     let hpet = HPET.get().expect("HPET not initialized");
 
     let interval_femtoseconds = interval.femtoseconds();
-    hpet.enable_periodic_timer(timer_number, ioapic_irq_number as u8, interval_femtoseconds);
+    hpet.enable_periodic_timer(timer_number, ioapic_irq_number, interval_femtoseconds);
 
     let timer = hpet.timer_registers(timer_number);
-    serial_println!("intalled HPET timer {timer_number}: {timer:#x?}");
+    serial_println!("installed HPET timer {timer_number:?}: {timer:#x?}");
+}
+
+/// Global list of HPET timer numbers to prevent collisions.
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub(crate) enum HPETTimerNumber {
+    Tick = 0,
+    TestHPET = 1,
 }
 
 pub(crate) struct Milliseconds(u64);
@@ -95,7 +103,7 @@ impl HPET {
         }
     }
 
-    fn timer_registers(&self, timer_number: u8) -> TimerRegisters {
+    fn timer_registers(&self, timer_number: HPETTimerNumber) -> TimerRegisters {
         let offset: usize = 0x100 + timer_number as usize * 0x20;
         unsafe { TimerRegisters::from_address(self.registers.address + offset) }
     }
@@ -104,16 +112,16 @@ impl HPET {
     /// IO/APIC interrupt number with the given interval.
     fn enable_periodic_timer(
         &self,
-        timer_number: u8,
-        ioapic_interrupt_number: u8,
+        timer_number: HPETTimerNumber,
+        ioapic_interrupt_number: ioapic::IOAPICIRQNumber,
         interval_femtoseconds: u64,
     ) {
         let hpet_caps = self.registers.general_capabilities_and_id().read();
 
         let num_timers = hpet_caps.number_of_timers();
         assert!(
-            timer_number < hpet_caps.number_of_timers(),
-            "HPET only has {num_timers} timers but got timer number {timer_number}"
+            (timer_number as u8) < hpet_caps.number_of_timers(),
+            "HPET only has {num_timers} timers but got timer number {timer_number:?}"
         );
 
         // Ensure HPET is enabled (TODO: Should we do this on `init()`?)
@@ -127,12 +135,12 @@ impl HPET {
         timer.config_and_cap().modify_mut(|conf| {
             assert!(
                 conf.periodic_interrupt_capable(),
-                "tried to enable_periodic_timer on timer {timer_number} but it does not support periodic mode"
+                "tried to enable_periodic_timer on timer {timer_number:?} but it does not support periodic mode"
             );
 
             conf.set_is_periodic(true);
             conf.set_interrupt_enabled(true);
-            conf.set_interrupt_route(ioapic_interrupt_number);
+            conf.set_interrupt_route(ioapic_interrupt_number as u8);
         });
 
         let hpet_period = hpet_caps.counter_clock_period();

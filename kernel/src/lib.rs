@@ -50,6 +50,7 @@ pub(crate) mod shell;
 pub(crate) mod strings;
 pub(crate) mod sync;
 pub(crate) mod tests;
+pub(crate) mod tick;
 pub(crate) mod virtio;
 
 pub fn start() -> ! {
@@ -78,6 +79,7 @@ pub fn start() -> ! {
         hpet::init(acpi_info.hpet_info().base_address);
     };
 
+    tick::init();
     keyboard::init_keyboard();
 
     // Try to init VirtIO RNG device, if it exists

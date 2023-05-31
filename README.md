@@ -93,7 +93,6 @@ make test
 
 - Multi-tasking (see resources below)
   - Task sleep
-    - Create `tick` system that is always running, say at 100Hz
     - Implement timers, which execute a callback function at the specified time with the specified data (similar to Linux's timers).
     - Add `Sleeping` state to tasks, make sure to add sleeping tasks to back of scheduler queue (don't throw them away like killed tasks)
     - Add a `sleep_millis` function like Linux's `schedule_timeout` that creates a timer that wakes up the task. Time timer can have a pointer to the task (wrapped in `Arc<>`).
@@ -101,6 +100,7 @@ make test
   - Add an idle task per CPU
   - Have shell be its own task and it waits on sub-tasks
   - Create a wrapper around `InitCell`, or just something like `InitCell`, that holds a reference to a `Task` and sets its state to `ReadyToRun` when the cell value is set. This is what the shell task will use to wait.
+  - Preemption: call `scheduler_tick` every tick
   - Consider storing context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>. This makes it easier to manipulate during setup.
 - VirtIO improvements:
   - Create a physically contiguous heap, or slab allocator, or something for virtio buffer requests so we don't waste an entire page per tiny allocation.
