@@ -6,8 +6,9 @@ use core::arch::asm;
 use spin::Mutex;
 
 use crate::acpi::ACPIInfo;
+use crate::hpet::Milliseconds;
 use crate::sync::{AtomicRef, AtomicU8Enum, InitCell};
-use crate::{apic, serial_println};
+use crate::{apic, serial_println, tick};
 
 /// Currently running process on each CPU. The index is the CPU's LAPIC ID.
 static RUNNING_CPU_TASKS: InitCell<RunningCPUTasks> = InitCell::new();
@@ -137,13 +138,16 @@ pub(crate) fn run_scheduler() {
                 return;
             };
 
-            // If the current task is killed, throw this task away and try
-            // again.
-            if next_task.state.get() != TaskState::Killed {
-                break next_task;
+            match next_task.state.get() {
+                // If it is ready to run, select it
+                TaskState::ReadyToRun => break next_task,
+                // Push sleeping task to the back of the queue
+                TaskState::Sleeping => queue.push_task(next_task),
+                // Let killed task drop
+                TaskState::Killed => {
+                    serial_println!("Task {} was killed", next_task.name);
+                }
             }
-
-            serial_println!("Task {} was killed", next_task.name);
         };
 
         let Some(prev_task) = running_cpu_tasks().swap_running_task(next_task) else {
@@ -274,6 +278,7 @@ enum TaskState {
     /// ReadyToRun covers both a running task and a task that is currently
     /// running.
     ReadyToRun,
+    Sleeping,
     Killed,
 }
 
@@ -283,7 +288,8 @@ impl TryFrom<u8> for TaskState {
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::ReadyToRun),
-            1 => Ok(Self::Killed),
+            1 => Ok(Self::Sleeping),
+            2 => Ok(Self::Killed),
             _ => Err(()),
         }
     }
@@ -391,4 +397,22 @@ unsafe extern "C" fn switch_to_task(
             options(noreturn),
         );
     }
+}
+
+/// Puts the current task to sleep for the given number of milliseconds.
+pub(crate) fn sleep(timeout: Milliseconds) {
+    let current_task = running_cpu_tasks().running_task().expect("no running task");
+    current_task.state.swap(TaskState::Sleeping);
+
+    // TODO: This is incorrect and should be rejected, but AtomicRef is unsound.
+    tick::add_relative_timer(timeout, move || {
+        serial_println!("sleep: waking up task");
+        current_task.state.swap(TaskState::ReadyToRun);
+        serial_println!(
+            "task status: {current_task:p}, {}, {:?}",
+            current_task.name,
+            current_task.state.get()
+        );
+    });
+    run_scheduler();
 }

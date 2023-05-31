@@ -5,6 +5,7 @@ use core::fmt::Write;
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 use x86_64::structures::paging::{Size2MiB, Size4KiB};
 
+use crate::hpet::Milliseconds;
 use crate::{boot_info, hpet, interrupts, ioapic, memory, scheduler, serial_println};
 
 static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
@@ -108,6 +109,7 @@ pub(crate) fn run_misc_tests() {
 pub(crate) fn test_scheduler() {
     scheduler::push_task("task 1", task_1_test_task, 0xdead_beef as *const ());
     scheduler::push_task("task 2", task_2_test_task, 0xabab_cdcd as *const ());
+    // scheduler::push_task("task 3", sleep_loop_task, core::ptr::null::<()>());
 
     scheduler::start_multitasking();
 }
@@ -127,6 +129,13 @@ extern "C" fn task_2_test_task(arg: *const ()) {
     serial_println!("Task 2 DONE: 3000th prime: {}", p);
     scheduler::run_scheduler();
     serial_println!("TASK 2 DONE!!!");
+}
+
+extern "C" fn _sleep_loop_task(_arg: *const ()) {
+    loop {
+        serial_println!("sleep_loop_task about to sleep...");
+        scheduler::sleep(Milliseconds::new(1000));
+    }
 }
 
 fn naive_nth_prime(n: usize) -> usize {
