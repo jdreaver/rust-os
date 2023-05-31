@@ -71,6 +71,10 @@ impl<T> AtomicRef<T> {
         unsafe { self.ptr.load(Ordering::SeqCst).as_ref() }
     }
 
+    pub(crate) fn pop(&self) -> Option<T> {
+        self.swap(None)
+    }
+
     pub(crate) fn swap(&self, value: Option<T>) -> Option<T> {
         let ptr = value.map_or(ptr::null_mut(), |value| Box::into_raw(Box::new(value)));
         let prev = self.ptr.swap(ptr, Ordering::SeqCst);

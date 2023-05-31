@@ -36,6 +36,15 @@ impl RunningCPUTasks {
     }
 
     fn cpu_task_ptr(&self) -> &AtomicRef<Task> {
+        // TODO: Assert that interrupts are disabled. Otherwise, we could get
+        // rescheduled onto another CPU and the LAPIC ID could change. xv6 does
+        // this, but is it necessary?
+        //
+        // assert!(
+        //     !x86_64::instructions::interrupts::are_enabled(),
+        //     "tried to access current CPU task pointer while interrupts are enabled"
+        // );
+
         let lapic_id = apic::lapic_id();
         self.tasks
             .get(lapic_id as usize)
@@ -44,6 +53,10 @@ impl RunningCPUTasks {
 
     fn running_task(&self) -> Option<&Task> {
         self.cpu_task_ptr().get()
+    }
+
+    fn pop_running_task(&self) -> Option<Task> {
+        self.cpu_task_ptr().pop()
     }
 
     fn swap_running_task(&self, new_task: Task) -> Option<Task> {
@@ -130,10 +143,22 @@ pub(crate) fn run_scheduler() {
         let mut queue = RUN_QUEUE.lock();
         // Move the current task to the back of the queue, pop the next task,
         // and mark the next task as the current task.
-        let Some(next_task) = queue.pop_next_task() else {
-            // No tasks to run, so just return.
-            return;
+
+        let next_task = loop {
+            let Some(next_task) = queue.pop_next_task() else {
+                // No tasks to run, so just return.
+                return;
+            };
+
+            // If the current task is killed, throw this task away and try
+            // again.
+            if !next_task.killed {
+                break next_task;
+            }
+
+            serial_println!("Task {} was killed", next_task.name);
         };
+
         let Some(prev_task) = running_cpu_tasks().swap_running_task(next_task) else {
             panic!("tried switching tasks, but there was amazingly no currently running task on the CPU");
         };
@@ -174,6 +199,7 @@ pub(crate) fn run_scheduler() {
 pub(crate) struct Task {
     name: &'static str,
     kernel_stack_pointer: TaskKernelStackPointer,
+    killed: bool,
     _kernel_stack: Box<[u8; KERNEL_STACK_SIZE]>,
 }
 
@@ -231,6 +257,7 @@ impl Task {
         Self {
             name,
             kernel_stack_pointer,
+            killed: false,
             _kernel_stack: kernel_stack,
         }
     }
@@ -268,10 +295,18 @@ extern "C" fn task_setup(task_fn: extern "C" fn() -> (), arg: u64) {
 
     serial_println!("task_setup: task_fn returned, halting");
 
-    // TODO: Remove ourselves from the task queue and call `run_scheduler` to
-    // switch to the next task.
+    // Mark the current task as dead and run the scheduler.
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let mut current_task = running_cpu_tasks()
+            .pop_running_task()
+            .expect("no running task");
+        current_task.killed = true;
+        running_cpu_tasks().swap_running_task(current_task);
+    });
 
-    hlt_loop();
+    run_scheduler();
+
+    panic!("somehow returned to task_setup for dead task after running scheduler");
 }
 
 /// Architecture-specific assembly code to switch from one task to another.

@@ -122,12 +122,11 @@ extern "C" fn task_1_test_task() {
 }
 
 extern "C" fn task_2_test_task() {
-    loop {
-        serial_println!("task 2 is running!");
-        let p = naive_nth_prime(3000);
-        serial_println!("Task 2 DONE: 3000th prime: {}", p);
-        scheduler::run_scheduler();
-    }
+    serial_println!("task 2 is running!");
+    let p = naive_nth_prime(3000);
+    serial_println!("Task 2 DONE: 3000th prime: {}", p);
+    scheduler::run_scheduler();
+    serial_println!("TASK 2 DONE!!!");
 }
 
 fn naive_nth_prime(n: usize) -> usize {
