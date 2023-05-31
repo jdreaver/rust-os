@@ -98,8 +98,8 @@ pub(crate) fn init(acpi_info: &ACPIInfo) {
 }
 
 /// Pushes a task onto the task queue.
-pub(crate) fn push_task(name: &'static str, start_fn: extern "C" fn() -> ()) {
-    let task = Task::new(name, start_fn);
+pub(crate) fn push_task(name: &'static str, start_fn: KernelTaskStartFunction, arg: *const ()) {
+    let task = Task::new(name, start_fn, arg);
     RUN_QUEUE.lock().pending_tasks.push_back(task);
 }
 
@@ -200,9 +200,23 @@ pub(crate) struct Task {
 /// tasks because in debug mode we apparently use the stack a ton.
 const KERNEL_STACK_SIZE: usize = 4096 * 4;
 
+/// Function to run when starting a kernel task.
+///
+/// We use the C calling convention because I don't trust the unspecified Rust
+/// calling convention to work when we cast a 64 bit integer to a function
+/// pointer.
+///
+/// Each kernel task has an optional argument. This is a pointer to some data
+/// that the task needs to run. This is passed to the task when it is started.
+type KernelTaskStartFunction = extern "C" fn(*const ()) -> ();
+
 impl Task {
     /// Create a new task with the given ID and kernel stack pointer.
-    pub(crate) fn new(name: &'static str, start_fn: extern "C" fn() -> ()) -> Self {
+    pub(crate) fn new(
+        name: &'static str,
+        start_fn: KernelTaskStartFunction,
+        arg: *const (),
+    ) -> Self {
         // Allocate a kernel stack
         let mut kernel_stack = Box::new([0; KERNEL_STACK_SIZE]);
 
@@ -225,7 +239,7 @@ impl Task {
         // convention).
         let task_rdi_bytes_end = KERNEL_STACK_SIZE - (6 * 8);
         let task_rdi_bytes_start = KERNEL_STACK_SIZE - (7 * 8);
-        let task_rdi = 0xdead_beef_u64;
+        let task_rdi = arg as usize;
         kernel_stack[task_rdi_bytes_start..task_rdi_bytes_end]
             .copy_from_slice(&task_rdi.to_le_bytes());
 
@@ -269,10 +283,9 @@ struct TaskKernelStackPointer(usize);
 /// [`forkret`](https://github.com/IamAdiSri/xv6/blob/4cee212b832157fde3289f2088eb5a9d8713d777/proc.c#L406-L425).
 ///
 /// `extern "C"` is important here. We get to this function via a `ret` in
-/// `switch_to_task`, and we need to pass in an argument via the rdi register.
-extern "C" fn task_setup(task_fn: extern "C" fn() -> (), arg: u64) {
-    serial_println!("task_setup arg: {arg:#x}");
-
+/// `switch_to_task`, and we need to pass in arguments via the known C calling
+/// convention registers.
+extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *const ()) {
     // Release the scheduler lock
     unsafe {
         RUN_QUEUE.force_unlock();
@@ -282,7 +295,7 @@ extern "C" fn task_setup(task_fn: extern "C" fn() -> (), arg: u64) {
     // that we re-enable them.
     x86_64::instructions::interrupts::enable();
 
-    task_fn();
+    task_fn(arg);
 
     serial_println!("task_setup: task_fn returned, halting");
 

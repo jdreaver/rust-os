@@ -106,23 +106,23 @@ pub(crate) fn run_misc_tests() {
 }
 
 pub(crate) fn test_scheduler() {
-    scheduler::push_task("task 1", task_1_test_task);
-    scheduler::push_task("task 2", task_2_test_task);
+    scheduler::push_task("task 1", task_1_test_task, 0xdead_beef as *const ());
+    scheduler::push_task("task 2", task_2_test_task, 0xabab_cdcd as *const ());
 
     scheduler::start_multitasking();
 }
 
-extern "C" fn task_1_test_task() {
+extern "C" fn task_1_test_task(arg: *const ()) {
     loop {
-        serial_println!("task 1 is running!");
+        serial_println!("task 1 is running! arg: {arg:x?}");
         let p = naive_nth_prime(2500);
         serial_println!("Task 1 DONE: 2500th prime: {}", p);
         scheduler::run_scheduler();
     }
 }
 
-extern "C" fn task_2_test_task() {
-    serial_println!("task 2 is running!");
+extern "C" fn task_2_test_task(arg: *const ()) {
+    serial_println!("task 2 is running! arg: {arg:x?}");
     let p = naive_nth_prime(3000);
     serial_println!("Task 2 DONE: 3000th prime: {}", p);
     scheduler::run_scheduler();

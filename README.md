@@ -93,7 +93,6 @@ make test
 
 - Multi-tasking (see resources below)
   - Consider storing context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>. This makes it easier to manipulate during setup.
-  - Wrap started threads so we remove their task from the task list when they exit
   - Task sleep
   - Have shell be its own task and it waits on sub-tasks
 - VirtIO improvements:
