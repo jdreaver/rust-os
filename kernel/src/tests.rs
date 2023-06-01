@@ -111,7 +111,7 @@ pub(crate) fn test_scheduler() {
     scheduler::push_task("task 2", task_2_test_task, 0xabab_cdcd as *const ());
     scheduler::push_task("task 3", sleep_loop_task, core::ptr::null::<()>());
 
-    scheduler::run_scheduler();
+    scheduler::start_multitasking();
 }
 
 extern "C" fn task_1_test_task(arg: *const ()) {
