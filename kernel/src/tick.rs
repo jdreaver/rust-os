@@ -5,10 +5,12 @@ use alloc::collections::VecDeque;
 
 use crate::hpet::Milliseconds;
 use crate::sync::SpinLock;
-use crate::{hpet, interrupts, ioapic};
+use crate::{hpet, interrupts, ioapic, sched};
 
 /// Frequency of the global tick system.
-const TICK_HZ: u64 = 10;
+const TICK_HZ: u64 = 20;
+
+const TICK_MILLIS: Milliseconds = Milliseconds::new(1000 / TICK_HZ);
 
 /// Global list of timers
 static TIMERS: SpinLock<VecDeque<Timer>> = SpinLock::new(VecDeque::new());
@@ -20,13 +22,12 @@ pub(crate) fn init() {
         "TICK_HZ must be a divisor of 1000 so we can evenly divide milliseconds into ticks"
     );
 
-    let tick_millis = Milliseconds::new(1000 / TICK_HZ);
     hpet::enable_periodic_timer_handler(
         0,
         tick_handler,
         ioapic::IOAPICIRQNumber::Tick,
         hpet::HPETTimerNumber::Tick,
-        tick_millis,
+        TICK_MILLIS,
     );
 }
 
@@ -40,6 +41,9 @@ fn tick_handler(_vector: u8, _handler_id: interrupts::InterruptHandlerID) {
             true
         }
     });
+
+    // Let the scheduler do accounting
+    sched::scheduler_tick(TICK_MILLIS);
 }
 
 struct Timer {

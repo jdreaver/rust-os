@@ -94,14 +94,14 @@ make test
 - Synchronization primitives
   - Wait queues: I think just queues wrapped by spinlocks holding processes to wake up when an event happens. Maybe wrapper around `InitCell`?. Useful for device drivers?
   - Mutex (not spinlock "mutex") that handles sleeping and waking
+    - I like Linux's mutex where they store the current holder's task ID in an atomic variable
   - In the future we should disable preemption when spin locks are taken
 - Multi-tasking (see resources below)
   - Call `run_scheduler` after every IRQ if some global variable `NEED_RESCHEDULE` is set. This can be set both when the timer function sees a task has run out of its time slice, and when a device interrupt wakes up a task (can't call scheduler in the interrupt context, but we can at the exit)
   - Create a wrapper around `InitCell`, or just something like `InitCell`, that holds a reference to a `Task` and sets its state to `ReadyToRun` when the cell value is set. This is what the shell task will use to wait.
-  - Preemption: call `scheduler_tick` every tick, update time slices, handle unscheduling current task if there is another pending task and the current task hit its time slice
-    - Once we have preemption, remove `run_scheduler` call in `idle_task_start`
-    - Remove `run_scheduler` call in `naive_nth_prime`
   - Consider storing context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>. This makes it easier to manipulate during setup.
+  - Waiting for a task: make a way to put the current task to sleep until the child task is done, and wake up the current task ~instantly. Currently we loop with `sleep`.
+    - Linux has a system call for this, so clearly there is kernel support for it: <https://man7.org/linux/man-pages/man2/wait.2.html>
 - VirtIO improvements:
   - Create a physically contiguous heap, or slab allocator, or something for virtio buffer requests so we don't waste an entire page per tiny allocation.
     - Ensure we are still satisfying any alignment requirements for buffers. Read the spec!

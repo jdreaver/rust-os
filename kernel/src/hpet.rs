@@ -43,8 +43,12 @@ pub(crate) enum HPETTimerNumber {
 pub(crate) struct Milliseconds(u64);
 
 impl Milliseconds {
-    pub(crate) fn new(milliseconds: u64) -> Self {
+    pub(crate) const fn new(milliseconds: u64) -> Self {
         Self(milliseconds)
+    }
+
+    pub(crate) fn saturating_sub(self, other: Self) -> Self {
+        Self(self.0.saturating_sub(other.0))
     }
 
     fn femtoseconds(self) -> u64 {
@@ -53,6 +57,18 @@ impl Milliseconds {
 
     fn from_femtoseconds(femtoseconds: u64) -> Self {
         Self(femtoseconds / 1_000_000_000_000)
+    }
+}
+
+impl From<u64> for Milliseconds {
+    fn from(milliseconds: u64) -> Self {
+        Self(milliseconds)
+    }
+}
+
+impl From<Milliseconds> for u64 {
+    fn from(milliseconds: Milliseconds) -> Self {
+        milliseconds.0
     }
 }
 

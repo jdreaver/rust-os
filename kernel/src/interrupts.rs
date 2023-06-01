@@ -4,7 +4,7 @@ use seq_macro::seq;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 use crate::sync::SpinLock;
-use crate::{apic, gdt, serial_println};
+use crate::{apic, gdt, sched, serial_println};
 
 /// CPU exception interrupt vectors stop at 32.
 const FIRST_EXTERNAL_INTERRUPT_VECTOR: usize = 32;
@@ -48,6 +48,10 @@ fn common_external_interrupt_handler(vector: u8) {
         .expect("Invalid interrupt vector");
     handler(vector, interrupt_id);
     apic::end_of_interrupt();
+
+    // Now that we have signaled the end of the interrupt, we are out of the
+    // interrupt context. If we need to call the scheduler, do it.
+    sched::run_scheduler_if_needed();
 }
 
 fn default_external_interrupt_handler(vector: u8, interrupt_id: InterruptHandlerID) {

@@ -174,9 +174,9 @@ where
         T::from(val)
     }
 
-    // pub(crate) fn store(&self, val: T) {
-    //     <I as AtomicInt>::store(&self.atom, val.into(), Ordering::SeqCst);
-    // }
+    pub(crate) fn store(&self, val: T) {
+        <I as AtomicIntTrait>::store(&self.atom, val.into(), Ordering::SeqCst);
+    }
 
     pub(crate) fn swap(&self, val: T) -> T {
         let old_val = <I as AtomicIntTrait>::swap(&self.atom, val.into(), Ordering::SeqCst);

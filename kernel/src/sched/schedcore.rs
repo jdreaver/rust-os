@@ -13,6 +13,8 @@ use super::task::{
 
 static TASKS: InitCell<SpinLock<Tasks>> = InitCell::new();
 
+/// Used to protect against accidentally calling scheduling functions that
+/// require a task context before we've started running tasks.
 static MULTITASKING_STARTED: AtomicBool = AtomicBool::new(false);
 
 fn tasks_lock() -> &'static SpinLock<Tasks> {
@@ -186,8 +188,6 @@ impl Tasks {
 
 extern "C" fn idle_task_start(_arg: *const ()) {
     loop {
-        // TODO: Once we have preemption, remove this explicit call to run_scheduler.
-        run_scheduler();
         x86_64::instructions::hlt();
     }
 }
@@ -237,16 +237,32 @@ pub(crate) fn start_multitasking(
     }
 }
 
+/// How much time a task gets to run before being preempted.
+const DEFAULT_TIME_SLICE: Milliseconds = Milliseconds::new(100);
+
 pub(crate) fn run_scheduler() {
+    // Set NEEDS_RESCHEDULE to false if it hasn't been set already.
+    NEEDS_RESCHEDULE.swap(false, Ordering::SeqCst);
+
     // Disable interrupts and take a lock on the the run queue. When a task is
     // started for the very first time, `task_setup` handles re-enabling these.
     // Otherwise, they will be re-enabled by the next task when `run_scheduler`
     // is exited.
     let mut tasks = tasks_lock().lock_disable_interrupts();
 
-    tasks.remove_killed_pending_tasks();
-
+    // If the previous task still has a time slice left, don't preempt it.
+    // (Except for idle task. We don't care if that ran out of time.)
     let idle_task_id = tasks.current_cpu_idle_task();
+    let current_task = tasks.current_task();
+
+    let is_idle = current_task.id == idle_task_id;
+    let is_ready = current_task.state.load() == TaskState::ReadyToRun;
+    let is_expired = current_task.remaining_slice.load() == Milliseconds::new(0);
+    if !is_idle && is_ready && !is_expired {
+        return;
+    }
+
+    tasks.remove_killed_pending_tasks();
     let prev_task = tasks.current_task();
     let prev_task_id = prev_task.id;
     let prev_task_state = prev_task.state.load();
@@ -276,6 +292,9 @@ pub(crate) fn run_scheduler() {
     let next_task = tasks.get_task_assert(next_task_id);
     let next_stack_ptr = next_task.kernel_stack_pointer;
 
+    // Give the next task some time slice
+    next_task.remaining_slice.store(DEFAULT_TIME_SLICE);
+
     unsafe {
         if *prev_stack_ptr == next_stack_ptr {
             // We're already running the next task, so just return.
@@ -291,6 +310,38 @@ pub(crate) fn run_scheduler() {
                 next_task.id,
             );
         switch_to_task(prev_stack_ptr, next_stack_ptr);
+    }
+}
+
+/// Function to run every time the kernel tick system ticks.
+pub(crate) fn scheduler_tick(time_between_ticks: Milliseconds) {
+    if !MULTITASKING_STARTED.load(Ordering::SeqCst) {
+        return;
+    }
+
+    let tasks = tasks_lock().lock_disable_interrupts();
+
+    // Deduct time from the currently running task's time slice.
+    let current_task = tasks.current_task();
+    let slice = current_task.remaining_slice.load();
+    let slice = slice.saturating_sub(time_between_ticks);
+    current_task.remaining_slice.store(slice);
+
+    // If the task has run out of time, we need to run the scheduler.
+    if slice == Milliseconds::new(0) {
+        NEEDS_RESCHEDULE.store(true, Ordering::SeqCst);
+    }
+}
+
+/// If set to true, then the scheduler should reschedule as soon as possible.
+/// Used after exiting from IRQs and in other contexts that would
+/// opportunistically trigger the scheduler if appropriate.
+static NEEDS_RESCHEDULE: AtomicBool = AtomicBool::new(false);
+
+/// If the scheduler needs to run, then run it.
+pub(crate) fn run_scheduler_if_needed() {
+    if NEEDS_RESCHEDULE.swap(false, Ordering::SeqCst) {
+        run_scheduler();
     }
 }
 
@@ -316,19 +367,33 @@ pub(crate) fn wake_task(task_id: TaskId) {
 }
 
 /// Waits until the given task is finished.
-pub(crate) fn wait_on_task(task_id: TaskId) {
+pub(crate) fn wait_on_task(target_task_id: TaskId, sleep_interval: Milliseconds) {
     loop {
         {
             let lock = tasks_lock().lock_disable_interrupts();
-            // If task doesn't exist, assume it is done
-            let Some(task) = lock.get_task(task_id) else { break; };
-            // If it was killed, assume it is done
-            if task.state.load() == TaskState::Killed {
+
+            // TODO: Set current task to sleeping. We can't do this until we
+            // have a reliable way to wake it up from outside of this function.
+
+            // If target task doesn't exist, assume it is done
+            let Some(target_task) = lock.get_task(target_task_id) else { break; };
+            // If target task was killed, assume it is done
+            if target_task.state.load() == TaskState::Killed {
                 break;
             }
         }
+
+        // TODO: Instead of sleeping for a set interval, put the current task to
+        // sleep and find a reliable way to wake it up once the target task is
+        // done. This logic might not belong in the scheduler; it might need to
+        // be a wrapper function. For example, spawn a task in a function, and
+        // then create some kind of condvar of signal that the parent task can
+        // wait on.
+        sleep(sleep_interval);
         run_scheduler();
     }
+
+    run_scheduler();
 }
 
 /// Architecture-specific assembly code that is run when a task is switched to

@@ -295,8 +295,7 @@ fn run_command(command: &Command) {
         Command::PrimeSync(n) => {
             let task_id =
                 sched::push_task("calculate prime", calculate_prime_task, *n as *const ());
-            sched::run_scheduler();
-            sched::wait_on_task(task_id);
+            sched::wait_on_task(task_id, Milliseconds::new(100));
         }
         Command::PrimeAsync(n) => {
             sched::push_task("calculate prime", calculate_prime_task, *n as *const ());
@@ -312,7 +311,6 @@ extern "C" fn calculate_prime_task(arg: *const ()) {
     let n = arg as usize;
     let p = naive_nth_prime(n);
     serial_println!("calculate_prime_task DONE: {n}th prime: {p}");
-    sched::run_scheduler();
 }
 
 fn naive_nth_prime(n: usize) -> usize {
@@ -334,12 +332,6 @@ fn naive_nth_prime(n: usize) -> usize {
             if found_primes == n {
                 return i;
             }
-        }
-
-        // Temporarily insert a point where we yield
-        // TODO: Remove this once we have preemption.
-        if found_primes % 500 == 0 {
-            sched::run_scheduler();
         }
     }
 }
