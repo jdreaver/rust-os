@@ -1,4 +1,5 @@
-use alloc::boxed::Box;
+use alloc::vec;
+use alloc::vec::Vec;
 use core::arch::asm;
 
 use crate::hpet::Milliseconds;
@@ -16,7 +17,7 @@ pub(crate) struct Task {
 
     /// How much longer the task can run before it is preempted.
     pub(super) remaining_slice: AtomicInt<u64, Milliseconds>,
-    _kernel_stack: Box<[u8; KERNEL_STACK_SIZE]>,
+    _kernel_stack: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -47,7 +48,7 @@ impl Task {
         arg: *const (),
     ) -> Self {
         // Allocate a kernel stack
-        let mut kernel_stack = Box::new([0; KERNEL_STACK_SIZE]);
+        let mut kernel_stack = vec![0; KERNEL_STACK_SIZE];
 
         // We need to push many values onto the stack to set up the stack frame
         // for when we run switch_to_task. The general purpose registers don't

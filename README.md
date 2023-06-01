@@ -91,20 +91,6 @@ make test
 
 ## TODO
 
-- Fix bug with `rng` after running `prime-sync 1`
-
-  ```
-  Welcome to Rust OS! Here is a shell for you to use.
-  ksh > prime-sync 1
-  ...
-  ksh > rng 30
-  Generating random numbers...
-  PANIC: panicked at 'unsafe precondition(s) violated: slice::from_raw_parts requires the pointer to be aligned and non-null, and the total size of the slice not to exceed `isize::MAX`', /nix/store/3as61k7p1hknj86pk1mr8izx04xkw4pp-rust-default-1.71.0-nightly-2023-05-28/lib/rustlib/src/rust/library/core/src/panicking.rs:126:5
-  QEMU: Terminated
-  ```
-
-  - I suspect some sort of stack corruption. The `virtqueues` field on the initialized PCI device is showing up as null after we run `prime-sync`
-  - Are we doing interrupts wrong, and frequent interrupts corrupt the stack?
 - Kernel stack size bug: increasing the kernel stack size to 16 KiB causes: `PANIC: panicked at 'page 2048 is already used', /home/david/git/rust-os/crates/bitmap-alloc/src/alloc.rs:33:9`
 - Synchronization primitives
   - Wait queues: I think just queues wrapped by spinlocks holding processes to wake up when an event happens. Maybe wrapper around `InitCell`?. Useful for device drivers?
