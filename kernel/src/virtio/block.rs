@@ -73,8 +73,7 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
     let mut virtqueue_data = device.virtqueue_data.lock();
     let virtqueue = device
         .initialized_device
-        .get_virtqueue(VirtIOBlockDevice::QUEUE_INDEX)
-        .unwrap();
+        .get_virtqueue(VirtIOBlockDevice::QUEUE_INDEX);
 
     virtqueue_data.process_new_entries(virtqueue, |used_entry, mut descriptor_chain, data| {
         let Some(data) = data else {
@@ -146,7 +145,7 @@ impl VirtIOBlockDevice {
             )
         };
 
-        let virtqueue = initialized_device.get_virtqueue(Self::QUEUE_INDEX).unwrap();
+        let virtqueue = initialized_device.get_virtqueue(Self::QUEUE_INDEX);
         let virtqueue_data = VirtQueueData::new(virtqueue);
 
         Self {
@@ -168,10 +167,7 @@ impl VirtIOBlockDevice {
         };
         let copied_cell = data.cell.clone();
 
-        let virtqueue = self
-            .initialized_device
-            .get_virtqueue(Self::QUEUE_INDEX)
-            .unwrap();
+        let virtqueue = self.initialized_device.get_virtqueue(Self::QUEUE_INDEX);
 
         virtqueue_data.add_buffer(virtqueue, &desc_chain, data);
         virtqueue.notify_device();

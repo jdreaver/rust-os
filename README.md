@@ -91,11 +91,11 @@ make test
 
 ## TODO
 
-- Fix bug with `rng` after running `prime-sync 3000`
+- Fix bug with `rng` after running `prime-sync 1`
 
   ```
   Welcome to Rust OS! Here is a shell for you to use.
-  ksh > prime-sync 3000
+  ksh > prime-sync 1
   ...
   ksh > rng 30
   Generating random numbers...
@@ -103,6 +103,9 @@ make test
   QEMU: Terminated
   ```
 
+  - I suspect some sort of stack corruption. The `virtqueues` field on the initialized PCI device is showing up as null after we run `prime-sync`
+  - Are we doing interrupts wrong, and frequent interrupts corrupt the stack?
+- Kernel stack size bug: increasing the kernel stack size to 16 KiB causes: `PANIC: panicked at 'page 2048 is already used', /home/david/git/rust-os/crates/bitmap-alloc/src/alloc.rs:33:9`
 - Synchronization primitives
   - Wait queues: I think just queues wrapped by spinlocks holding processes to wake up when an event happens. Maybe wrapper around `InitCell`?. Useful for device drivers?
   - Mutex (not spinlock "mutex") that handles sleeping and waking
