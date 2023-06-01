@@ -438,12 +438,15 @@ extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *const ()) {
 
     task_fn(arg);
 
-    serial_println!("task_setup: task_fn returned, halting");
-
     // Mark the current task as dead and run the scheduler.
     x86_64::instructions::interrupts::without_interrupts(|| {
         let lock = tasks_mutex().lock();
         let current_task = lock.current_task();
+        serial_println!(
+            "task_setup: task {} {:?} task_fn returned, halting",
+            current_task.name,
+            current_task.id
+        );
         current_task.state.swap(TaskState::Killed);
     });
 
