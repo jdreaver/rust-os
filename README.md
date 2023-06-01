@@ -91,6 +91,11 @@ make test
 
 ## TODO
 
+- Synchronization primitives
+  - Make distinct modules for "raw" primitives that don't require a task context, and those that do (e.g. mutexes that cause the current task to sleep)
+  - Wrapper around `spin::Mutex` that also disables interrupts, similar to Linux's `spin_lock_irqsave` (`x86_64::interrupts::without_interrupts` is handy here). Might need our own custom `MutexGuard` wrapper that handles re-enabling interrupts on `drop()`
+  - In the future we should disable preemption when spin locks are taken
+  - Wait queues: I think just queues wrapped by spinlocks holding processes to wake up when an event happens. Maybe wrapper around `InitCell`?. Useful for device drivers?
 - Multi-tasking (see resources below)
   - Have shell be its own task and it waits on sub-tasks
   - Create a wrapper around `InitCell`, or just something like `InitCell`, that holds a reference to a `Task` and sets its state to `ReadyToRun` when the cell value is set. This is what the shell task will use to wait.
@@ -106,10 +111,6 @@ make test
   - Ensure we don't accidentally reuse descriptors while we are waiting for a response from the device. Don't automatically just wrap around! This is what might require a mutex rather than just atomic integers?
   - I think there is a race condition with the interrupts with the current non-locking mechanism. Ensure that if there are concurrent writes while an interrupt, then an interrupt won't miss a read (e.g. there will at least be a followup interrupt)
   - Remember features we negotiate, and ensure we are accounting for the different features in the logic (especially around notifications)
-- Create `sync` module that has synchronization primitives
-  - Wrapper around `spin::Mutex` that also disables interrupts, similar to Linux's `spin_lock_irqsave` (`x86_64::interrupts::without_interrupts` is handy here). Might need our own custom `MutexGuard` wrapper that handles re-enabling interrupts on `drop()`
-  - In the future we should disable preemption when spin locks are taken
-  - Queues wrapped by spinlocks, useful for device drivers?
 - bitmap-alloc
   - Make page vs byte address part of the API b/c conversion is tricky and requires `div_ceil`. Newtypes/functions for both?
     - We could embrace `PhysAddr`, `PhysFrame`, `Size4KiB`, etc, but that would introduce dep on `x86_64` crate

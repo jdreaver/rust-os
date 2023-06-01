@@ -44,7 +44,7 @@ pub(crate) mod memory;
 pub(crate) mod pci;
 #[allow(dead_code)] // This could be its own crate
 pub(crate) mod registers;
-pub(crate) mod scheduler;
+pub(crate) mod sched;
 pub(crate) mod serial;
 pub(crate) mod shell;
 pub(crate) mod strings;
@@ -73,7 +73,7 @@ pub fn start() -> ! {
     let acpi_info = acpi::acpi_info();
     apic::init_local_apic(acpi_info);
     ioapic::init(acpi_info);
-    scheduler::init(acpi_info);
+    sched::init(acpi_info);
 
     unsafe {
         hpet::init(acpi_info.hpet_info().base_address);
