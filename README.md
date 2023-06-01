@@ -96,11 +96,13 @@ make test
   - Mutex (not spinlock "mutex") that handles sleeping and waking
   - In the future we should disable preemption when spin locks are taken
 - Multi-tasking (see resources below)
-  - Have shell be its own task and it waits on sub-tasks
+  - Call `run_scheduler` after every IRQ if some global variable `NEED_RESCHEDULE` is set. This can be set both when the timer function sees a task has run out of its time slice, and when a device interrupt wakes up a task (can't call scheduler in the interrupt context, but we can at the exit)
   - Create a wrapper around `InitCell`, or just something like `InitCell`, that holds a reference to a `Task` and sets its state to `ReadyToRun` when the cell value is set. This is what the shell task will use to wait.
-  - Create proper sleeping mutexes
   - Preemption: call `scheduler_tick` every tick, update time slices, handle unscheduling current task if there is another pending task and the current task hit its time slice
     - Once we have preemption, remove `run_scheduler` call in `idle_task_start`
+    - Remove `run_scheduler` call in `naive_nth_prime`
+  - Teach shell to for sub-tasks to exit
+    - Turn `prime` command into `prime-sync` and `prime-async`
   - Consider storing context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>. This makes it easier to manipulate during setup.
 - VirtIO improvements:
   - Create a physically contiguous heap, or slab allocator, or something for virtio buffer requests so we don't waste an entire page per tiny allocation.

@@ -13,7 +13,14 @@ use super::task::{
 
 static TASKS: InitCell<SpinLock<Tasks>> = InitCell::new();
 
+static MULTITASKING_STARTED: AtomicBool = AtomicBool::new(false);
+
 fn tasks_lock() -> &'static SpinLock<Tasks> {
+    assert!(
+        MULTITASKING_STARTED.load(Ordering::Relaxed),
+        "multi-tasking not initialized, but tasks_lock called"
+    );
+
     TASKS.get().expect("tasks not initialized")
 }
 
@@ -204,14 +211,17 @@ pub(crate) fn push_task(
         .new_task(name, start_fn, arg)
 }
 
-static MULTITASKING_STARTED: AtomicBool = AtomicBool::new(false);
-
 /// Switches from the bootstrap code, which isn't a task, to the first actual
 /// kernel task.
-pub(crate) fn start_multitasking() {
-    let tasks = tasks_lock().lock_disable_interrupts();
-
+pub(crate) fn start_multitasking(
+    init_task_name: &'static str,
+    init_task_start_fn: KernelTaskStartFunction,
+    init_task_arg: *const (),
+) {
     MULTITASKING_STARTED.store(true, Ordering::SeqCst);
+
+    let mut tasks = tasks_lock().lock_disable_interrupts();
+    tasks.new_task(init_task_name, init_task_start_fn, init_task_arg);
 
     // Just a dummy location for switch_to_task to store the previous stack
     // pointer.
@@ -224,11 +234,6 @@ pub(crate) fn start_multitasking() {
 }
 
 pub(crate) fn run_scheduler() {
-    assert!(
-        MULTITASKING_STARTED.load(Ordering::Relaxed),
-        "multi-tasking not initialized, but run_scheduler called"
-    );
-
     // Disable interrupts and take a lock on the the run queue. When a task is
     // started for the very first time, `task_setup` handles re-enabling these.
     // Otherwise, they will be re-enabled by the next task when `run_scheduler`

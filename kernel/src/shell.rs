@@ -5,7 +5,9 @@ use uefi::table::{Runtime, SystemTable};
 
 use crate::hpet::Milliseconds;
 use crate::sync::SpinLock;
-use crate::{acpi, boot_info, pci, serial, serial_print, serial_println, tests, tick, virtio};
+use crate::{
+    acpi, boot_info, pci, sched, serial, serial_print, serial_println, tests, tick, virtio,
+};
 
 static NEXT_COMMAND_BUFFER: SpinLock<ShellBuffer> = SpinLock::new(ShellBuffer::new());
 
@@ -46,7 +48,7 @@ impl ShellBuffer {
     }
 }
 
-pub(crate) fn run_serial_shell() -> ! {
+pub(crate) extern "C" fn run_serial_shell(_arg: *const ()) {
     serial_println!("Welcome to Rust OS! Here is a shell for you to use.");
     let mut buffer = NEXT_COMMAND_BUFFER.lock();
 
@@ -103,7 +105,6 @@ fn reset_terminal_line() {
 enum Command<'a> {
     TestMisc,
     TestHPET,
-    TestScheduler,
     ListPCI,
     ListVirtIO,
     BootInfo,
@@ -113,6 +114,8 @@ enum Command<'a> {
     VirtIOBlockRead { device_id: usize, sector: u64 },
     VirtIOBlockID { device_id: usize },
     Timer(Milliseconds),
+    Sleep(Milliseconds),
+    Prime(usize),
     Invalid,
     Unknown(&'a str),
 }
@@ -127,7 +130,6 @@ fn next_command(buffer: &[u8]) -> Option<Command> {
         [] => None,
         ["test", "misc"] => Some(Command::TestMisc),
         ["test", "hpet"] => Some(Command::TestHPET),
-        ["test", "scheduler"] => Some(Command::TestScheduler),
         ["list-pci"] => Some(Command::ListPCI),
         ["list-virtio"] => Some(Command::ListVirtIO),
         ["boot-info"] => Some(Command::BootInfo),
@@ -149,6 +151,14 @@ fn next_command(buffer: &[u8]) -> Option<Command> {
         ["timer", milliseconds_str] => {
             let milliseconds = parse_or_print_error(milliseconds_str, "milliseconds")?;
             Some(Command::Timer(Milliseconds::new(milliseconds)))
+        }
+        ["sleep", milliseconds_str] => {
+            let milliseconds = parse_or_print_error(milliseconds_str, "milliseconds")?;
+            Some(Command::Sleep(Milliseconds::new(milliseconds)))
+        }
+        ["prime", nth_prime_str] => {
+            let nth_prime = parse_or_print_error(nth_prime_str, "prime number index")?;
+            Some(Command::Prime(nth_prime))
         }
         _ => Some(Command::Unknown(command_str)),
     }
@@ -177,9 +187,6 @@ fn run_command(command: &Command) {
         }
         Command::TestHPET => {
             tests::test_hpet();
-        }
-        Command::TestScheduler => {
-            tests::test_scheduler();
         }
         Command::Invalid => {
             serial_println!("Invalid command");
@@ -275,8 +282,53 @@ fn run_command(command: &Command) {
             });
             serial_println!("Created a timer for {ms} from now");
         }
+        Command::Sleep(ms) => {
+            serial_println!("Sleeping for {ms}");
+            sched::sleep(*ms);
+            serial_println!("Slept for {ms}");
+        }
+        Command::Prime(n) => {
+            sched::push_task("calculate prime", calculate_prime_task, *n as *const ());
+            sched::run_scheduler();
+        }
         Command::Unknown(command) => {
             serial_println!("Unknown command: {}", command);
+        }
+    }
+}
+
+extern "C" fn calculate_prime_task(arg: *const ()) {
+    let n = arg as usize;
+    let p = naive_nth_prime(n);
+    serial_println!("calculate_prime_task DONE: {n}th prime: {p}");
+    sched::run_scheduler();
+}
+
+fn naive_nth_prime(n: usize) -> usize {
+    fn is_prime(x: usize) -> bool {
+        for i in 2..x {
+            if x % i == 0 {
+                return false;
+            }
+        }
+        true
+    }
+
+    let mut i = 2;
+    let mut found_primes = 0;
+    loop {
+        i += 1;
+        if is_prime(i) {
+            found_primes += 1;
+            if found_primes == n {
+                return i;
+            }
+        }
+
+        // Temporarily insert a point where we yield
+        // TODO: Remove this once we have preemption.
+        if found_primes % 500 == 0 {
+            sched::run_scheduler();
         }
     }
 }

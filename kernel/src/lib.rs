@@ -82,7 +82,7 @@ pub fn start() -> ! {
     tick::init();
     keyboard::init_keyboard();
 
-    // Try to init VirtIO RNG device, if it exists
+    // Initialize VirtIO devices
     let pci_config_region_base_address = acpi_info.pci_config_region_base_address();
     pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
         let Some(device_config) = virtio::VirtIODeviceConfig::from_pci_config(device) else { return; };
@@ -90,7 +90,9 @@ pub fn start() -> ! {
         virtio::try_init_virtio_block(device_config);
     });
 
-    shell::run_serial_shell();
+    sched::start_multitasking("shell", shell::run_serial_shell, core::ptr::null::<()>());
+
+    panic!("ERROR: ended multi-tasking");
 }
 
 pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
