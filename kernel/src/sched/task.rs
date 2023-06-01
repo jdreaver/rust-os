@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 use core::arch::asm;
 
-use crate::sync::AtomicInt;
+use crate::sync::AtomicEnum;
 
 use super::schedcore::task_setup;
 
@@ -11,7 +11,7 @@ pub(crate) struct Task {
     pub(super) id: TaskId,
     pub(super) name: &'static str,
     pub(super) kernel_stack_pointer: TaskKernelStackPointer,
-    pub(super) state: AtomicInt<u8, TaskState>,
+    pub(super) state: AtomicEnum<u8, TaskState>,
     _kernel_stack: Box<[u8; KERNEL_STACK_SIZE]>,
 }
 
@@ -88,7 +88,7 @@ impl Task {
             id,
             name,
             kernel_stack_pointer,
-            state: AtomicInt::new(TaskState::ReadyToRun),
+            state: AtomicEnum::new(TaskState::ReadyToRun),
             _kernel_stack: kernel_stack,
         }
     }

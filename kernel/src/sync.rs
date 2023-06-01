@@ -149,7 +149,7 @@ where
 impl<I, T> AtomicInt<I, T>
 where
     I: AtomicIntTrait + fmt::Display + Copy,
-    T: TryFrom<I> + Into<I>,
+    T: From<I> + Into<I>,
 {
     pub(crate) fn new(val: T) -> Self {
         Self {
@@ -158,18 +158,9 @@ where
         }
     }
 
-    fn convert_from_integer(val: I) -> T {
-        T::try_from(val).map_or_else(
-            |_| {
-                panic!("ERROR: Invalid enum value {val}");
-            },
-            |enum_val| enum_val,
-        )
-    }
-
     pub(crate) fn load(&self) -> T {
         let val = <I as AtomicIntTrait>::load(&self.atom, Ordering::SeqCst);
-        Self::convert_from_integer(val)
+        T::from(val)
     }
 
     // pub(crate) fn store(&self, val: T) {
@@ -178,7 +169,7 @@ where
 
     pub(crate) fn swap(&self, val: T) -> T {
         let old_val = <I as AtomicIntTrait>::swap(&self.atom, val.into(), Ordering::SeqCst);
-        Self::convert_from_integer(old_val)
+        T::from(old_val)
     }
 }
 
@@ -208,5 +199,50 @@ impl AtomicIntTrait for u8 {
 
     fn swap(atom: &Self::Atomic, val: Self, order: Ordering) -> Self {
         atom.swap(val, order)
+    }
+}
+
+/// Wrapper around `AtomicInt` that allows fallible conversion, which is super
+/// useful for enums.
+#[derive(Debug)]
+pub(crate) struct AtomicEnum<I, T>
+where
+    I: AtomicIntTrait,
+    I::Atomic: fmt::Debug,
+{
+    int: AtomicInt<I, I>,
+    _phantom: PhantomData<T>,
+}
+
+impl<I, T> AtomicEnum<I, T>
+where
+    I: AtomicIntTrait + fmt::Display + Copy,
+    I::Atomic: fmt::Debug,
+    T: TryFrom<I> + Into<I>,
+{
+    pub(crate) fn new(val: T) -> Self {
+        Self {
+            int: AtomicInt::new(val.into()),
+            _phantom: PhantomData,
+        }
+    }
+
+    fn convert_from_integer(val: I) -> T {
+        T::try_from(val).map_or_else(
+            |_| {
+                panic!("ERROR: Invalid enum value {val}");
+            },
+            |enum_val| enum_val,
+        )
+    }
+
+    pub(crate) fn load(&self) -> T {
+        let val = self.int.load();
+        Self::convert_from_integer(val)
+    }
+
+    pub(crate) fn swap(&self, val: T) -> T {
+        let old_val = self.int.swap(val.into());
+        Self::convert_from_integer(old_val)
     }
 }
