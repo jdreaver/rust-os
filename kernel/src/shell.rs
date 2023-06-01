@@ -1,13 +1,13 @@
 use alloc::vec::Vec;
 use core::fmt;
 
-use spin::Mutex;
+use spin::mutex::SpinMutex;
 use uefi::table::{Runtime, SystemTable};
 
 use crate::hpet::Milliseconds;
 use crate::{acpi, boot_info, pci, serial, serial_print, serial_println, tests, tick, virtio};
 
-static NEXT_COMMAND_BUFFER: Mutex<ShellBuffer> = Mutex::new(ShellBuffer::new());
+static NEXT_COMMAND_BUFFER: SpinMutex<ShellBuffer> = SpinMutex::new(ShellBuffer::new());
 
 struct ShellBuffer {
     buffer: Vec<u8>,

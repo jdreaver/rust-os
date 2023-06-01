@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
 use paste::paste;
 use seq_macro::seq;
-use spin::Mutex;
+use spin::mutex::SpinMutex;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 use crate::{apic, gdt, serial_println};
@@ -65,9 +65,9 @@ pub(crate) type InterruptHandler = fn(vector: u8, InterruptHandlerID);
 /// Holds the interrupt handlers for external interrupts. This is a static
 /// because we need to be able to access it from the interrupt handlers, which
 /// are `extern "x86-interrupt"`.
-static EXTERNAL_INTERRUPT_HANDLERS: Mutex<
+static EXTERNAL_INTERRUPT_HANDLERS: SpinMutex<
     [(InterruptHandlerID, InterruptHandler); NUM_INTERRUPT_VECTORS],
-> = Mutex::new([(0, default_external_interrupt_handler); NUM_INTERRUPT_VECTORS]);
+> = SpinMutex::new([(0, default_external_interrupt_handler); NUM_INTERRUPT_VECTORS]);
 
 lazy_static!(
     static ref IDT: InterruptDescriptorTable = {
@@ -122,7 +122,7 @@ fn disable_pic() {
 /// Send spurious interrupts to a high index that we won't use.
 pub(crate) const SPURIOUS_INTERRUPT_VECTOR_INDEX: u8 = 0xFF;
 
-static NEXT_OPEN_INTERRUPT_INDEX: Mutex<u8> = Mutex::new(APIC_INTERRUPT_START_OFFSET);
+static NEXT_OPEN_INTERRUPT_INDEX: SpinMutex<u8> = SpinMutex::new(APIC_INTERRUPT_START_OFFSET);
 
 /// Install an interrupt handler in the IDT. Uses the next open interrupt index
 /// and returns the used index.

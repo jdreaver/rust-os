@@ -1,7 +1,7 @@
 use core::alloc::AllocError;
 use core::ptr;
 
-use spin::Mutex;
+use spin::mutex::SpinMutex;
 use x86_64::structures::paging::mapper::{MapToError, Translate};
 use x86_64::structures::paging::{
     FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTable, PageTableFlags, PhysFrame,
@@ -35,15 +35,15 @@ where
     KERNEL_PHYSICAL_ALLOCATOR.init(usable_memory_regions);
 }
 
-/// Mutex wrapper around `OffsetPageTable`.
+/// SpinMutex wrapper around `OffsetPageTable`.
 struct KernelMapper {
-    mutex: Mutex<Option<OffsetPageTable<'static>>>,
+    mutex: SpinMutex<Option<OffsetPageTable<'static>>>,
 }
 
 impl KernelMapper {
     const fn new() -> Self {
         Self {
-            mutex: Mutex::new(None),
+            mutex: SpinMutex::new(None),
         }
     }
 
@@ -163,13 +163,13 @@ unsafe impl<S: PageSize> FrameAllocator<S> for PhysicalMemoryAllocator<'_> {
 /// `x86_64` functions want a `&mut Allocator` and we can't have multiple
 /// mutable references to the same object.
 pub(crate) struct LockedPhysicalMemoryAllocator<'a> {
-    mutex: Mutex<Option<PhysicalMemoryAllocator<'a>>>,
+    mutex: SpinMutex<Option<PhysicalMemoryAllocator<'a>>>,
 }
 
 impl LockedPhysicalMemoryAllocator<'_> {
     const fn new() -> Self {
         Self {
-            mutex: Mutex::new(None),
+            mutex: SpinMutex::new(None),
         }
     }
 

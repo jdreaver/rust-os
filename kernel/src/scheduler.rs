@@ -4,16 +4,16 @@ use alloc::vec::Vec;
 use core::arch::asm;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use spin::Mutex;
+use spin::mutex::SpinMutex;
 
 use crate::acpi::ACPIInfo;
 use crate::hpet::Milliseconds;
 use crate::sync::{AtomicU8Enum, InitCell};
 use crate::{apic, serial_println, tick};
 
-static TASKS: InitCell<Mutex<Tasks>> = InitCell::new();
+static TASKS: InitCell<SpinMutex<Tasks>> = InitCell::new();
 
-fn tasks_mutex() -> &'static Mutex<Tasks> {
+fn tasks_mutex() -> &'static SpinMutex<Tasks> {
     TASKS.get().expect("tasks not initialized")
 }
 
@@ -185,7 +185,7 @@ pub(crate) fn init(acpi_info: &ACPIInfo) {
         .max()
         .expect("no processors found!");
     let max_lapic_id = u8::try_from(max_lapic_id).expect("LAPIC ID too large!");
-    TASKS.init(Mutex::new(Tasks::new(max_lapic_id)));
+    TASKS.init(SpinMutex::new(Tasks::new(max_lapic_id)));
 }
 
 /// Pushes a task onto the task queue.

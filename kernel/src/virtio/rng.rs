@@ -2,7 +2,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::bitflags;
 
-use spin::Mutex;
+use spin::mutex::SpinMutex;
 
 use crate::interrupts::InterruptHandlerID;
 use crate::memory::PhysicalBuffer;
@@ -46,7 +46,7 @@ pub(crate) fn request_random_numbers(num_bytes: u32) -> Arc<InitCell<Vec<u8>>> {
 #[derive(Debug)]
 struct VirtIORNG {
     initialized_device: VirtIOInitializedDevice,
-    virtqueue_data: Mutex<VirtQueueData<VirtIORNGRequest>>,
+    virtqueue_data: SpinMutex<VirtQueueData<VirtIORNGRequest>>,
 }
 
 impl VirtIORNG {
@@ -68,7 +68,7 @@ impl VirtIORNG {
 
         Self {
             initialized_device,
-            virtqueue_data: Mutex::new(virtqueue_data),
+            virtqueue_data: SpinMutex::new(virtqueue_data),
         }
     }
 

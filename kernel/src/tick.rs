@@ -3,7 +3,7 @@
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 
-use spin::Mutex;
+use spin::mutex::SpinMutex;
 
 use crate::hpet::Milliseconds;
 use crate::{hpet, interrupts, ioapic};
@@ -12,7 +12,7 @@ use crate::{hpet, interrupts, ioapic};
 const TICK_HZ: u64 = 10;
 
 /// Global list of timers
-static TIMERS: Mutex<VecDeque<Timer>> = Mutex::new(VecDeque::new());
+static TIMERS: SpinMutex<VecDeque<Timer>> = SpinMutex::new(VecDeque::new());
 
 #[allow(clippy::assertions_on_constants)]
 pub(crate) fn init() {
