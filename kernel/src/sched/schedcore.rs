@@ -295,19 +295,15 @@ pub(crate) fn sleep(timeout: Milliseconds) {
     };
 
     tick::add_relative_timer(timeout, move || {
-        // N.B. timers run in an interrupt context, so interrupts are already
-        // disabled.
-        let lock = tasks_lock().lock();
-        let task = lock.get_task_assert(task_id);
-        serial_println!("sleep: waking up task");
-        task.state.swap(TaskState::ReadyToRun);
-        serial_println!(
-            "sleep task status: {task_id:?}, {}, {:?}",
-            task.name,
-            task.state.load()
-        );
+        wake_task(task_id);
     });
     run_scheduler();
+}
+
+pub(crate) fn wake_task(task_id: TaskId) {
+    let lock = tasks_lock().lock_disable_interrupts();
+    let task = lock.get_task_assert(task_id);
+    task.state.swap(TaskState::ReadyToRun);
 }
 
 /// Architecture-specific assembly code that is run when a task is switched to
