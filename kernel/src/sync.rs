@@ -107,6 +107,8 @@ impl<T> InitCell<T> {
     }
 
     pub(crate) fn get(&self) -> Option<&T> {
+        // This is safe because we only ever write to the pointer once, so the
+        // lifetime of the value does indeed match the lifetime of the InitCell.
         unsafe { self.ptr.load(Ordering::SeqCst).as_ref() }
     }
 
@@ -134,24 +136,24 @@ impl<T> Drop for InitCell<T> {
 }
 
 /// Wrapper around an atomic integer type (via `AtomicInt`) that supports
-/// transparently converting to/from an enum.
+/// transparently converting to/from a specific type.
 #[derive(Debug)]
-pub(crate) struct AtomicEnum<I, T>
+pub(crate) struct AtomicInt<I, T>
 where
-    I: AtomicInt,
+    I: AtomicIntTrait,
 {
     atom: I::Atomic,
     _phantom: PhantomData<T>,
 }
 
-impl<I, T> AtomicEnum<I, T>
+impl<I, T> AtomicInt<I, T>
 where
-    I: AtomicInt + fmt::Display + Copy,
+    I: AtomicIntTrait + fmt::Display + Copy,
     T: TryFrom<I> + Into<I>,
 {
     pub(crate) fn new(val: T) -> Self {
         Self {
-            atom: <I as AtomicInt>::new(val.into()),
+            atom: <I as AtomicIntTrait>::new(val.into()),
             _phantom: PhantomData,
         }
     }
@@ -166,7 +168,7 @@ where
     }
 
     pub(crate) fn load(&self) -> T {
-        let val = <I as AtomicInt>::load(&self.atom, Ordering::SeqCst);
+        let val = <I as AtomicIntTrait>::load(&self.atom, Ordering::SeqCst);
         Self::convert_from_integer(val)
     }
 
@@ -175,12 +177,12 @@ where
     // }
 
     pub(crate) fn swap(&self, val: T) -> T {
-        let old_val = <I as AtomicInt>::swap(&self.atom, val.into(), Ordering::SeqCst);
+        let old_val = <I as AtomicIntTrait>::swap(&self.atom, val.into(), Ordering::SeqCst);
         Self::convert_from_integer(old_val)
     }
 }
 
-pub(crate) trait AtomicInt {
+pub(crate) trait AtomicIntTrait {
     type Atomic;
 
     fn new(val: Self) -> Self::Atomic;
@@ -189,7 +191,7 @@ pub(crate) trait AtomicInt {
     fn swap(atom: &Self::Atomic, val: Self, order: Ordering) -> Self;
 }
 
-impl AtomicInt for u8 {
+impl AtomicIntTrait for u8 {
     type Atomic = AtomicU8;
 
     fn new(val: Self) -> Self::Atomic {
