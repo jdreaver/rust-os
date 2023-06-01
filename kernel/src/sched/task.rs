@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use core::{arch::asm, sync::atomic::AtomicU8};
+use core::arch::asm;
 
 use crate::sync::AtomicEnum;
 
@@ -11,7 +11,7 @@ pub(crate) struct Task {
     pub(super) id: TaskId,
     pub(super) name: &'static str,
     pub(super) kernel_stack_pointer: TaskKernelStackPointer,
-    pub(super) state: AtomicEnum<AtomicU8, TaskState>,
+    pub(super) state: AtomicEnum<u8, TaskState>,
     _kernel_stack: Box<[u8; KERNEL_STACK_SIZE]>,
 }
 
