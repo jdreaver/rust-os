@@ -24,7 +24,9 @@ impl<T> SpinLock<T> {
     pub(crate) fn lock(&self) -> SpinLockGuard<'_, T> {
         SpinLockGuard {
             guard: self.mutex.lock(),
-            enable_interrupts_on_drop: false,
+            _interrupt_guard: InterruptGuard {
+                needs_enabling: false,
+            },
         }
     }
 
@@ -42,7 +44,9 @@ impl<T> SpinLock<T> {
 
         SpinLockGuard {
             guard: self.mutex.lock(),
-            enable_interrupts_on_drop: saved_intpt_flag,
+            _interrupt_guard: InterruptGuard {
+                needs_enabling: saved_intpt_flag,
+            },
         }
     }
 
@@ -54,15 +58,10 @@ impl<T> SpinLock<T> {
 /// Wrapper around `spin::mutex::SpinMutexGuard`, used with `SpinLock`.
 pub(crate) struct SpinLockGuard<'a, T: ?Sized + 'a> {
     guard: SpinMutexGuard<'a, T>,
-    enable_interrupts_on_drop: bool,
-}
-
-impl<'a, T: ?Sized> Drop for SpinLockGuard<'a, T> {
-    fn drop(&mut self) {
-        if self.enable_interrupts_on_drop {
-            x86_64::instructions::interrupts::enable();
-        }
-    }
+    // Note: ordering is very important here! We want to restore interrupts to
+    // their previous state (enabled or disabled) _after_ the spinlock guard is
+    // dropped. Rust drops fields in order.
+    _interrupt_guard: InterruptGuard,
 }
 
 impl<'a, T> Deref for SpinLockGuard<'a, T> {
@@ -78,6 +77,18 @@ impl<'a, T> DerefMut for SpinLockGuard<'a, T> {
     #[allow(clippy::explicit_deref_methods)]
     fn deref_mut(&mut self) -> &mut T {
         self.guard.deref_mut()
+    }
+}
+
+struct InterruptGuard {
+    needs_enabling: bool,
+}
+
+impl Drop for InterruptGuard {
+    fn drop(&mut self) {
+        if self.needs_enabling {
+            x86_64::instructions::interrupts::enable();
+        }
     }
 }
 
