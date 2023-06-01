@@ -87,8 +87,12 @@ impl Tasks {
         id
     }
 
+    fn get_task(&self, id: TaskId) -> Option<&Task> {
+        self.tasks.get(&id)
+    }
+
     fn get_task_assert(&self, id: TaskId) -> &Task {
-        self.tasks.get(&id).map_or_else(
+        self.get_task(id).map_or_else(
             || panic!("tried to fetch task ID {id:?} but it does not exist"),
             |task| task,
         )
@@ -309,6 +313,22 @@ pub(crate) fn wake_task(task_id: TaskId) {
     let lock = tasks_lock().lock_disable_interrupts();
     let task = lock.get_task_assert(task_id);
     task.state.swap(TaskState::ReadyToRun);
+}
+
+/// Waits until the given task is finished.
+pub(crate) fn wait_on_task(task_id: TaskId) {
+    loop {
+        {
+            let lock = tasks_lock().lock_disable_interrupts();
+            // If task doesn't exist, assume it is done
+            let Some(task) = lock.get_task(task_id) else { break; };
+            // If it was killed, assume it is done
+            if task.state.load() == TaskState::Killed {
+                break;
+            }
+        }
+        run_scheduler();
+    }
 }
 
 /// Architecture-specific assembly code that is run when a task is switched to

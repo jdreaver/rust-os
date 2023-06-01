@@ -115,7 +115,8 @@ enum Command<'a> {
     VirtIOBlockID { device_id: usize },
     Timer(Milliseconds),
     Sleep(Milliseconds),
-    Prime(usize),
+    PrimeSync(usize),
+    PrimeAsync(usize),
     Invalid,
     Unknown(&'a str),
 }
@@ -156,9 +157,13 @@ fn next_command(buffer: &[u8]) -> Option<Command> {
             let milliseconds = parse_or_print_error(milliseconds_str, "milliseconds")?;
             Some(Command::Sleep(Milliseconds::new(milliseconds)))
         }
-        ["prime", nth_prime_str] => {
+        ["prime-sync", nth_prime_str] => {
             let nth_prime = parse_or_print_error(nth_prime_str, "prime number index")?;
-            Some(Command::Prime(nth_prime))
+            Some(Command::PrimeSync(nth_prime))
+        }
+        ["prime-async", nth_prime_str] => {
+            let nth_prime = parse_or_print_error(nth_prime_str, "prime number index")?;
+            Some(Command::PrimeAsync(nth_prime))
         }
         _ => Some(Command::Unknown(command_str)),
     }
@@ -287,7 +292,13 @@ fn run_command(command: &Command) {
             sched::sleep(*ms);
             serial_println!("Slept for {ms}");
         }
-        Command::Prime(n) => {
+        Command::PrimeSync(n) => {
+            let task_id =
+                sched::push_task("calculate prime", calculate_prime_task, *n as *const ());
+            sched::run_scheduler();
+            sched::wait_on_task(task_id);
+        }
+        Command::PrimeAsync(n) => {
             sched::push_task("calculate prime", calculate_prime_task, *n as *const ());
             sched::run_scheduler();
         }
