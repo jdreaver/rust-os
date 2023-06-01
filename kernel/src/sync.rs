@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use core::fmt;
 use core::marker::PhantomData;
 use core::ptr;
 use core::sync::atomic::{AtomicPtr, AtomicU8, Ordering};
@@ -55,26 +56,28 @@ impl<T> Drop for InitCell<T> {
     }
 }
 
-/// Wrapper around an `AtomicU8` that supports transparently converting to/from
-/// an enum.
+/// Wrapper around an atomic integer type (via `AtomicInt`) that supports
+/// transparently converting to/from an enum.
 #[derive(Debug)]
-pub(crate) struct AtomicU8Enum<T> {
-    val: AtomicU8,
+pub(crate) struct AtomicEnum<A, T> {
+    val: A,
     _phantom: PhantomData<T>,
 }
 
-impl<T> AtomicU8Enum<T>
+impl<A, T> AtomicEnum<A, T>
 where
-    T: TryFrom<u8> + Into<u8>,
+    A: AtomicInt,
+    A::Integer: fmt::Display + Copy,
+    T: TryFrom<A::Integer> + Into<A::Integer>,
 {
     pub(crate) fn new(val: T) -> Self {
         Self {
-            val: AtomicU8::new(val.into()),
+            val: A::new(val.into()),
             _phantom: PhantomData,
         }
     }
 
-    fn convert_from_u8(val: u8) -> T {
+    fn convert_from_integer(val: A::Integer) -> T {
         T::try_from(val).map_or_else(
             |_| {
                 panic!("ERROR: Invalid enum value {val}");
@@ -85,11 +88,40 @@ where
 
     pub(crate) fn load(&self) -> T {
         let val = self.val.load(Ordering::SeqCst);
-        Self::convert_from_u8(val)
+        Self::convert_from_integer(val)
     }
 
     pub(crate) fn swap(&self, val: T) -> T {
-        let old_int = self.val.swap(val.into(), Ordering::SeqCst);
-        Self::convert_from_u8(old_int)
+        let old_val = self.val.swap(val.into(), Ordering::SeqCst);
+        Self::convert_from_integer(old_val)
+    }
+}
+
+pub(crate) trait AtomicInt {
+    type Integer;
+
+    fn new(val: Self::Integer) -> Self;
+    fn load(&self, order: Ordering) -> Self::Integer;
+    fn store(&self, val: Self::Integer, order: Ordering);
+    fn swap(&self, val: Self::Integer, order: Ordering) -> Self::Integer;
+}
+
+impl AtomicInt for AtomicU8 {
+    type Integer = u8;
+
+    fn new(val: Self::Integer) -> Self {
+        Self::new(val)
+    }
+
+    fn load(&self, order: Ordering) -> Self::Integer {
+        self.load(order)
+    }
+
+    fn store(&self, val: Self::Integer, order: Ordering) {
+        self.store(val, order);
+    }
+
+    fn swap(&self, val: Self::Integer, order: Ordering) -> Self::Integer {
+        self.swap(val, order)
     }
 }
