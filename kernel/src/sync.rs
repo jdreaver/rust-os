@@ -3,7 +3,7 @@ use core::fmt;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr;
-use core::sync::atomic::{AtomicPtr, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicPtr, AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
 
 use spin::mutex::{SpinMutex, SpinMutexGuard};
 
@@ -182,25 +182,34 @@ pub(crate) trait AtomicIntTrait {
     fn swap(atom: &Self::Atomic, val: Self, order: Ordering) -> Self;
 }
 
-impl AtomicIntTrait for u8 {
-    type Atomic = AtomicU8;
+macro_rules! atomic_int_trait_impl {
+    ($type:ty, $atom:ty) => {
+        impl AtomicIntTrait for $type {
+            type Atomic = $atom;
 
-    fn new(val: Self) -> Self::Atomic {
-        Self::Atomic::new(val)
-    }
+            fn new(val: Self) -> Self::Atomic {
+                Self::Atomic::new(val)
+            }
 
-    fn load(atom: &Self::Atomic, order: Ordering) -> Self {
-        atom.load(order)
-    }
+            fn load(atom: &Self::Atomic, order: Ordering) -> Self {
+                atom.load(order)
+            }
 
-    fn store(atom: &Self::Atomic, val: Self, order: Ordering) {
-        atom.store(val, order);
-    }
+            fn store(atom: &Self::Atomic, val: Self, order: Ordering) {
+                atom.store(val, order);
+            }
 
-    fn swap(atom: &Self::Atomic, val: Self, order: Ordering) -> Self {
-        atom.swap(val, order)
-    }
+            fn swap(atom: &Self::Atomic, val: Self, order: Ordering) -> Self {
+                atom.swap(val, order)
+            }
+        }
+    };
 }
+
+atomic_int_trait_impl!(u8, AtomicU8);
+atomic_int_trait_impl!(u16, AtomicU16);
+atomic_int_trait_impl!(u32, AtomicU32);
+atomic_int_trait_impl!(u64, AtomicU64);
 
 /// Wrapper around `AtomicInt` that allows fallible conversion, which is super
 /// useful for enums.
