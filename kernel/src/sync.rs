@@ -1,8 +1,85 @@
 use alloc::boxed::Box;
 use core::fmt;
 use core::marker::PhantomData;
+use core::ops::{Deref, DerefMut};
 use core::ptr;
 use core::sync::atomic::{AtomicPtr, AtomicU8, Ordering};
+
+use spin::mutex::{SpinMutex, SpinMutexGuard};
+
+/// Wrapper around `spin::mutex::SpinMutex` with some added features, like
+/// handling disabling and enabling interrupts.
+#[derive(Debug)]
+pub(crate) struct SpinLock<T> {
+    mutex: SpinMutex<T>,
+}
+
+impl<T> SpinLock<T> {
+    pub(crate) const fn new(data: T) -> Self {
+        Self {
+            mutex: SpinMutex::new(data),
+        }
+    }
+
+    pub(crate) fn lock(&self) -> SpinLockGuard<'_, T> {
+        SpinLockGuard {
+            guard: self.mutex.lock(),
+            enable_interrupts_on_drop: false,
+        }
+    }
+
+    /// Locks the mutex and disables interrupts while the lock is held. Restores
+    /// interrupts to their previous state (enabled or disabled) once the lock
+    /// is released.
+    pub(crate) fn lock_disable_interrupts(&self) -> SpinLockGuard<'_, T> {
+        let saved_intpt_flag = x86_64::instructions::interrupts::are_enabled();
+
+        // If interrupts are enabled, disable them for now. They will be
+        // re-enabled when the guard drops.
+        if saved_intpt_flag {
+            x86_64::instructions::interrupts::disable();
+        }
+
+        SpinLockGuard {
+            guard: self.mutex.lock(),
+            enable_interrupts_on_drop: saved_intpt_flag,
+        }
+    }
+
+    pub(crate) unsafe fn force_unlock(&self) {
+        self.mutex.force_unlock();
+    }
+}
+
+/// Wrapper around `spin::mutex::SpinMutexGuard`, used with `SpinLock`.
+pub(crate) struct SpinLockGuard<'a, T: ?Sized + 'a> {
+    guard: SpinMutexGuard<'a, T>,
+    enable_interrupts_on_drop: bool,
+}
+
+impl<'a, T: ?Sized> Drop for SpinLockGuard<'a, T> {
+    fn drop(&mut self) {
+        if self.enable_interrupts_on_drop {
+            x86_64::instructions::interrupts::enable();
+        }
+    }
+}
+
+impl<'a, T> Deref for SpinLockGuard<'a, T> {
+    type Target = T;
+
+    #[allow(clippy::explicit_deref_methods)]
+    fn deref(&self) -> &T {
+        self.guard.deref()
+    }
+}
+
+impl<'a, T> DerefMut for SpinLockGuard<'a, T> {
+    #[allow(clippy::explicit_deref_methods)]
+    fn deref_mut(&mut self) -> &mut T {
+        self.guard.deref_mut()
+    }
+}
 
 /// A cell that can be initialized only once. This is useful because we can
 /// share it between multiple threads without having to use a mutex, and since

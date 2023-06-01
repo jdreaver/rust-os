@@ -2,12 +2,10 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::bitflags;
 
-use spin::mutex::SpinMutex;
-
 use crate::interrupts::InterruptHandlerID;
 use crate::memory::PhysicalBuffer;
 use crate::serial_println;
-use crate::sync::InitCell;
+use crate::sync::{InitCell, SpinLock};
 
 use super::device::VirtIOInitializedDevice;
 use super::queue::{
@@ -44,7 +42,7 @@ pub(crate) fn request_random_numbers(num_bytes: u32) -> Arc<InitCell<Vec<u8>>> {
 #[derive(Debug)]
 struct VirtIORNG {
     initialized_device: VirtIOInitializedDevice,
-    virtqueue_data: SpinMutex<VirtQueueData<VirtIORNGRequest>>,
+    virtqueue_data: SpinLock<VirtQueueData<VirtIORNGRequest>>,
 }
 
 impl VirtIORNG {
@@ -66,7 +64,7 @@ impl VirtIORNG {
 
         Self {
             initialized_device,
-            virtqueue_data: SpinMutex::new(virtqueue_data),
+            virtqueue_data: SpinLock::new(virtqueue_data),
         }
     }
 
@@ -99,16 +97,14 @@ impl VirtIORNG {
         };
         let copied_cell = request.cell.clone();
 
-        // Disable interrupts so IRQ doesn't deadlock the mutex
-        x86_64::instructions::interrupts::without_interrupts(|| {
-            let mut virtqueue_data = self.virtqueue_data.lock();
-            let virtqueue = self
-                .initialized_device
-                .get_virtqueue(Self::QUEUE_INDEX)
-                .expect("failed to get RNG virtqueue");
-            virtqueue_data.add_buffer(virtqueue, &[desc], request);
-            virtqueue.notify_device();
-        });
+        // Disable interrupts so IRQ doesn't deadlock the spinlock
+        let mut virtqueue_data = self.virtqueue_data.lock_disable_interrupts();
+        let virtqueue = self
+            .initialized_device
+            .get_virtqueue(Self::QUEUE_INDEX)
+            .expect("failed to get RNG virtqueue");
+        virtqueue_data.add_buffer(virtqueue, &[desc], request);
+        virtqueue.notify_device();
 
         copied_cell
     }

@@ -3,16 +3,15 @@
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 
-use spin::mutex::SpinMutex;
-
 use crate::hpet::Milliseconds;
+use crate::sync::SpinLock;
 use crate::{hpet, interrupts, ioapic};
 
 /// Frequency of the global tick system.
 const TICK_HZ: u64 = 10;
 
 /// Global list of timers
-static TIMERS: SpinMutex<VecDeque<Timer>> = SpinMutex::new(VecDeque::new());
+static TIMERS: SpinLock<VecDeque<Timer>> = SpinLock::new(VecDeque::new());
 
 #[allow(clippy::assertions_on_constants)]
 pub(crate) fn init() {

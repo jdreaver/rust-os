@@ -4,12 +4,12 @@ use core::mem;
 use core::sync::atomic::{AtomicU16, Ordering};
 
 use bitfield_struct::bitfield;
-use spin::mutex::SpinMutex;
 use x86_64::PhysAddr;
 
 use crate::barrier::barrier;
 use crate::memory::PhysicalBuffer;
 use crate::registers::{RegisterRW, VolatileArrayRW};
+use crate::sync::SpinLock;
 
 use super::config::VirtIONotifyConfig;
 
@@ -83,9 +83,9 @@ pub(super) struct VirtQueue {
     used_ring: VirtQueueUsedRing,
 
     /// Used to record how many used ring entries have been processed by the
-    /// driver. This is a mutex so we can ensure multiple threads using the
+    /// driver. This is a spinlock so we can ensure multiple threads using the
     /// driver don't process the same entries.
-    last_processed_used_index: SpinMutex<WrappingIndex>,
+    last_processed_used_index: SpinLock<WrappingIndex>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -138,7 +138,7 @@ impl VirtQueue {
             descriptors,
             avail_ring,
             used_ring,
-            last_processed_used_index: SpinMutex::new(WrappingIndex(0)),
+            last_processed_used_index: SpinLock::new(WrappingIndex(0)),
         }
     }
 

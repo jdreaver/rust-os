@@ -1,9 +1,9 @@
 use lazy_static::lazy_static;
 use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
-use spin::mutex::SpinMutex;
 use x86_64::instructions::port::Port;
 
 use crate::interrupts::InterruptHandlerID;
+use crate::sync::SpinLock;
 use crate::{interrupts, ioapic, serial_println};
 
 pub(crate) fn init_keyboard() {
@@ -16,7 +16,7 @@ fn keyboard_interrupt_handler(_vector: u8, _handler_id: InterruptHandlerID) {
     const KEYBOARD_PORT: u16 = 0x60;
 
     lazy_static! {
-        static ref KEYBOARD: SpinMutex<Keyboard<layouts::Us104Key, ScancodeSet1>> = SpinMutex::new(
+        static ref KEYBOARD: SpinLock<Keyboard<layouts::Us104Key, ScancodeSet1>> = SpinLock::new(
             Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore)
         );
     }

@@ -92,10 +92,9 @@ make test
 ## TODO
 
 - Synchronization primitives
-  - Make distinct modules for "raw" primitives that don't require a task context, and those that do (e.g. mutexes that cause the current task to sleep)
-  - Wrapper around `spin::Mutex` that also disables interrupts, similar to Linux's `spin_lock_irqsave` (`x86_64::interrupts::without_interrupts` is handy here). Might need our own custom `MutexGuard` wrapper that handles re-enabling interrupts on `drop()`
-  - In the future we should disable preemption when spin locks are taken
   - Wait queues: I think just queues wrapped by spinlocks holding processes to wake up when an event happens. Maybe wrapper around `InitCell`?. Useful for device drivers?
+  - Mutex (not spinlock "mutex") that handles sleeping and waking
+  - In the future we should disable preemption when spin locks are taken
 - Multi-tasking (see resources below)
   - Have shell be its own task and it waits on sub-tasks
   - Create a wrapper around `InitCell`, or just something like `InitCell`, that holds a reference to a `Task` and sets its state to `ReadyToRun` when the cell value is set. This is what the shell task will use to wait.

@@ -2,20 +2,18 @@ use alloc::collections::{BTreeMap, VecDeque};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use spin::mutex::SpinMutex;
-
 use crate::acpi::ACPIInfo;
 use crate::hpet::Milliseconds;
-use crate::sync::InitCell;
+use crate::sync::{InitCell, SpinLock};
 use crate::{apic, serial_println, tick};
 
 use super::task::{
     switch_to_task, KernelTaskStartFunction, Task, TaskId, TaskKernelStackPointer, TaskState,
 };
 
-static TASKS: InitCell<SpinMutex<Tasks>> = InitCell::new();
+static TASKS: InitCell<SpinLock<Tasks>> = InitCell::new();
 
-fn tasks_mutex() -> &'static SpinMutex<Tasks> {
+fn tasks_lock() -> &'static SpinLock<Tasks> {
     TASKS.get().expect("tasks not initialized")
 }
 
@@ -192,7 +190,7 @@ pub(crate) fn init(acpi_info: &ACPIInfo) {
         .max()
         .expect("no processors found!");
     let max_lapic_id = u8::try_from(max_lapic_id).expect("LAPIC ID too large!");
-    TASKS.init(SpinMutex::new(Tasks::new(max_lapic_id)));
+    TASKS.init(SpinLock::new(Tasks::new(max_lapic_id)));
 }
 
 /// Pushes a task onto the task queue.
@@ -201,7 +199,9 @@ pub(crate) fn push_task(
     start_fn: KernelTaskStartFunction,
     arg: *const (),
 ) -> TaskId {
-    tasks_mutex().lock().new_task(name, start_fn, arg)
+    tasks_lock()
+        .lock_disable_interrupts()
+        .new_task(name, start_fn, arg)
 }
 
 static MULTITASKING_STARTED: AtomicBool = AtomicBool::new(false);
@@ -209,20 +209,18 @@ static MULTITASKING_STARTED: AtomicBool = AtomicBool::new(false);
 /// Switches from the bootstrap code, which isn't a task, to the first actual
 /// kernel task.
 pub(crate) fn start_multitasking() {
-    x86_64::instructions::interrupts::without_interrupts(|| {
-        let tasks = tasks_mutex().lock();
+    let tasks = tasks_lock().lock_disable_interrupts();
 
-        MULTITASKING_STARTED.store(true, Ordering::SeqCst);
+    MULTITASKING_STARTED.store(true, Ordering::SeqCst);
 
-        // Just a dummy location for switch_to_task to store the previous stack
-        // pointer.
-        let dummy_stack_ptr = TaskKernelStackPointer(0);
-        let prev_stack_ptr = core::ptr::addr_of!(dummy_stack_ptr);
-        let next_stack_ptr = tasks.current_task().kernel_stack_pointer;
-        unsafe {
-            switch_to_task(prev_stack_ptr, next_stack_ptr);
-        }
-    });
+    // Just a dummy location for switch_to_task to store the previous stack
+    // pointer.
+    let dummy_stack_ptr = TaskKernelStackPointer(0);
+    let prev_stack_ptr = core::ptr::addr_of!(dummy_stack_ptr);
+    let next_stack_ptr = tasks.current_task().kernel_stack_pointer;
+    unsafe {
+        switch_to_task(prev_stack_ptr, next_stack_ptr);
+    }
 }
 
 pub(crate) fn run_scheduler() {
@@ -235,48 +233,47 @@ pub(crate) fn run_scheduler() {
     // started for the very first time, `task_setup` handles re-enabling these.
     // Otherwise, they will be re-enabled by the next task when `run_scheduler`
     // is exited.
-    x86_64::instructions::interrupts::without_interrupts(|| {
-        let mut tasks = tasks_mutex().lock();
+    let mut tasks = tasks_lock().lock_disable_interrupts();
 
-        tasks.remove_killed_pending_tasks();
+    tasks.remove_killed_pending_tasks();
 
-        let idle_task_id = tasks.current_cpu_idle_task();
-        let prev_task = tasks.current_task();
-        let prev_task_id = prev_task.id;
-        let prev_task_state = prev_task.state.load();
-        let next_task_id = match tasks.pop_next_ready_pending_task() {
-            Some(id) => id,
-            None => {
-                // If we are not on the idle task, and if our current task is
-                // not ready, let's switch to the idle task.
-                if prev_task_state != TaskState::ReadyToRun && prev_task_id != idle_task_id {
-                    idle_task_id
-                } else {
-                    // Otherwise, just return. We won't do a switch.
-                    return;
-                }
-            }
-        };
-        tasks.put_current_task_id(next_task_id);
-
-        // Store the previous task ID in pending task list, unless it is the
-        // idle task.
-        if prev_task_id != idle_task_id {
-            tasks.pending_tasks.push_back(prev_task_id);
-        }
-
-        let prev_task = tasks.get_task_assert(prev_task_id);
-        let prev_stack_ptr = core::ptr::addr_of!(prev_task.kernel_stack_pointer);
-        let next_task = tasks.get_task_assert(next_task_id);
-        let next_stack_ptr = next_task.kernel_stack_pointer;
-
-        unsafe {
-            if *prev_stack_ptr == next_stack_ptr {
-                // We're already running the next task, so just return.
-                serial_println!("WARNING: Tried to switch to the same task!");
+    let idle_task_id = tasks.current_cpu_idle_task();
+    let prev_task = tasks.current_task();
+    let prev_task_id = prev_task.id;
+    let prev_task_state = prev_task.state.load();
+    let next_task_id = match tasks.pop_next_ready_pending_task() {
+        Some(id) => id,
+        None => {
+            // If we are not on the idle task, and if our current task is
+            // not ready, let's switch to the idle task.
+            if prev_task_state != TaskState::ReadyToRun && prev_task_id != idle_task_id {
+                idle_task_id
+            } else {
+                // Otherwise, just return. We won't do a switch.
                 return;
             }
-            serial_println!(
+        }
+    };
+    tasks.put_current_task_id(next_task_id);
+
+    // Store the previous task ID in pending task list, unless it is the
+    // idle task.
+    if prev_task_id != idle_task_id {
+        tasks.pending_tasks.push_back(prev_task_id);
+    }
+
+    let prev_task = tasks.get_task_assert(prev_task_id);
+    let prev_stack_ptr = core::ptr::addr_of!(prev_task.kernel_stack_pointer);
+    let next_task = tasks.get_task_assert(next_task_id);
+    let next_stack_ptr = next_task.kernel_stack_pointer;
+
+    unsafe {
+        if *prev_stack_ptr == next_stack_ptr {
+            // We're already running the next task, so just return.
+            serial_println!("WARNING: Tried to switch to the same task!");
+            return;
+        }
+        serial_println!(
                 "SCHEDULER: Switching from '{}' {:?} SP: {:x?} (@ {prev_stack_ptr:?}) to '{}' {:?} SP: {next_stack_ptr:x?}",
                 prev_task.name,
                 prev_task.id,
@@ -284,24 +281,23 @@ pub(crate) fn run_scheduler() {
                 next_task.name,
                 next_task.id,
             );
-            switch_to_task(prev_stack_ptr, next_stack_ptr);
-        }
-    });
+        switch_to_task(prev_stack_ptr, next_stack_ptr);
+    }
 }
 
 /// Puts the current task to sleep for the given number of milliseconds.
 pub(crate) fn sleep(timeout: Milliseconds) {
-    let task_id = x86_64::instructions::interrupts::without_interrupts(|| {
-        let lock = tasks_mutex().lock();
+    let task_id = {
+        let lock = tasks_lock().lock_disable_interrupts();
         let current_task = lock.current_task();
         current_task.state.swap(TaskState::Sleeping);
         current_task.id
-    });
+    };
 
     tick::add_relative_timer(timeout, move || {
         // N.B. timers run in an interrupt context, so interrupts are already
         // disabled.
-        let lock = tasks_mutex().lock();
+        let lock = tasks_lock().lock();
         let task = lock.get_task_assert(task_id);
         serial_println!("sleep: waking up task");
         task.state.swap(TaskState::ReadyToRun);
@@ -330,7 +326,7 @@ pub(crate) fn sleep(timeout: Milliseconds) {
 pub(super) extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *const ()) {
     // Release the scheduler lock
     unsafe {
-        tasks_mutex().force_unlock();
+        tasks_lock().force_unlock();
     };
 
     // Re-enable interrupts. Interrupts are disabled in `run_scheduler`. Ensure
@@ -340,8 +336,8 @@ pub(super) extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *cons
     task_fn(arg);
 
     // Mark the current task as dead and run the scheduler.
-    x86_64::instructions::interrupts::without_interrupts(|| {
-        let lock = tasks_mutex().lock();
+    {
+        let lock = tasks_lock().lock_disable_interrupts();
         let current_task = lock.current_task();
         serial_println!(
             "task_setup: task {} {:?} task_fn returned, halting",
@@ -349,7 +345,7 @@ pub(super) extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *cons
             current_task.id
         );
         current_task.state.swap(TaskState::Killed);
-    });
+    }
 
     run_scheduler();
 

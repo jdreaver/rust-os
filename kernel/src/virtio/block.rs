@@ -3,12 +3,12 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::bitflags;
 use core::mem;
-use spin::{Mutex, RwLock};
+use spin::RwLock;
 
 use crate::interrupts::InterruptHandlerID;
 use crate::memory::PhysicalBuffer;
 use crate::registers::RegisterRO;
-use crate::sync::InitCell;
+use crate::sync::{InitCell, SpinLock};
 use crate::{register_struct, serial_println, strings};
 
 use super::device::VirtIOInitializedDevice;
@@ -120,7 +120,7 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
 struct VirtIOBlockDevice {
     initialized_device: VirtIOInitializedDevice,
     _block_config: BlockConfigRegisters,
-    virtqueue_data: Mutex<VirtQueueData<BlockDeviceDescData>>,
+    virtqueue_data: SpinLock<VirtQueueData<BlockDeviceDescData>>,
 }
 
 impl VirtIOBlockDevice {
@@ -152,7 +152,7 @@ impl VirtIOBlockDevice {
         Self {
             initialized_device,
             _block_config: block_config,
-            virtqueue_data: Mutex::new(virtqueue_data),
+            virtqueue_data: SpinLock::new(virtqueue_data),
         }
     }
 
@@ -160,24 +160,22 @@ impl VirtIOBlockDevice {
         let raw_request = request.to_raw();
         let (desc_chain, buffer) = raw_request.to_descriptor_chain();
 
-        // Disable interrupts so IRQ doesn't deadlock the mutex
-        x86_64::instructions::interrupts::without_interrupts(|| {
-            let mut virtqueue_data = self.virtqueue_data.lock();
-            let data = BlockDeviceDescData {
-                buffer,
-                cell: Arc::new(InitCell::new()),
-            };
-            let copied_cell = data.cell.clone();
+        // Disable interrupts so IRQ doesn't deadlock the spinlock
+        let mut virtqueue_data = self.virtqueue_data.lock_disable_interrupts();
+        let data = BlockDeviceDescData {
+            buffer,
+            cell: Arc::new(InitCell::new()),
+        };
+        let copied_cell = data.cell.clone();
 
-            let virtqueue = self
-                .initialized_device
-                .get_virtqueue(Self::QUEUE_INDEX)
-                .unwrap();
+        let virtqueue = self
+            .initialized_device
+            .get_virtqueue(Self::QUEUE_INDEX)
+            .unwrap();
 
-            virtqueue_data.add_buffer(virtqueue, &desc_chain, data);
-            virtqueue.notify_device();
-            copied_cell
-        })
+        virtqueue_data.add_buffer(virtqueue, &desc_chain, data);
+        virtqueue.notify_device();
+        copied_cell
     }
 }
 
