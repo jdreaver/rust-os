@@ -134,51 +134,42 @@ impl Tasks {
             .expect("could not get idle CPU task for the current LAPIC ID")
     }
 
-    /// Moves the currently running task to the end of the pending task queue
-    /// and moves the next task in the queue (that can run) to the current
-    /// running CPU slot. Returns references to the previous task and the next
-    /// task.
-    fn round_robin_current_cpu_tasks(&mut self) -> (&Task, &Task) {
-        assert!(
-            !x86_64::instructions::interrupts::are_enabled(),
-            "tried to run scheduler with interrupts enabled"
-        );
+    /// Removes all killed tasks from the pending task list. It is important we
+    /// don't remove a task that is killed but is still marked as running on a
+    /// CPU, because the task's stack might be in use!
+    fn remove_killed_pending_tasks(&mut self) {
+        let mut remaining_pending_tasks = VecDeque::new();
+        for id in &self.pending_tasks {
+            let task = self.get_task_assert(*id);
+            if task.state.get() == TaskState::Killed {
+                self.tasks.remove(id);
+            } else {
+                remaining_pending_tasks.push_back(*id);
+            }
+        }
 
-        let idle_task_id = self.current_cpu_idle_task();
+        self.pending_tasks = remaining_pending_tasks;
+    }
 
-        let mut sleeping_tasks = VecDeque::new();
-        let next_task_id: TaskId = loop {
+    /// Finds the next task that is ready and removes it from the pending task
+    /// list.
+    fn pop_next_ready_pending_task(&mut self) -> Option<TaskId> {
+        let mut non_ready_tasks = VecDeque::new();
+        let next_task_id: Option<TaskId> = loop {
             let Some(next_task_id) = self.pending_tasks.pop_front() else {
-                break idle_task_id;
+                // No tasks are ready
+                break None;
             };
 
             let next_task = self.get_task_assert(next_task_id);
-            match next_task.state.get() {
-                // If it is ready to run, select it
-                TaskState::ReadyToRun => break next_task_id,
-                // Push sleeping task to the back of the queue
-                TaskState::Sleeping => sleeping_tasks.push_back(next_task_id),
-                // Let killed task drop
-                TaskState::Killed => {
-                    serial_println!("Task {} was killed", next_task.name);
-                }
+            if next_task.state.get() == TaskState::ReadyToRun {
+                // Found a ready task
+                break Some(next_task_id);
             }
+            non_ready_tasks.push_back(next_task_id);
         };
-        self.pending_tasks.append(&mut sleeping_tasks);
-
-        // Move the previous task to the end of the queue and get a reference to
-        // it.
-        let prev_task_id = self.current_task_id();
-        self.put_current_task_id(next_task_id);
-        if prev_task_id != idle_task_id {
-            self.pending_tasks.push_back(prev_task_id);
-        }
-
-        // Get references to the tasks
-        let prev_task = self.get_task_assert(prev_task_id);
-        let next_task = self.get_task_assert(next_task_id);
-
-        (prev_task, next_task)
+        self.pending_tasks.append(&mut non_ready_tasks);
+        next_task_id
     }
 }
 
@@ -240,13 +231,36 @@ pub(crate) fn run_scheduler() {
     x86_64::instructions::interrupts::without_interrupts(|| {
         let mut tasks = tasks_mutex().lock();
 
-        let (prev_task, next_task) = tasks.round_robin_current_cpu_tasks();
+        tasks.remove_killed_pending_tasks();
 
-        if prev_task.id == next_task.id {
-            // Nothing to schedule. Return
-            return;
+        let idle_task_id = tasks.current_cpu_idle_task();
+        let prev_task = tasks.current_task();
+        let prev_task_id = prev_task.id;
+        let prev_task_state = prev_task.state.get();
+        let next_task_id = match tasks.pop_next_ready_pending_task() {
+            Some(id) => id,
+            None => {
+                // If we are not on the idle task, and if our current task is
+                // not ready, let's switch to the idle task.
+                if prev_task_state != TaskState::ReadyToRun && prev_task_id != idle_task_id {
+                    idle_task_id
+                } else {
+                    // Otherwise, just return. We won't do a switch.
+                    return;
+                }
+            }
         };
+        tasks.put_current_task_id(next_task_id);
+
+        // Store the previous task ID in pending task list, unless it is the
+        // idle task.
+        if prev_task_id != idle_task_id {
+            tasks.pending_tasks.push_back(prev_task_id);
+        }
+
+        let prev_task = tasks.get_task_assert(prev_task_id);
         let prev_stack_ptr = core::ptr::addr_of!(prev_task.kernel_stack_pointer);
+        let next_task = tasks.get_task_assert(next_task_id);
         let next_stack_ptr = next_task.kernel_stack_pointer;
 
         unsafe {
