@@ -91,6 +91,18 @@ make test
 
 ## TODO
 
+- Fix bug with `rng` after running `prime-sync 3000`
+
+  ```
+  Welcome to Rust OS! Here is a shell for you to use.
+  ksh > prime-sync 3000
+  ...
+  ksh > rng 30
+  Generating random numbers...
+  PANIC: panicked at 'unsafe precondition(s) violated: slice::from_raw_parts requires the pointer to be aligned and non-null, and the total size of the slice not to exceed `isize::MAX`', /nix/store/3as61k7p1hknj86pk1mr8izx04xkw4pp-rust-default-1.71.0-nightly-2023-05-28/lib/rustlib/src/rust/library/core/src/panicking.rs:126:5
+  QEMU: Terminated
+  ```
+
 - Synchronization primitives
   - Wait queues: I think just queues wrapped by spinlocks holding processes to wake up when an event happens. Maybe wrapper around `InitCell`?. Useful for device drivers?
   - Mutex (not spinlock "mutex") that handles sleeping and waking
