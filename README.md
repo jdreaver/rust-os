@@ -91,12 +91,14 @@ make test
 
 ## TODO
 
-- AtomicRef is unsound! `get()` happily gives you a reference that may go out of scope. Maybe we need to always deal with `Box`es, or wrap in `Arc`, or something, but `get()` in its current form has to go.
 - Multi-tasking (see resources below)
   - Add an idle task per CPU
+    - Be careful switching to the idle task initially. Is just calling the scheduler okay? If we call the scheduler assuming the idle task was running, then we would shove the bootstrap stack pointer into the idle task stack, which isn't what we want. Might need an initial `switch_to_task` before calling the scheduler.
+      - We could do the dummy task idea again, now that we know it will probably get garbage collected as we intend.
   - Have shell be its own task and it waits on sub-tasks
   - Create a wrapper around `InitCell`, or just something like `InitCell`, that holds a reference to a `Task` and sets its state to `ReadyToRun` when the cell value is set. This is what the shell task will use to wait.
-  - Preemption: call `scheduler_tick` every tick
+  - Create proper sleeping mutexes
+  - Preemption: call `scheduler_tick` every tick, update time slices, handle unscheduling current task if there is another pending task and the current task hit its time slice
   - Consider storing context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>. This makes it easier to manipulate during setup.
 - VirtIO improvements:
   - Create a physically contiguous heap, or slab allocator, or something for virtio buffer requests so we don't waste an entire page per tiny allocation.
