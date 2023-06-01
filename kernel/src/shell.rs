@@ -47,6 +47,7 @@ impl ShellBuffer {
 }
 
 pub(crate) fn run_serial_shell() -> ! {
+    serial_println!("Welcome to Rust OS! Here is a shell for you to use.");
     let mut buffer = NEXT_COMMAND_BUFFER.lock();
 
     loop {

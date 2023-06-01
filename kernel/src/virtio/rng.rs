@@ -29,8 +29,6 @@ pub(crate) fn try_init_virtio_rng(device_config: VirtIODeviceConfig) {
     let mut virtio_rng = VirtIORNG::from_device(device_config);
     virtio_rng.enable_msix(0);
 
-    serial_println!("VirtIO RNG initialized: {virtio_rng:#x?}");
-
     VIRTIO_RNG.init(virtio_rng);
 }
 

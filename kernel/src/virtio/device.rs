@@ -4,8 +4,8 @@ use core::fmt;
 use bitflags::Flags;
 
 use crate::barrier::barrier;
+use crate::interrupts;
 use crate::interrupts::{InterruptHandler, InterruptHandlerID};
-use crate::{interrupts, serial_println};
 
 use super::config::{VirtIOConfigStatus, VirtIODeviceConfig};
 use super::features::ReservedFeatureBits;
@@ -53,7 +53,6 @@ impl VirtIOInitializedDevice {
         // the feature registers are 32 bits wide, so we use the feature
         // selection registers 4 times to select features.
         let mut device_features = device_config.get_device_features::<F>();
-        serial_println!("VirtIO device feature bits: {device_features:#?}");
 
         // Disable VIRTIO_F_EVENT_IDX so we don't need to mess with `used_event`
         // in avail ring.
@@ -68,7 +67,6 @@ impl VirtIOInitializedDevice {
         // Write the features we want to enable
         let mut driver_features = device_features;
         driver_features.negotiate_device_bits(negotiate_device_bits);
-        serial_println!("VirtIO driver feature bits: {driver_features:#?}");
         device_config.set_driver_features(&driver_features);
 
         // Set the FEATURES_OK status bit to indicate that the driver has

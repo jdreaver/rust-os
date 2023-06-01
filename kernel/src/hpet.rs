@@ -6,13 +6,12 @@ use bitfield_struct::bitfield;
 use crate::interrupts::{InterruptHandler, InterruptHandlerID};
 use crate::registers::{RegisterRO, RegisterRW};
 use crate::sync::InitCell;
-use crate::{interrupts, ioapic, register_struct, serial_println};
+use crate::{interrupts, ioapic, register_struct};
 
 static HPET: InitCell<HPET> = InitCell::new();
 
 pub(crate) unsafe fn init(hpet_apic_base_address: usize) {
     let hpet = unsafe { HPET::from_base_address(hpet_apic_base_address) };
-    serial_println!("HPET: {:#x?}", hpet);
     HPET.init(hpet);
 }
 
@@ -30,9 +29,6 @@ pub(crate) fn enable_periodic_timer_handler(
 
     let interval_femtoseconds = interval.femtoseconds();
     hpet.enable_periodic_timer(timer_number, ioapic_irq_number, interval_femtoseconds);
-
-    let timer = hpet.timer_registers(timer_number);
-    serial_println!("installed HPET timer {timer_number:?}: {timer:#x?}");
 }
 
 /// Global list of HPET timer numbers to prevent collisions.

@@ -3,15 +3,14 @@ use core::fmt;
 use bitfield_struct::bitfield;
 
 use crate::acpi::ACPIInfo;
+use crate::register_struct;
 use crate::registers::RegisterRW;
 use crate::sync::InitCell;
-use crate::{register_struct, serial_println};
 
 static IOAPIC: InitCell<IOAPIC> = InitCell::new();
 
 pub(crate) fn init(acpi_info: &ACPIInfo) {
     let ioapic = IOAPIC::from_acpi_info(acpi_info);
-    serial_println!("IO APIC: {ioapic:#x?}");
     IOAPIC.init(ioapic);
 }
 

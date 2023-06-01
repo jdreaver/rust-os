@@ -40,7 +40,6 @@ pub(crate) fn try_init_virtio_block(device_config: VirtIODeviceConfig) {
         handler_id,
         virtio_block_interrupt,
     );
-    serial_println!("VirtIOBlockDevice: {:#x?}", device);
 
     devices.push(device);
 }
