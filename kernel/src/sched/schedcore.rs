@@ -143,7 +143,7 @@ impl Tasks {
         let mut remaining_pending_tasks = VecDeque::new();
         for id in &self.pending_tasks {
             let task = self.get_task_assert(*id);
-            if task.state.get() == TaskState::Killed {
+            if task.state.load() == TaskState::Killed {
                 self.tasks.remove(id);
             } else {
                 remaining_pending_tasks.push_back(*id);
@@ -164,7 +164,7 @@ impl Tasks {
             };
 
             let next_task = self.get_task_assert(next_task_id);
-            if next_task.state.get() == TaskState::ReadyToRun {
+            if next_task.state.load() == TaskState::ReadyToRun {
                 // Found a ready task
                 break Some(next_task_id);
             }
@@ -243,7 +243,7 @@ pub(crate) fn run_scheduler() {
         let idle_task_id = tasks.current_cpu_idle_task();
         let prev_task = tasks.current_task();
         let prev_task_id = prev_task.id;
-        let prev_task_state = prev_task.state.get();
+        let prev_task_state = prev_task.state.load();
         let next_task_id = match tasks.pop_next_ready_pending_task() {
             Some(id) => id,
             None => {
@@ -308,7 +308,7 @@ pub(crate) fn sleep(timeout: Milliseconds) {
         serial_println!(
             "sleep task status: {task_id:?}, {}, {:?}",
             task.name,
-            task.state.get()
+            task.state.load()
         );
     });
     run_scheduler();

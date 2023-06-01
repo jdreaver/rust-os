@@ -83,7 +83,7 @@ where
         )
     }
 
-    pub(crate) fn get(&self) -> T {
+    pub(crate) fn load(&self) -> T {
         let val = self.val.load(Ordering::SeqCst);
         Self::convert_from_u8(val)
     }
