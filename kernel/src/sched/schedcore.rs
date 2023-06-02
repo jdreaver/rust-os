@@ -8,6 +8,7 @@ use crate::hpet::Milliseconds;
 use crate::sync::{InitCell, SpinLock, SpinLockInterruptGuard};
 use crate::{apic, serial_println, tick};
 
+use super::stack;
 use super::task::{
     KernelTaskStartFunction, Task, TaskExitCode, TaskId, TaskKernelStackPointer, TaskState,
 };
@@ -258,7 +259,10 @@ impl Scheduler {
         for id in &self.pending_tasks {
             let task = self.get_task_assert(*id);
             if task.state.load() == TaskState::Killed {
-                self.tasks.remove(id);
+                let task = self.tasks.remove(id);
+                if let Some(task) = task {
+                    stack::free_stack(&task.kernel_stack);
+                };
             } else {
                 remaining_pending_tasks.push_back(*id);
             }
@@ -313,6 +317,8 @@ extern "C" fn idle_task_start(_arg: *const ()) {
 }
 
 pub(crate) fn init(acpi_info: &ACPIInfo) {
+    stack::init();
+
     let processor_info = acpi_info.processor_info();
     let max_lapic_id = processor_info
         .application_processors

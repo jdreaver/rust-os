@@ -1,6 +1,4 @@
 use alloc::sync::Arc;
-use alloc::vec;
-use alloc::vec::Vec;
 
 use crate::hpet::Milliseconds;
 use crate::sched::force_unlock_scheduler;
@@ -8,6 +6,7 @@ use crate::serial_println;
 use crate::sync::{AtomicEnum, AtomicInt, WaitQueue};
 
 use super::schedcore::scheduler_lock;
+use super::stack;
 
 /// A `Task` is a unit of work that can be scheduled, like a thread or a process.
 #[derive(Debug)]
@@ -20,17 +19,11 @@ pub(crate) struct Task {
 
     /// How much longer the task can run before it is preempted.
     pub(super) remaining_slice: AtomicInt<u64, Milliseconds>,
-    _kernel_stack: Vec<u8>,
+    pub(super) kernel_stack: stack::KernelStack,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct TaskId(pub(super) u32);
-
-/// All kernel stacks have the same, constant size.
-///
-/// TODO: This is quite large, but it is necessary even for extremely simple
-/// tasks because in debug mode we apparently use the stack a ton.
-const KERNEL_STACK_SIZE: usize = 4096 * 4;
 
 /// Function to run when starting a kernel task.
 ///
@@ -51,7 +44,7 @@ impl Task {
         arg: *const (),
     ) -> Self {
         // Allocate a kernel stack
-        let mut kernel_stack = vec![0; KERNEL_STACK_SIZE];
+        let kernel_stack = stack::allocate_stack();
 
         // We need to push many values onto the stack to set up the stack frame
         // for when we run switch_to_task. The general purpose registers don't
@@ -60,46 +53,43 @@ impl Task {
         //
         // TODO: This would be a lot easier if we used an actual struct for this.
 
-        // Push the RIP for the task_setup.
-        let task_setup_rip_bytes_end = KERNEL_STACK_SIZE;
-        let task_setup_rip_bytes_start = KERNEL_STACK_SIZE - 8;
-        let task_setup_address = task_setup as usize;
-        kernel_stack[task_setup_rip_bytes_start..task_setup_rip_bytes_end]
-            .copy_from_slice(&(task_setup_address as u64).to_le_bytes());
+        let stack_top = unsafe {
+            // -7 because we need to align to a u64.
+            #[allow(clippy::cast_ptr_alignment)]
+            let stack_top_pointer = kernel_stack
+                .top_addr()
+                .as_mut_ptr::<u8>()
+                .sub(7)
+                .cast::<usize>();
+            assert!(stack_top_pointer as usize % 8 == 0, "stack top not aligned");
 
-        // Set rsi, which will end up as the second argument to task_setup when
-        // we `ret` to it in `switch_to_task` (this is the C calling
-        // convention).
-        let task_rdi_bytes_end = KERNEL_STACK_SIZE - (6 * 8);
-        let task_rdi_bytes_start = KERNEL_STACK_SIZE - (7 * 8);
-        let task_rdi = arg as usize;
-        kernel_stack[task_rdi_bytes_start..task_rdi_bytes_end]
-            .copy_from_slice(&task_rdi.to_le_bytes());
+            // Push the RIP for the task_setup.
+            *stack_top_pointer = task_setup as usize;
 
-        // Set rdi, which will end up as the first argument to task_setup when
-        // we `ret` to it in `switch_to_task` (this is the C calling
-        // convention).
-        let task_rdi_bytes_end = KERNEL_STACK_SIZE - (7 * 8);
-        let task_rdi_bytes_start = KERNEL_STACK_SIZE - (8 * 8);
-        let task_rdi = start_fn as usize;
-        kernel_stack[task_rdi_bytes_start..task_rdi_bytes_end]
-            .copy_from_slice(&task_rdi.to_le_bytes());
+            // Set rsi, which will end up as the second argument to task_setup when
+            // we `ret` to it in `switch_to_task` (this is the C calling
+            // convention).
+            *stack_top_pointer.sub(6) = arg as usize;
 
-        let num_general_purpose_registers = 15; // Ensure this matches `switch_to_task`!!!
-        let num_stored_registers = num_general_purpose_registers + 1; // +1 for task_setup RIP
-        let kernel_stack_pointer = TaskKernelStackPointer(
-            // * 8 is because each register is 8 bytes
-            kernel_stack.as_ptr() as usize + KERNEL_STACK_SIZE - num_stored_registers * 8,
-        );
+            // Set rdi, which will end up as the first argument to task_setup when
+            // we `ret` to it in `switch_to_task` (this is the C calling
+            // convention).
+            *stack_top_pointer.sub(7) = start_fn as usize;
+
+            // N.B. The stack_top already accounts for the task_setup RIP, so we
+            // don't need to add +1 here.
+            let num_general_purpose_registers = 15; // Ensure this matches `switch_to_task`!!!
+            stack_top_pointer.sub(num_general_purpose_registers) as usize
+        };
 
         Self {
             id,
             name,
-            kernel_stack_pointer,
+            kernel_stack_pointer: TaskKernelStackPointer(stack_top),
             state: AtomicEnum::new(TaskState::ReadyToRun),
             remaining_slice: AtomicInt::new(Milliseconds::new(0)),
             exit_wait_queue: Arc::new(WaitQueue::new()),
-            _kernel_stack: kernel_stack,
+            kernel_stack,
         }
     }
 }

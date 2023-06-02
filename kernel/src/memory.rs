@@ -2,7 +2,7 @@ use core::alloc::AllocError;
 use core::ptr;
 
 use bitmap_alloc::{bootstrap_allocator, BitmapAllocator, MemoryRegion};
-use x86_64::structures::paging::mapper::{MapToError, Translate};
+use x86_64::structures::paging::mapper::{MapToError, Translate, UnmapError};
 use x86_64::structures::paging::{
     FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTable, PageTableFlags, PhysFrame,
     Size4KiB,
@@ -97,6 +97,29 @@ pub(crate) fn allocate_and_map_page(
             mapper.map_to(page, frame, flags, allocator)?.flush();
             Ok(())
         })
+    })
+}
+
+/// Maps a page to a non-existent frame.
+pub(crate) unsafe fn map_guard_page(page: Page) -> Result<(), MapToError<Size4KiB>> {
+    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
+        KERNEL_MAPPER.with_lock(|mapper| unsafe {
+            let frame = PhysFrame::containing_address(PhysAddr::new(0));
+            let page_flags = PageTableFlags::empty();
+            let parent_table_flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+            mapper
+                .map_to_with_table_flags(page, frame, page_flags, parent_table_flags, allocator)?
+                .flush();
+            Ok(())
+        })
+    })
+}
+
+pub(crate) unsafe fn unmap_page(page: Page) -> Result<(), UnmapError> {
+    KERNEL_MAPPER.with_lock(|mapper| {
+        let (_, flush) = mapper.unmap(page)?;
+        flush.flush();
+        Ok(())
     })
 }
 

@@ -91,6 +91,7 @@ make test
 
 ## TODO
 
+- Replace `allocate_and_map_page` with `allocate_and_map_pages`, which accepts a `PageRange`, so we don't have to keep taking a bunch of locks in a loop.
 - Synchronization primitives
   - Mutex (not spinlock "mutex") that handles sleeping and waking
     - I like Linux's mutex where they store the current holder's task ID in an atomic variable
@@ -120,8 +121,6 @@ make test
 - IRQ locking:
   - Linux uses spin locks for each IRQ, as well as masking interrupts but telling the APIC it got the interrupt <https://www.oreilly.com/library/view/understanding-the-linux/0596005652/ch04s06.html>
   - <https://docs.kernel.org/core-api/genericirq.html> mentions that a generic handler is hard b/c of APIC , IO/APIC, etc ACKs, which is why `__do_IRQ` no longer exists
-- Detect kernel stack overflows. Guard pages? Some other mechanism?
-  - I need a huge stack for debug mode apparently. I was seeing stack overflows with a 4096 byte stack when running in debug mode, so I quadrupled it
 - Try replacing bitmap allocator with a buddy allocator, perhaps itself implemented with multiple bitmaps <https://wiki.osdev.org/Page_Frame_Allocation>
 - `registers.rs` and macros
   - Consider moving `registers.rs` stuff into dedicated crate with unit tests

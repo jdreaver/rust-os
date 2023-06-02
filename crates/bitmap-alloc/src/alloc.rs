@@ -15,7 +15,7 @@ pub struct BitmapAllocator<'a> {
 impl<'a> BitmapAllocator<'a> {
     pub(crate) const BITS_PER_CHUNK: usize = u64::BITS as usize;
 
-    pub(crate) fn new(bitmap: &'a mut [u64]) -> BitmapAllocator<'a> {
+    pub fn new(bitmap: &'a mut [u64]) -> BitmapAllocator<'a> {
         BitmapAllocator {
             bitmap,
             last_single_page_allocation: None,
