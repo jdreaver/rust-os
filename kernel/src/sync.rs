@@ -1,4 +1,6 @@
 use alloc::boxed::Box;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::fmt;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
@@ -270,51 +272,63 @@ where
     }
 }
 
-/// A value that can be waited on by a task.
+/// A value that can be waited on by tasks. Tasks sleep while they wait, and
+/// they are woken up when the value is written. Each waiting task is given a
+/// copy of the value via `Arc`. (TODO: We might want a primitive that only
+/// wakes up a single task, and gives that task the value directly without an
+/// `Arc`, then the other tasks must wait for a new value.)
 #[derive(Debug)]
-pub(crate) struct WaitValue<T>(SpinLock<WaitValueInner<T>>);
+pub(crate) struct WaitQueue<T>(SpinLock<WaitQueueInner<T>>);
 
 #[derive(Debug)]
-struct WaitValueInner<T> {
-    value: Option<T>,
+struct WaitQueueInner<T> {
+    value: Option<Arc<T>>,
 
-    /// The task waiting for the value to change.
-    task_id: Option<TaskId>,
+    /// The tasks waiting for the value to change.
+    task_ids: Vec<TaskId>, // N.B. Vec faster than HashSet for small sets
 }
 
-impl<T> WaitValue<T> {
-    /// Creates a `WaitCell` for the current task.
-    pub(crate) const fn new_current_task() -> Self {
-        Self(SpinLock::new(WaitValueInner {
+impl<T> WaitQueue<T> {
+    pub(crate) const fn new() -> Self {
+        Self(SpinLock::new(WaitQueueInner {
             value: None,
-            task_id: None,
+            task_ids: Vec::new(),
         }))
     }
 
-    /// Stores the value and wakes up the sleeping task.
+    /// Stores the value and wakes up the sleeping tasks.
     pub(crate) fn put_value(&self, val: T) {
         let mut inner = self.0.lock_disable_interrupts();
-        inner.value.replace(val);
-        if let Some(task_id) = inner.task_id {
+        inner.value.replace(Arc::new(val));
+        for task_id in inner.task_ids.drain(..) {
             sched::awaken_task(task_id);
         }
     }
 
     /// Waits until the value is initialized, sleeping if necessary.
-    pub(crate) fn wait_sleep(&self) -> T {
+    pub(crate) fn wait_sleep(&self) -> Arc<T> {
         let task_id = sched::current_task_id();
+        self.0.lock_disable_interrupts().task_ids.push(task_id);
+
         loop {
             {
                 let mut inner = self.0.lock_disable_interrupts();
 
-                if inner.task_id.is_none() {
-                    inner.task_id.replace(task_id);
-                }
+                if let Some(value) = &inner.value {
+                    let value = value.clone();
 
-                if let Some(value) = inner.value.take() {
+                    // Remove task ID from the list of waiting tasks.
+                    let index = inner.task_ids.iter().position(|id| *id == task_id);
+                    if let Some(index) = index {
+                        inner.task_ids.swap_remove(index);
+                    }
+
                     return value;
                 }
-                // Value isn't present. Go back to sleep.
+
+                // Value isn't present. Go back to sleep. It is important we do
+                // this while the lock is still taken or else a producer might
+                // write the value before this line and we may never wake up.
                 sched::go_to_sleep();
             }
 

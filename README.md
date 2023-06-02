@@ -95,7 +95,6 @@ make test
   - Mutex (not spinlock "mutex") that handles sleeping and waking
     - I like Linux's mutex where they store the current holder's task ID in an atomic variable
   - In the future we should disable preemption when spin locks are taken
-  - Rename `WaitValue` to `WaitQueue`, have it hold multiple tasks, have it hand out a value in an `Arc` so it can be sent to multiple consumers.
 - Deadlock debugging: find a way to detect deadlocks and print the locks involved
   - Should we fail if we are holding a spinlock for too long?
   - Consider naming spinlocks, and having the lock holder put their name once they take the lock. Then if we fail we can dump all of this info.
@@ -103,6 +102,7 @@ make test
   - Consider storing context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>. This makes it easier to manipulate during setup.
   - Waiting for a task: make a way to put the current task to sleep until the child task is done, and wake up the current task ~instantly. Currently we loop with `sleep`.
     - Linux has a system call for this, so clearly there is kernel support for it: <https://man7.org/linux/man-pages/man2/wait.2.html>
+    - I think we could do this by always generating a `WaitQueue` whenever we spawn a task, and having the task's wrapper function deal with triggering it when the task exits. It can return the task's exit code.
 - VirtIO improvements:
   - Create a physically contiguous heap, or slab allocator, or something for virtio buffer requests so we don't waste an entire page per tiny allocation.
     - Ensure we are still satisfying any alignment requirements for buffers. Read the spec!

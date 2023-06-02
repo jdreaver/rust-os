@@ -8,7 +8,7 @@ use spin::RwLock;
 use crate::interrupts::InterruptHandlerID;
 use crate::memory::PhysicalBuffer;
 use crate::registers::RegisterRO;
-use crate::sync::{SpinLock, WaitValue};
+use crate::sync::{SpinLock, WaitQueue};
 use crate::{register_struct, serial_println, strings};
 
 use super::device::VirtIOInitializedDevice;
@@ -49,7 +49,7 @@ pub(crate) fn virtio_block_print_devices() {
     serial_println!("virtio block devices: {:#x?}", devices);
 }
 
-pub(crate) fn virtio_block_get_id(device_index: usize) -> Arc<WaitValue<VirtIOBlockResponse>> {
+pub(crate) fn virtio_block_get_id(device_index: usize) -> Arc<WaitQueue<VirtIOBlockResponse>> {
     let device_lock = VIRTIO_BLOCK.read();
     let device = device_lock.get(device_index).expect("invalid device index");
     device.add_request(&BlockRequest::GetID)
@@ -58,7 +58,7 @@ pub(crate) fn virtio_block_get_id(device_index: usize) -> Arc<WaitValue<VirtIOBl
 pub(crate) fn virtio_block_read(
     device_index: usize,
     sector: u64,
-) -> Arc<WaitValue<VirtIOBlockResponse>> {
+) -> Arc<WaitQueue<VirtIOBlockResponse>> {
     let device_lock = VIRTIO_BLOCK.read();
     let device = device_lock.get(device_index).expect("invalid device index");
     device.add_request(&BlockRequest::Read { sector })
@@ -155,7 +155,7 @@ impl VirtIOBlockDevice {
         }
     }
 
-    fn add_request(&self, request: &BlockRequest) -> Arc<WaitValue<VirtIOBlockResponse>> {
+    fn add_request(&self, request: &BlockRequest) -> Arc<WaitQueue<VirtIOBlockResponse>> {
         let raw_request = request.to_raw();
         let (desc_chain, buffer) = raw_request.to_descriptor_chain();
 
@@ -163,7 +163,7 @@ impl VirtIOBlockDevice {
         let mut virtqueue_data = self.virtqueue_data.lock_disable_interrupts();
         let data = BlockDeviceDescData {
             buffer,
-            cell: Arc::new(WaitValue::new_current_task()),
+            cell: Arc::new(WaitQueue::new()),
         };
         let copied_cell = data.cell.clone();
 
@@ -476,7 +476,7 @@ impl BlockRequestStatus {
 struct BlockDeviceDescData {
     // Buffer is kept here so we can drop it when we are done with the request.
     buffer: PhysicalBuffer,
-    cell: Arc<WaitValue<VirtIOBlockResponse>>,
+    cell: Arc<WaitQueue<VirtIOBlockResponse>>,
 }
 
 #[derive(Debug)]
