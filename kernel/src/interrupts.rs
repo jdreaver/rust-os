@@ -89,6 +89,7 @@ lazy_static!(
             idt.double_fault
                 .set_handler_fn(double_fault_handler)
                 .set_stack_index(gdt::DOUBLE_FAULT_IST_INDEX);
+            idt.page_fault.set_handler_fn(page_fault_handler).set_stack_index(gdt::PAGE_FAULT_IST_INDEX);
         }
 
         // Set up stub handlers for all external interrupts.
@@ -156,7 +157,7 @@ extern "x86-interrupt" fn page_fault_handler(
     use x86_64::registers::control::Cr2;
 
     serial_println!("EXCEPTION: PAGE FAULT");
-    serial_println!("Accessed Address (CR2): {:x?}", Cr2::read_raw());
+    serial_println!("Accessed Address (CR2): {:#x?}", Cr2::read_raw());
     serial_println!("Error Code: {error_code:?}");
     serial_println!("{stack_frame:#?}");
 

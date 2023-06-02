@@ -26,6 +26,7 @@ struct Selectors {
 }
 
 pub(crate) const DOUBLE_FAULT_IST_INDEX: u16 = 0;
+pub(crate) const PAGE_FAULT_IST_INDEX: u16 = 1;
 
 lazy_static! {
     // N.B. TSS is mostly used in 32 bit mode, but in 64 bit mode it is still
@@ -38,6 +39,15 @@ lazy_static! {
     static ref TSS: TaskStateSegment = {
         let mut tss = TaskStateSegment::new();
         tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] = {
+            const STACK_SIZE: usize = 4096 * 5;
+            static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
+
+            let stack_start = VirtAddr::from_ptr(unsafe { &STACK });
+            #[allow(clippy::let_and_return)]
+            let stack_end = stack_start + STACK_SIZE;
+            stack_end
+        };
+        tss.interrupt_stack_table[PAGE_FAULT_IST_INDEX as usize] = {
             const STACK_SIZE: usize = 4096 * 5;
             static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
 
