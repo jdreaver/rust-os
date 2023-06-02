@@ -1,9 +1,10 @@
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::hpet::Milliseconds;
 use crate::serial_println;
-use crate::sync::{AtomicEnum, AtomicInt};
+use crate::sync::{AtomicEnum, AtomicInt, WaitQueue};
 
 use super::schedcore::{run_scheduler, tasks_lock};
 
@@ -14,6 +15,7 @@ pub(crate) struct Task {
     pub(super) name: &'static str,
     pub(super) kernel_stack_pointer: TaskKernelStackPointer,
     pub(super) state: AtomicEnum<u8, TaskState>,
+    pub(super) exit_wait_queue: Arc<WaitQueue<TaskExitCode>>,
 
     /// How much longer the task can run before it is preempted.
     pub(super) remaining_slice: AtomicInt<u64, Milliseconds>,
@@ -95,6 +97,7 @@ impl Task {
             kernel_stack_pointer,
             state: AtomicEnum::new(TaskState::ReadyToRun),
             remaining_slice: AtomicInt::new(Milliseconds::new(0)),
+            exit_wait_queue: Arc::new(WaitQueue::new()),
             _kernel_stack: kernel_stack,
         }
     }
@@ -133,6 +136,12 @@ impl From<TaskState> for u8 {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum TaskExitCode {
+    ExitSuccess,
+    // TODO: Add failure codes here
+}
+
 /// Architecture-specific assembly code that is run when a task is switched to
 /// for the very first time.
 ///
@@ -159,7 +168,7 @@ pub(super) extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *cons
     task_fn(arg);
 
     // Mark the current task as dead and run the scheduler.
-    {
+    let wait_queue = {
         let lock = tasks_lock().lock_disable_interrupts();
         let current_task = lock.current_task();
         serial_println!(
@@ -168,7 +177,11 @@ pub(super) extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *cons
             current_task.id
         );
         current_task.state.swap(TaskState::Killed);
-    }
+        current_task.exit_wait_queue.clone()
+    };
+
+    // Inform waiters that the task has exited.
+    wait_queue.put_value(TaskExitCode::ExitSuccess);
 
     run_scheduler();
 

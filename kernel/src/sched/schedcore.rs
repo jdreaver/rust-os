@@ -8,7 +8,9 @@ use crate::hpet::Milliseconds;
 use crate::sync::{InitCell, SpinLock};
 use crate::{apic, serial_println, tick};
 
-use super::task::{KernelTaskStartFunction, Task, TaskId, TaskKernelStackPointer, TaskState};
+use super::task::{
+    KernelTaskStartFunction, Task, TaskExitCode, TaskId, TaskKernelStackPointer, TaskState,
+};
 
 static TASKS: InitCell<SpinLock<Tasks>> = InitCell::new();
 
@@ -375,33 +377,16 @@ pub(crate) fn awaken_task(task_id: TaskId) {
 }
 
 /// Waits until the given task is finished.
-pub(crate) fn wait_on_task(target_task_id: TaskId, sleep_interval: Milliseconds) {
-    loop {
-        {
-            let lock = tasks_lock().lock_disable_interrupts();
+pub(crate) fn wait_on_task(target_task_id: TaskId) -> Option<TaskExitCode> {
+    let exit_wait_queue = {
+        let lock = tasks_lock().lock_disable_interrupts();
 
-            // TODO: Set current task to sleeping. We can't do this until we
-            // have a reliable way to wake it up from outside of this function.
-
-            // If target task doesn't exist, assume it is done
-            let Some(target_task) = lock.get_task(target_task_id) else { break; };
-            // If target task was killed, assume it is done
-            if target_task.state.load() == TaskState::Killed {
-                break;
-            }
-        }
-
-        // TODO: Instead of sleeping for a set interval, put the current task to
-        // sleep and find a reliable way to wake it up once the target task is
-        // done. This logic might not belong in the scheduler; it might need to
-        // be a wrapper function. For example, spawn a task in a function, and
-        // then create some kind of condvar of signal that the parent task can
-        // wait on.
-        sleep_timeout(sleep_interval);
-        run_scheduler();
-    }
-
-    run_scheduler();
+        // If target task doesn't exist, assume it is done and was killed
+        let Some(target_task) = lock.get_task(target_task_id) else { return None; };
+        target_task.exit_wait_queue.clone()
+    };
+    let exit_code = exit_wait_queue.wait_sleep();
+    Some(*exit_code)
 }
 
 /// Architecture-specific assembly code to switch from one task to another.

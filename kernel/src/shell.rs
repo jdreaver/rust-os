@@ -295,7 +295,7 @@ fn run_command(command: &Command) {
         Command::PrimeSync(n) => {
             let task_id =
                 sched::push_task("calculate prime", calculate_prime_task, *n as *const ());
-            sched::wait_on_task(task_id, Milliseconds::new(100));
+            sched::wait_on_task(task_id);
         }
         Command::PrimeAsync(n) => {
             sched::push_task("calculate prime", calculate_prime_task, *n as *const ());
