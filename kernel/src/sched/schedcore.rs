@@ -1,5 +1,6 @@
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::vec::Vec;
+use core::arch::asm;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::acpi::ACPIInfo;
@@ -7,9 +8,7 @@ use crate::hpet::Milliseconds;
 use crate::sync::{InitCell, SpinLock};
 use crate::{apic, serial_println, tick};
 
-use super::task::{
-    switch_to_task, KernelTaskStartFunction, Task, TaskId, TaskKernelStackPointer, TaskState,
-};
+use super::task::{KernelTaskStartFunction, Task, TaskId, TaskKernelStackPointer, TaskState};
 
 static TASKS: InitCell<SpinLock<Tasks>> = InitCell::new();
 
@@ -17,7 +16,7 @@ static TASKS: InitCell<SpinLock<Tasks>> = InitCell::new();
 /// require a task context before we've started running tasks.
 static MULTITASKING_STARTED: AtomicBool = AtomicBool::new(false);
 
-fn tasks_lock() -> &'static SpinLock<Tasks> {
+pub(super) fn tasks_lock() -> &'static SpinLock<Tasks> {
     assert!(
         MULTITASKING_STARTED.load(Ordering::Relaxed),
         "multi-tasking not initialized, but tasks_lock called"
@@ -27,7 +26,7 @@ fn tasks_lock() -> &'static SpinLock<Tasks> {
 }
 
 /// Holds all tasks in the kernel.
-struct Tasks {
+pub(super) struct Tasks {
     /// Next ID to use when creating a new task.
     next_task_id: TaskId,
 
@@ -101,7 +100,7 @@ impl Tasks {
     }
 
     /// Gets the currently running task on the current CPU.
-    fn current_task(&self) -> &Task {
+    pub(super) fn current_task(&self) -> &Task {
         let id = self.current_task_id();
         self.get_task_assert(id)
     }
@@ -405,44 +404,62 @@ pub(crate) fn wait_on_task(target_task_id: TaskId, sleep_interval: Milliseconds)
     run_scheduler();
 }
 
-/// Architecture-specific assembly code that is run when a task is switched to
-/// for the very first time.
-///
-/// This is similar to Linux's
-/// [`ret_from_fork`](https://elixir.bootlin.com/linux/v6.3.2/source/arch/x86/entry/entry_64.S#L279)
-/// and
-/// [`schedule_tail`](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/sched/core.c#L5230)
-/// functions, as well as xv6's
-/// [`forkret`](https://github.com/IamAdiSri/xv6/blob/4cee212b832157fde3289f2088eb5a9d8713d777/proc.c#L406-L425).
-///
-/// `extern "C"` is important here. We get to this function via a `ret` in
-/// `switch_to_task`, and we need to pass in arguments via the known C calling
-/// convention registers.
-pub(super) extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *const ()) {
-    // Release the scheduler lock
+/// Architecture-specific assembly code to switch from one task to another.
+#[naked]
+pub(super) unsafe extern "C" fn switch_to_task(
+    previous_task_stack_pointer: *const TaskKernelStackPointer,
+    next_task_stack_pointer: TaskKernelStackPointer,
+) {
     unsafe {
-        tasks_lock().force_unlock();
-    };
-
-    // Re-enable interrupts. Interrupts are disabled in `run_scheduler`. Ensure
-    // that we re-enable them.
-    x86_64::instructions::interrupts::enable();
-
-    task_fn(arg);
-
-    // Mark the current task as dead and run the scheduler.
-    {
-        let lock = tasks_lock().lock_disable_interrupts();
-        let current_task = lock.current_task();
-        serial_println!(
-            "task_setup: task {} {:?} task_fn returned, halting",
-            current_task.name,
-            current_task.id
+        asm!(
+            // Save the previous task's general purpose registers by pushing
+            // them onto the stack. Next time we switch to this task, we simply
+            // pop them off the stack.
+            //
+            // TODO: If we assume a C calling convention, we can decide to just
+            // save the callee-saved registers.
+            "push rax",
+            "push rbx",
+            "push rcx",
+            "push rdx",
+            "push rbp",
+            "push rsi",
+            "push rdi",
+            "push r8",
+            "push r9",
+            "push r10",
+            "push r11",
+            "push r12",
+            "push r13",
+            "push r14",
+            "push r15",
+            // Save the previous task's stack pointer in the task struct. (First
+            // param of this function is in rdi)
+            "mov [rdi], rsp",
+            // Restore the next task's stack pointer from the task struct.
+            // (Second param of this function is in rsi)
+            "mov rsp, rsi",
+            // Pop the next task's saved general purpose registers. Remember,
+            // the only way we could have gotten to this point in the old task
+            // is if it called this function itself, so we know that the next
+            // task's registers are already saved on the stack.
+            "pop r15",
+            "pop r14",
+            "pop r13",
+            "pop r12",
+            "pop r11",
+            "pop r10",
+            "pop r9",
+            "pop r8",
+            "pop rdi",
+            "pop rsi",
+            "pop rbp",
+            "pop rdx",
+            "pop rcx",
+            "pop rbx",
+            "pop rax",
+            "ret",
+            options(noreturn),
         );
-        current_task.state.swap(TaskState::Killed);
     }
-
-    run_scheduler();
-
-    panic!("somehow returned to task_setup for dead task after running scheduler");
 }
