@@ -91,15 +91,11 @@ make test
 
 ## TODO
 
-- Have `awaken_task` be a scheduler method
-  - Consider having `LockDisableInterrupts` use a distinct guard type instead of sharing `SpinLockGuard`, and pass this into `WaitQueue.put_value`
 - Synchronization primitives
   - Mutex (not spinlock "mutex") that handles sleeping and waking
     - I like Linux's mutex where they store the current holder's task ID in an atomic variable
   - In the future we should disable preemption when spin locks are taken
 - Deadlock debugging: find a way to detect deadlocks and print the locks involved
-  - Come up with a way to do nesting of functions that need locks in a foolproof way. Maybe pass around a `&MutexGuard` explicitly?
-    - Consider requiring a `&mut Tasks` reference, so the user has to take the lock on `TASKS` explicitly. Also, take the lock for them and use `lock_disable_interrupts`
   - Should we fail if we are holding a spinlock for too long?
   - Consider naming spinlocks, and having the lock holder put their name once they take the lock. Then if we fail we can dump all of this info.
 - Multi-tasking (see resources below)

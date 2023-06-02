@@ -57,6 +57,11 @@ pub(crate) struct Scheduler {
 
     /// All tasks that are not running, except for the idle tasks.
     pending_tasks: VecDeque<TaskId>,
+
+    /// If set to true, then the scheduler should reschedule as soon as
+    /// possible. Used after exiting from IRQs and in other contexts that would
+    /// opportunistically trigger the scheduler if appropriate.
+    needs_reschedule: bool,
 }
 
 impl Scheduler {
@@ -81,6 +86,7 @@ impl Scheduler {
             running_tasks_by_cpu,
             idle_tasks_by_cpu,
             pending_tasks: VecDeque::new(),
+            needs_reschedule: false,
         }
     }
 
@@ -146,8 +152,8 @@ impl Scheduler {
     const DEFAULT_TIME_SLICE: Milliseconds = Milliseconds::new(100);
 
     pub(crate) fn run_scheduler(&mut self) {
-        // Set NEEDS_RESCHEDULE to false if it hasn't been set already.
-        NEEDS_RESCHEDULE.swap(false, Ordering::Acquire);
+        // Set self.needs_reschedule to false if it hasn't been set already.
+        self.needs_reschedule = false;
 
         // If the previous task still has a time slice left, don't preempt it.
         // (Except for idle task. We don't care if that ran out of time.)
@@ -214,7 +220,7 @@ impl Scheduler {
 
     /// If the scheduler needs to run, then run it.
     pub(crate) fn run_scheduler_if_needed(&mut self) {
-        if NEEDS_RESCHEDULE.swap(false, Ordering::Acquire) {
+        if self.needs_reschedule {
             self.run_scheduler();
         }
     }
@@ -293,9 +299,9 @@ impl Scheduler {
 
     /// Puts the current task to sleep and returns the current task ID.
     pub(crate) fn go_to_sleep(&mut self) -> TaskId {
+        self.needs_reschedule = true;
         let current_task = self.current_task();
         current_task.state.swap(TaskState::Sleeping);
-        NEEDS_RESCHEDULE.store(true, Ordering::Release);
         current_task.id
     }
 }
@@ -346,40 +352,35 @@ pub(crate) fn scheduler_tick(time_between_ticks: Milliseconds) {
         return;
     }
 
-    let tasks = scheduler_lock();
+    let mut scheduler = scheduler_lock();
 
     // Deduct time from the currently running task's time slice.
-    let current_task = tasks.current_task();
+    let current_task = scheduler.current_task();
     let slice = current_task.remaining_slice.load();
     let slice = slice.saturating_sub(time_between_ticks);
     current_task.remaining_slice.store(slice);
 
     // If the task has run out of time, we need to run the scheduler.
     if slice == Milliseconds::new(0) {
-        NEEDS_RESCHEDULE.store(true, Ordering::Release);
+        scheduler.needs_reschedule = true;
     }
 }
 
-/// If set to true, then the scheduler should reschedule as soon as possible.
-/// Used after exiting from IRQs and in other contexts that would
-/// opportunistically trigger the scheduler if appropriate.
-static NEEDS_RESCHEDULE: AtomicBool = AtomicBool::new(false);
-
-/// Awakens the given task and sets NEEDS_RESCHEDULE to true.
+/// Awakens the given task and sets needs_reschedule to true.
 pub(crate) fn awaken_task(task_id: TaskId) {
-    let lock = scheduler_lock();
-    let task = lock.get_task_assert(task_id);
+    let mut scheduler = scheduler_lock();
+    let task = scheduler.get_task_assert(task_id);
     task.state.swap(TaskState::ReadyToRun);
-    NEEDS_RESCHEDULE.store(true, Ordering::Release);
+    scheduler.needs_reschedule = true;
 }
 
 /// Waits until the given task is finished.
 pub(crate) fn wait_on_task(target_task_id: TaskId) -> Option<TaskExitCode> {
     let exit_wait_queue = {
-        let lock = scheduler_lock();
+        let scheduler = scheduler_lock();
 
         // If target task doesn't exist, assume it is done and was killed
-        let Some(target_task) = lock.get_task(target_task_id) else { return None; };
+        let Some(target_task) = scheduler.get_task(target_task_id) else { return None; };
         target_task.exit_wait_queue.clone()
     };
     let exit_code = exit_wait_queue.wait_sleep();
