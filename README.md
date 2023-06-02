@@ -115,15 +115,12 @@ make test
   - Make page vs byte address part of the API b/c conversion is tricky and requires `div_ceil`. Newtypes/functions for both?
     - We could embrace `PhysAddr`, `PhysFrame`, `Size4KiB`, etc, but that would introduce dep on `x86_64` crate
 - Make a simple shell that runs hard-coded program names (not separate processes yet! Just inline code on the current thread)
-  - Integrate with multi-tasking. Make a new task for the thing being run, and the shell's task simply waits for the sub-task to complete.
   - Show register values, internal structures, etc
   - Have help be meaningful
   - Split up tests and have subcommands like `test all` (all can be optional) `test interrupts`, `test memory-mappings`, etc
   - Eventually replace using the serial device with vsock or virtio-console for speed. Maybe the primary interface to the OS could be a TUI, which would be super neat!
 - IOAPIC: Throw an error if IOAPIC number assigned to twice
-- Investigate if we should be doing `apic::end_of_interrupt` for handlers on their behalf or not.
-  - Consider the timer when we do scheduling. I think we want to call EOI _before_ the end of the timer handler, because we will be calling `schedule()` and we will be off to a new process
-    - This is what Linux does. It calls `schedule()` in the "exit" part of an interrupt handler. Maybe that is where we should put it: in the common handler routing after ACK'ing the interrupt.
+- IRQ locking:
   - Linux uses spin locks for each IRQ, as well as masking interrupts but telling the APIC it got the interrupt <https://www.oreilly.com/library/view/understanding-the-linux/0596005652/ch04s06.html>
   - <https://docs.kernel.org/core-api/genericirq.html> mentions that a generic handler is hard b/c of APIC , IO/APIC, etc ACKs, which is why `__do_IRQ` no longer exists
 - Detect kernel stack overflows. Guard pages? Some other mechanism?

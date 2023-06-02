@@ -1,3 +1,5 @@
+use core::sync::atomic::{AtomicU8, Ordering};
+
 use lazy_static::lazy_static;
 use paste::paste;
 use seq_macro::seq;
@@ -126,17 +128,12 @@ fn disable_pic() {
 /// Send spurious interrupts to a high index that we won't use.
 pub(crate) const SPURIOUS_INTERRUPT_VECTOR_INDEX: u8 = 0xFF;
 
-static NEXT_OPEN_INTERRUPT_INDEX: SpinLock<u8> = SpinLock::new(APIC_INTERRUPT_START_OFFSET);
+static NEXT_OPEN_INTERRUPT_INDEX: AtomicU8 = AtomicU8::new(APIC_INTERRUPT_START_OFFSET);
 
 /// Install an interrupt handler in the IDT. Uses the next open interrupt index
 /// and returns the used index.
 pub(crate) fn install_interrupt(interrupt_id: InterruptHandlerID, handler: InterruptHandler) -> u8 {
-    let interrupt_index = {
-        let mut next_index = NEXT_OPEN_INTERRUPT_INDEX.lock();
-        let index = *next_index;
-        *next_index += 1;
-        index
-    };
+    let interrupt_index = NEXT_OPEN_INTERRUPT_INDEX.fetch_add(1, Ordering::SeqCst);
     assert!(
         interrupt_index < SPURIOUS_INTERRUPT_VECTOR_INDEX,
         "Ran out of interrupt vectors"
