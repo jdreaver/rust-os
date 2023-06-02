@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::acpi::ACPIInfo;
 use crate::hpet::Milliseconds;
-use crate::sync::{InitCell, SpinLock, SpinLockGuard};
+use crate::sync::{InitCell, SpinLock, SpinLockInterruptGuard};
 use crate::{apic, serial_println, tick};
 
 use super::task::{
@@ -19,7 +19,7 @@ static SCHEDULER: InitCell<SpinLock<Scheduler>> = InitCell::new();
 static MULTITASKING_STARTED: AtomicBool = AtomicBool::new(false);
 
 /// Locks the scheduler and disables interrupts.
-pub(crate) fn scheduler_lock() -> SpinLockGuard<'static, Scheduler> {
+pub(crate) fn scheduler_lock() -> SpinLockInterruptGuard<'static, Scheduler> {
     SCHEDULER
         .get()
         .expect("tasks not initialized")
