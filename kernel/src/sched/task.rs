@@ -3,10 +3,11 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::hpet::Milliseconds;
+use crate::sched::force_unlock_scheduler;
 use crate::serial_println;
 use crate::sync::{AtomicEnum, AtomicInt, WaitQueue};
 
-use super::schedcore::{run_scheduler, tasks_lock};
+use super::schedcore::{run_scheduler, scheduler_lock};
 
 /// A `Task` is a unit of work that can be scheduled, like a thread or a process.
 #[derive(Debug)]
@@ -156,20 +157,19 @@ pub(crate) enum TaskExitCode {
 /// `switch_to_task`, and we need to pass in arguments via the known C calling
 /// convention registers.
 pub(super) extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *const ()) {
-    // Release the scheduler lock
+    // Release the scheduler lock. Normally, when we switch to a task, the task
+    // exits `run_scheduler` and the lock would be released. However, the first
+    // time we switch to a task we won't be exiting from `run_scheduler`, so we
+    // need to manually release the lock here.
     unsafe {
-        tasks_lock().force_unlock();
+        force_unlock_scheduler();
     };
-
-    // Re-enable interrupts. Interrupts are disabled in `run_scheduler`. Ensure
-    // that we re-enable them.
-    x86_64::instructions::interrupts::enable();
 
     task_fn(arg);
 
     // Mark the current task as dead and run the scheduler.
     let wait_queue = {
-        let lock = tasks_lock().lock_disable_interrupts();
+        let lock = scheduler_lock();
         let current_task = lock.current_task();
         serial_println!(
             "task_setup: task {} {:?} task_fn returned, halting",

@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::acpi::ACPIInfo;
 use crate::hpet::Milliseconds;
-use crate::sync::{InitCell, SpinLock};
+use crate::sync::{InitCell, SpinLock, SpinLockGuard};
 use crate::{apic, serial_println, tick};
 
 use super::task::{
@@ -18,13 +18,26 @@ static TASKS: InitCell<SpinLock<Tasks>> = InitCell::new();
 /// require a task context before we've started running tasks.
 static MULTITASKING_STARTED: AtomicBool = AtomicBool::new(false);
 
-pub(super) fn tasks_lock() -> &'static SpinLock<Tasks> {
+pub(super) fn scheduler_lock() -> SpinLockGuard<'static, Tasks> {
     assert!(
         MULTITASKING_STARTED.load(Ordering::Relaxed),
         "multi-tasking not initialized, but tasks_lock called"
     );
 
-    TASKS.get().expect("tasks not initialized")
+    TASKS
+        .get()
+        .expect("tasks not initialized")
+        .lock_disable_interrupts()
+}
+
+/// Force unlocks the scheduler and re-enables interrupts. This is necessary in
+/// contexts where we switched to a task in the scheduler but we can't release
+/// the lock.
+pub(super) unsafe fn force_unlock_scheduler() {
+    TASKS.get().expect("tasks not initialized").force_unlock();
+    // N.B. Ordering is important. Don't re-enable interrupts until the spinlock
+    // is released or else we could get an interrupt + a deadlock.
+    x86_64::instructions::interrupts::enable();
 }
 
 /// Holds all tasks in the kernel.
@@ -211,9 +224,7 @@ pub(crate) fn push_task(
     start_fn: KernelTaskStartFunction,
     arg: *const (),
 ) -> TaskId {
-    tasks_lock()
-        .lock_disable_interrupts()
-        .new_task(name, start_fn, arg)
+    scheduler_lock().new_task(name, start_fn, arg)
 }
 
 /// Switches from the bootstrap code, which isn't a task, to the first actual
@@ -225,7 +236,7 @@ pub(crate) fn start_multitasking(
 ) {
     MULTITASKING_STARTED.store(true, Ordering::Release);
 
-    let mut tasks = tasks_lock().lock_disable_interrupts();
+    let mut tasks = scheduler_lock();
     tasks.new_task(init_task_name, init_task_start_fn, init_task_arg);
 
     // Just a dummy location for switch_to_task to store the previous stack
@@ -239,7 +250,7 @@ pub(crate) fn start_multitasking(
 }
 
 pub(crate) fn current_task_id() -> TaskId {
-    tasks_lock().lock_disable_interrupts().current_task_id()
+    scheduler_lock().current_task_id()
 }
 
 /// How much time a task gets to run before being preempted.
@@ -253,7 +264,7 @@ pub(crate) fn run_scheduler() {
     // started for the very first time, `task_setup` handles re-enabling these.
     // Otherwise, they will be re-enabled by the next task when `run_scheduler`
     // is exited.
-    let mut tasks = tasks_lock().lock_disable_interrupts();
+    let mut tasks = scheduler_lock();
 
     // If the previous task still has a time slice left, don't preempt it.
     // (Except for idle task. We don't care if that ran out of time.)
@@ -324,7 +335,7 @@ pub(crate) fn scheduler_tick(time_between_ticks: Milliseconds) {
         return;
     }
 
-    let tasks = tasks_lock().lock_disable_interrupts();
+    let tasks = scheduler_lock();
 
     // Deduct time from the currently running task's time slice.
     let current_task = tasks.current_task();
@@ -352,7 +363,7 @@ pub(crate) fn run_scheduler_if_needed() {
 
 /// Puts the current task to sleep and returns the current task ID.
 pub(crate) fn go_to_sleep() -> TaskId {
-    let lock = tasks_lock().lock_disable_interrupts();
+    let lock = scheduler_lock();
     let current_task = lock.current_task();
     current_task.state.swap(TaskState::Sleeping);
     NEEDS_RESCHEDULE.store(true, Ordering::Release);
@@ -370,7 +381,7 @@ pub(crate) fn sleep_timeout(timeout: Milliseconds) {
 
 /// Awakens the given task and sets NEEDS_RESCHEDULE to true.
 pub(crate) fn awaken_task(task_id: TaskId) {
-    let lock = tasks_lock().lock_disable_interrupts();
+    let lock = scheduler_lock();
     let task = lock.get_task_assert(task_id);
     task.state.swap(TaskState::ReadyToRun);
     NEEDS_RESCHEDULE.store(true, Ordering::Release);
@@ -379,7 +390,7 @@ pub(crate) fn awaken_task(task_id: TaskId) {
 /// Waits until the given task is finished.
 pub(crate) fn wait_on_task(target_task_id: TaskId) -> Option<TaskExitCode> {
     let exit_wait_queue = {
-        let lock = tasks_lock().lock_disable_interrupts();
+        let lock = scheduler_lock();
 
         // If target task doesn't exist, assume it is done and was killed
         let Some(target_task) = lock.get_task(target_task_id) else { return None; };
