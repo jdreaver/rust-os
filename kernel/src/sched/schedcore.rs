@@ -237,6 +237,10 @@ pub(crate) fn start_multitasking(
     }
 }
 
+pub(crate) fn current_task_id() -> TaskId {
+    tasks_lock().lock_disable_interrupts().current_task_id()
+}
+
 /// How much time a task gets to run before being preempted.
 const DEFAULT_TIME_SLICE: Milliseconds = Milliseconds::new(100);
 
@@ -345,25 +349,30 @@ pub(crate) fn run_scheduler_if_needed() {
     }
 }
 
-/// Puts the current task to sleep for the given number of milliseconds.
-pub(crate) fn sleep(timeout: Milliseconds) {
-    let task_id = {
-        let lock = tasks_lock().lock_disable_interrupts();
-        let current_task = lock.current_task();
-        current_task.state.swap(TaskState::Sleeping);
-        current_task.id
-    };
+/// Puts the current task to sleep and returns the current task ID.
+pub(crate) fn go_to_sleep() -> TaskId {
+    let lock = tasks_lock().lock_disable_interrupts();
+    let current_task = lock.current_task();
+    current_task.state.swap(TaskState::Sleeping);
+    NEEDS_RESCHEDULE.store(true, Ordering::SeqCst);
+    current_task.id
+}
 
+/// Puts the current task to sleep for the given number of milliseconds.
+pub(crate) fn sleep_timeout(timeout: Milliseconds) {
+    let task_id = go_to_sleep();
     tick::add_relative_timer(timeout, move || {
-        wake_task(task_id);
+        awaken_task(task_id);
     });
     run_scheduler();
 }
 
-pub(crate) fn wake_task(task_id: TaskId) {
+/// Awakens the given task and sets NEEDS_RESCHEDULE to true.
+pub(crate) fn awaken_task(task_id: TaskId) {
     let lock = tasks_lock().lock_disable_interrupts();
     let task = lock.get_task_assert(task_id);
     task.state.swap(TaskState::ReadyToRun);
+    NEEDS_RESCHEDULE.store(true, Ordering::SeqCst);
 }
 
 /// Waits until the given task is finished.
@@ -389,7 +398,7 @@ pub(crate) fn wait_on_task(target_task_id: TaskId, sleep_interval: Milliseconds)
         // be a wrapper function. For example, spawn a task in a function, and
         // then create some kind of condvar of signal that the parent task can
         // wait on.
-        sleep(sleep_interval);
+        sleep_timeout(sleep_interval);
         run_scheduler();
     }
 

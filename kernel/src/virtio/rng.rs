@@ -5,7 +5,7 @@ use bitflags::bitflags;
 use crate::interrupts::InterruptHandlerID;
 use crate::memory::PhysicalBuffer;
 use crate::serial_println;
-use crate::sync::{InitCell, SpinLock};
+use crate::sync::{InitCell, SpinLock, WaitValue};
 
 use super::device::VirtIOInitializedDevice;
 use super::queue::{
@@ -30,7 +30,7 @@ pub(crate) fn try_init_virtio_rng(device_config: VirtIODeviceConfig) {
     VIRTIO_RNG.init(virtio_rng);
 }
 
-pub(crate) fn request_random_numbers(num_bytes: u32) -> Arc<InitCell<Vec<u8>>> {
+pub(crate) fn request_random_numbers(num_bytes: u32) -> Arc<WaitValue<Vec<u8>>> {
     VIRTIO_RNG
         .get()
         .expect("VirtIO RNG not initialized")
@@ -80,7 +80,7 @@ impl VirtIORNG {
         );
     }
 
-    fn request_random_numbers(&self, num_bytes: u32) -> Arc<InitCell<Vec<u8>>> {
+    fn request_random_numbers(&self, num_bytes: u32) -> Arc<WaitValue<Vec<u8>>> {
         assert!(num_bytes > 0, "cannot request zero bytes from RNG!");
 
         // Create a descriptor chain for the buffer
@@ -93,9 +93,9 @@ impl VirtIORNG {
         };
         let request = VirtIORNGRequest {
             _descriptor_buffer: buffer,
-            cell: Arc::new(InitCell::new()),
+            value: Arc::new(WaitValue::new_current_task()),
         };
-        let copied_cell = request.cell.clone();
+        let copied_cell = request.value.clone();
 
         // Disable interrupts so IRQ doesn't deadlock the spinlock
         let mut virtqueue_data = self.virtqueue_data.lock_disable_interrupts();
@@ -120,7 +120,7 @@ bitflags! {
 struct VirtIORNGRequest {
     // Buffer is kept here so we can drop it when we are done with the request.
     _descriptor_buffer: PhysicalBuffer,
-    cell: Arc<InitCell<Vec<u8>>>,
+    value: Arc<WaitValue<Vec<u8>>>,
 }
 
 fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
@@ -153,7 +153,7 @@ fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
             )
         };
 
-        request.cell.init(buffer.to_vec());
+        request.value.put_value(buffer.to_vec());
 
         // N.B. The request's buffer gets dropped here! Just being explicit.
         drop(request);

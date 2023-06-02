@@ -245,7 +245,7 @@ fn run_command(command: &Command) {
         Command::RNG(num_bytes) => {
             serial_println!("Generating random numbers...");
             let cell = virtio::request_random_numbers(*num_bytes);
-            let buffer = cell.wait_spin();
+            let buffer = cell.wait_sleep();
             serial_println!("Got RNG buffer: {buffer:x?}");
         }
         Command::VirtIOBlockList => {
@@ -254,7 +254,7 @@ fn run_command(command: &Command) {
         Command::VirtIOBlockRead { device_id, sector } => {
             serial_println!("Reading VirtIO block sector {sector}...");
             let cell = virtio::virtio_block_read(*device_id, *sector);
-            let response = cell.wait_spin();
+            let response = cell.wait_sleep();
             let virtio::VirtIOBlockResponse::Read{ data } = response else {
                 serial_println!("Unexpected response from block request: {response:x?}");
                 return;
@@ -273,7 +273,7 @@ fn run_command(command: &Command) {
         Command::VirtIOBlockID { device_id } => {
             serial_println!("Reading VirtIO block device ID...");
             let cell = virtio::virtio_block_get_id(*device_id);
-            let response = cell.wait_spin();
+            let response = cell.wait_sleep();
             let virtio::VirtIOBlockResponse::GetID{ id } = response else {
                 serial_println!("Unexpected response from block request: {response:x?}");
                 return;
@@ -289,7 +289,7 @@ fn run_command(command: &Command) {
         }
         Command::Sleep(ms) => {
             serial_println!("Sleeping for {ms}");
-            sched::sleep(*ms);
+            sched::sleep_timeout(*ms);
             serial_println!("Slept for {ms}");
         }
         Command::PrimeSync(n) => {

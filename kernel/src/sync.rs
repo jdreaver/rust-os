@@ -7,6 +7,9 @@ use core::sync::atomic::{AtomicPtr, AtomicU16, AtomicU32, AtomicU64, AtomicU8, O
 
 use spin::mutex::{SpinMutex, SpinMutexGuard};
 
+use crate::sched;
+use crate::sched::TaskId;
+
 /// Wrapper around `spin::mutex::SpinMutex` with some added features, like
 /// handling disabling and enabling interrupts.
 #[derive(Debug)]
@@ -125,7 +128,7 @@ impl<T> InitCell<T> {
 
     /// Wait (via a spin loop) until the value is initialized, then return a
     /// reference to it.
-    pub(crate) fn wait_spin(&self) -> &T {
+    pub(crate) fn _wait_spin(&self) -> &T {
         loop {
             if let Some(value) = self.get() {
                 return value;
@@ -264,5 +267,60 @@ where
     pub(crate) fn swap(&self, val: T) -> T {
         let old_val = self.int.swap(val.into());
         Self::convert_from_integer(old_val)
+    }
+}
+
+/// A value that can be waited on by a task.
+#[derive(Debug)]
+pub(crate) struct WaitValue<T>(SpinLock<WaitValueInner<T>>);
+
+#[derive(Debug)]
+struct WaitValueInner<T> {
+    value: Option<T>,
+
+    /// The task waiting for the value to change.
+    task_id: Option<TaskId>,
+}
+
+impl<T> WaitValue<T> {
+    /// Creates a `WaitCell` for the current task.
+    pub(crate) const fn new_current_task() -> Self {
+        Self(SpinLock::new(WaitValueInner {
+            value: None,
+            task_id: None,
+        }))
+    }
+
+    /// Stores the value and wakes up the sleeping task.
+    pub(crate) fn put_value(&self, val: T) {
+        let mut inner = self.0.lock_disable_interrupts();
+        inner.value.replace(val);
+        if let Some(task_id) = inner.task_id {
+            sched::awaken_task(task_id);
+        }
+    }
+
+    /// Waits until the value is initialized, sleeping if necessary.
+    pub(crate) fn wait_sleep(&self) -> T {
+        let task_id = sched::current_task_id();
+        loop {
+            {
+                let mut inner = self.0.lock_disable_interrupts();
+
+                if inner.task_id.is_none() {
+                    inner.task_id.replace(task_id);
+                }
+
+                if let Some(value) = inner.value.take() {
+                    return value;
+                }
+                // Value isn't present. Go back to sleep.
+                sched::go_to_sleep();
+            }
+
+            // Important to run the scheduler outside of the lock, otherwise
+            // we can deadlock.
+            sched::run_scheduler();
+        }
     }
 }
