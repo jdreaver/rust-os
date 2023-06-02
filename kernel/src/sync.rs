@@ -307,7 +307,7 @@ impl<T> WaitQueue<T> {
 
     /// Waits until the value is initialized, sleeping if necessary.
     pub(crate) fn wait_sleep(&self) -> Arc<T> {
-        let task_id = sched::current_task_id();
+        let task_id = sched::scheduler_lock().current_task_id();
         self.0.lock_disable_interrupts().task_ids.push(task_id);
 
         loop {
@@ -329,12 +329,12 @@ impl<T> WaitQueue<T> {
                 // Value isn't present. Go back to sleep. It is important we do
                 // this while the lock is still taken or else a producer might
                 // write the value before this line and we may never wake up.
-                sched::go_to_sleep();
+                sched::scheduler_lock().go_to_sleep();
             }
 
             // Important to run the scheduler outside of the lock, otherwise
             // we can deadlock.
-            sched::run_scheduler();
+            sched::scheduler_lock().run_scheduler();
         }
     }
 }

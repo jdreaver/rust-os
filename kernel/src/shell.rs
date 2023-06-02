@@ -289,17 +289,24 @@ fn run_command(command: &Command) {
         }
         Command::Sleep(ms) => {
             serial_println!("Sleeping for {ms}");
-            sched::sleep_timeout(*ms);
+            sched::scheduler_lock().sleep_timeout(*ms);
             serial_println!("Slept for {ms}");
         }
         Command::PrimeSync(n) => {
-            let task_id =
-                sched::push_task("calculate prime", calculate_prime_task, *n as *const ());
+            let task_id = sched::scheduler_lock().new_task(
+                "calculate prime",
+                calculate_prime_task,
+                *n as *const (),
+            );
             sched::wait_on_task(task_id);
         }
         Command::PrimeAsync(n) => {
-            sched::push_task("calculate prime", calculate_prime_task, *n as *const ());
-            sched::run_scheduler();
+            sched::scheduler_lock().new_task(
+                "calculate prime",
+                calculate_prime_task,
+                *n as *const (),
+            );
+            sched::scheduler_lock().run_scheduler();
         }
         Command::Unknown(command) => {
             serial_println!("Unknown command: {}", command);

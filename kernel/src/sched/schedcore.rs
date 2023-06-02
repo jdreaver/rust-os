@@ -12,19 +12,15 @@ use super::task::{
     KernelTaskStartFunction, Task, TaskExitCode, TaskId, TaskKernelStackPointer, TaskState,
 };
 
-static TASKS: InitCell<SpinLock<Tasks>> = InitCell::new();
+static SCHEDULER: InitCell<SpinLock<Scheduler>> = InitCell::new();
 
 /// Used to protect against accidentally calling scheduling functions that
 /// require a task context before we've started running tasks.
 static MULTITASKING_STARTED: AtomicBool = AtomicBool::new(false);
 
-pub(super) fn scheduler_lock() -> SpinLockGuard<'static, Tasks> {
-    assert!(
-        MULTITASKING_STARTED.load(Ordering::Relaxed),
-        "multi-tasking not initialized, but tasks_lock called"
-    );
-
-    TASKS
+/// Locks the scheduler and disables interrupts.
+pub(crate) fn scheduler_lock() -> SpinLockGuard<'static, Scheduler> {
+    SCHEDULER
         .get()
         .expect("tasks not initialized")
         .lock_disable_interrupts()
@@ -34,14 +30,19 @@ pub(super) fn scheduler_lock() -> SpinLockGuard<'static, Tasks> {
 /// contexts where we switched to a task in the scheduler but we can't release
 /// the lock.
 pub(super) unsafe fn force_unlock_scheduler() {
-    TASKS.get().expect("tasks not initialized").force_unlock();
+    SCHEDULER
+        .get()
+        .expect("tasks not initialized")
+        .force_unlock();
     // N.B. Ordering is important. Don't re-enable interrupts until the spinlock
     // is released or else we could get an interrupt + a deadlock.
     x86_64::instructions::interrupts::enable();
 }
 
-/// Holds all tasks in the kernel.
-pub(super) struct Tasks {
+/// All data needed by the scheduler to operate. This is stored in a spinlock
+/// and many methods use `&mut self` to ensure only a single user has access to
+/// the scheduler at a time.
+pub(crate) struct Scheduler {
     /// Next ID to use when creating a new task.
     next_task_id: TaskId,
 
@@ -58,7 +59,7 @@ pub(super) struct Tasks {
     pending_tasks: VecDeque<TaskId>,
 }
 
-impl Tasks {
+impl Scheduler {
     fn new(max_lapic_id: u8) -> Self {
         // Populate the idle tasks.
         let mut next_task_id = TaskId(1);
@@ -83,12 +84,17 @@ impl Tasks {
         }
     }
 
-    fn new_task(
+    pub(crate) fn new_task(
         &mut self,
         name: &'static str,
         start_fn: KernelTaskStartFunction,
         arg: *const (),
     ) -> TaskId {
+        assert!(
+            MULTITASKING_STARTED.load(Ordering::Relaxed),
+            "multi-tasking not initialized, but tasks_lock called"
+        );
+
         let id = self.next_task_id;
         self.next_task_id.0 += 1;
 
@@ -120,7 +126,7 @@ impl Tasks {
         self.get_task_assert(id)
     }
 
-    fn current_task_id(&self) -> TaskId {
+    pub(crate) fn current_task_id(&self) -> TaskId {
         // Assert that interrupts are disabled. Otherwise, we could get
         // rescheduled onto another CPU and the LAPIC ID could change. xv6 does
         // this, but is it necessary?
@@ -134,6 +140,83 @@ impl Tasks {
             .running_tasks_by_cpu
             .get(lapic_id as usize)
             .expect("could not get running CPU task for the current LAPIC ID")
+    }
+
+    /// How much time a task gets to run before being preempted.
+    const DEFAULT_TIME_SLICE: Milliseconds = Milliseconds::new(100);
+
+    pub(crate) fn run_scheduler(&mut self) {
+        // Set NEEDS_RESCHEDULE to false if it hasn't been set already.
+        NEEDS_RESCHEDULE.swap(false, Ordering::Acquire);
+
+        // If the previous task still has a time slice left, don't preempt it.
+        // (Except for idle task. We don't care if that ran out of time.)
+        let idle_task_id = self.current_cpu_idle_task();
+        let current_task = self.current_task();
+
+        let is_idle = current_task.id == idle_task_id;
+        let is_ready = current_task.state.load() == TaskState::ReadyToRun;
+        let is_expired = current_task.remaining_slice.load() == Milliseconds::new(0);
+        if !is_idle && is_ready && !is_expired {
+            return;
+        }
+
+        self.remove_killed_pending_tasks();
+        let prev_task = self.current_task();
+        let prev_task_id = prev_task.id;
+        let prev_task_state = prev_task.state.load();
+        let next_task_id = match self.pop_next_ready_pending_task() {
+            Some(id) => id,
+            None => {
+                // If we are not on the idle task, and if our current task is
+                // not ready, let's switch to the idle task.
+                if prev_task_state != TaskState::ReadyToRun && prev_task_id != idle_task_id {
+                    idle_task_id
+                } else {
+                    // Otherwise, just return. We won't do a switch.
+                    return;
+                }
+            }
+        };
+        self.put_current_task_id(next_task_id);
+
+        // Store the previous task ID in pending task list, unless it is the
+        // idle task.
+        if prev_task_id != idle_task_id {
+            self.pending_tasks.push_back(prev_task_id);
+        }
+
+        let prev_task = self.get_task_assert(prev_task_id);
+        let prev_stack_ptr = core::ptr::addr_of!(prev_task.kernel_stack_pointer);
+        let next_task = self.get_task_assert(next_task_id);
+        let next_stack_ptr = next_task.kernel_stack_pointer;
+
+        // Give the next task some time slice
+        next_task.remaining_slice.store(Self::DEFAULT_TIME_SLICE);
+
+        unsafe {
+            if *prev_stack_ptr == next_stack_ptr {
+                // We're already running the next task, so just return.
+                serial_println!("WARNING: Tried to switch to the same task!");
+                return;
+            }
+            serial_println!(
+                "SCHEDULER: Switching from '{}' {:?} SP: {:x?} (@ {prev_stack_ptr:?}) to '{}' {:?} SP: {next_stack_ptr:x?}",
+                prev_task.name,
+                prev_task.id,
+                *prev_stack_ptr,
+                next_task.name,
+                next_task.id,
+            );
+            switch_to_task(prev_stack_ptr, next_stack_ptr);
+        }
+    }
+
+    /// If the scheduler needs to run, then run it.
+    pub(crate) fn run_scheduler_if_needed(&mut self) {
+        if NEEDS_RESCHEDULE.swap(false, Ordering::Acquire) {
+            self.run_scheduler();
+        }
     }
 
     fn put_current_task_id(&mut self, id: TaskId) {
@@ -198,6 +281,23 @@ impl Tasks {
         self.pending_tasks.append(&mut non_ready_tasks);
         next_task_id
     }
+
+    /// Puts the current task to sleep for the given number of milliseconds.
+    pub(crate) fn sleep_timeout(&mut self, timeout: Milliseconds) {
+        let task_id = self.go_to_sleep();
+        tick::add_relative_timer(timeout, move || {
+            awaken_task(task_id);
+        });
+        self.run_scheduler();
+    }
+
+    /// Puts the current task to sleep and returns the current task ID.
+    pub(crate) fn go_to_sleep(&mut self) -> TaskId {
+        let current_task = self.current_task();
+        current_task.state.swap(TaskState::Sleeping);
+        NEEDS_RESCHEDULE.store(true, Ordering::Release);
+        current_task.id
+    }
 }
 
 extern "C" fn idle_task_start(_arg: *const ()) {
@@ -215,16 +315,7 @@ pub(crate) fn init(acpi_info: &ACPIInfo) {
         .max()
         .expect("no processors found!");
     let max_lapic_id = u8::try_from(max_lapic_id).expect("LAPIC ID too large!");
-    TASKS.init(SpinLock::new(Tasks::new(max_lapic_id)));
-}
-
-/// Pushes a task onto the task queue.
-pub(crate) fn push_task(
-    name: &'static str,
-    start_fn: KernelTaskStartFunction,
-    arg: *const (),
-) -> TaskId {
-    scheduler_lock().new_task(name, start_fn, arg)
+    SCHEDULER.init(SpinLock::new(Scheduler::new(max_lapic_id)));
 }
 
 /// Switches from the bootstrap code, which isn't a task, to the first actual
@@ -236,95 +327,15 @@ pub(crate) fn start_multitasking(
 ) {
     MULTITASKING_STARTED.store(true, Ordering::Release);
 
-    let mut tasks = scheduler_lock();
-    tasks.new_task(init_task_name, init_task_start_fn, init_task_arg);
+    let mut scheduler = scheduler_lock();
+    scheduler.new_task(init_task_name, init_task_start_fn, init_task_arg);
 
     // Just a dummy location for switch_to_task to store the previous stack
     // pointer.
     let dummy_stack_ptr = TaskKernelStackPointer(0);
     let prev_stack_ptr = core::ptr::addr_of!(dummy_stack_ptr);
-    let next_stack_ptr = tasks.current_task().kernel_stack_pointer;
+    let next_stack_ptr = scheduler.current_task().kernel_stack_pointer;
     unsafe {
-        switch_to_task(prev_stack_ptr, next_stack_ptr);
-    }
-}
-
-pub(crate) fn current_task_id() -> TaskId {
-    scheduler_lock().current_task_id()
-}
-
-/// How much time a task gets to run before being preempted.
-const DEFAULT_TIME_SLICE: Milliseconds = Milliseconds::new(100);
-
-pub(crate) fn run_scheduler() {
-    // Set NEEDS_RESCHEDULE to false if it hasn't been set already.
-    NEEDS_RESCHEDULE.swap(false, Ordering::Acquire);
-
-    // Disable interrupts and take a lock on the the run queue. When a task is
-    // started for the very first time, `task_setup` handles re-enabling these.
-    // Otherwise, they will be re-enabled by the next task when `run_scheduler`
-    // is exited.
-    let mut tasks = scheduler_lock();
-
-    // If the previous task still has a time slice left, don't preempt it.
-    // (Except for idle task. We don't care if that ran out of time.)
-    let idle_task_id = tasks.current_cpu_idle_task();
-    let current_task = tasks.current_task();
-
-    let is_idle = current_task.id == idle_task_id;
-    let is_ready = current_task.state.load() == TaskState::ReadyToRun;
-    let is_expired = current_task.remaining_slice.load() == Milliseconds::new(0);
-    if !is_idle && is_ready && !is_expired {
-        return;
-    }
-
-    tasks.remove_killed_pending_tasks();
-    let prev_task = tasks.current_task();
-    let prev_task_id = prev_task.id;
-    let prev_task_state = prev_task.state.load();
-    let next_task_id = match tasks.pop_next_ready_pending_task() {
-        Some(id) => id,
-        None => {
-            // If we are not on the idle task, and if our current task is
-            // not ready, let's switch to the idle task.
-            if prev_task_state != TaskState::ReadyToRun && prev_task_id != idle_task_id {
-                idle_task_id
-            } else {
-                // Otherwise, just return. We won't do a switch.
-                return;
-            }
-        }
-    };
-    tasks.put_current_task_id(next_task_id);
-
-    // Store the previous task ID in pending task list, unless it is the
-    // idle task.
-    if prev_task_id != idle_task_id {
-        tasks.pending_tasks.push_back(prev_task_id);
-    }
-
-    let prev_task = tasks.get_task_assert(prev_task_id);
-    let prev_stack_ptr = core::ptr::addr_of!(prev_task.kernel_stack_pointer);
-    let next_task = tasks.get_task_assert(next_task_id);
-    let next_stack_ptr = next_task.kernel_stack_pointer;
-
-    // Give the next task some time slice
-    next_task.remaining_slice.store(DEFAULT_TIME_SLICE);
-
-    unsafe {
-        if *prev_stack_ptr == next_stack_ptr {
-            // We're already running the next task, so just return.
-            serial_println!("WARNING: Tried to switch to the same task!");
-            return;
-        }
-        serial_println!(
-                "SCHEDULER: Switching from '{}' {:?} SP: {:x?} (@ {prev_stack_ptr:?}) to '{}' {:?} SP: {next_stack_ptr:x?}",
-                prev_task.name,
-                prev_task.id,
-                *prev_stack_ptr,
-                next_task.name,
-                next_task.id,
-            );
         switch_to_task(prev_stack_ptr, next_stack_ptr);
     }
 }
@@ -353,31 +364,6 @@ pub(crate) fn scheduler_tick(time_between_ticks: Milliseconds) {
 /// Used after exiting from IRQs and in other contexts that would
 /// opportunistically trigger the scheduler if appropriate.
 static NEEDS_RESCHEDULE: AtomicBool = AtomicBool::new(false);
-
-/// If the scheduler needs to run, then run it.
-pub(crate) fn run_scheduler_if_needed() {
-    if NEEDS_RESCHEDULE.swap(false, Ordering::Acquire) {
-        run_scheduler();
-    }
-}
-
-/// Puts the current task to sleep and returns the current task ID.
-pub(crate) fn go_to_sleep() -> TaskId {
-    let lock = scheduler_lock();
-    let current_task = lock.current_task();
-    current_task.state.swap(TaskState::Sleeping);
-    NEEDS_RESCHEDULE.store(true, Ordering::Release);
-    current_task.id
-}
-
-/// Puts the current task to sleep for the given number of milliseconds.
-pub(crate) fn sleep_timeout(timeout: Milliseconds) {
-    let task_id = go_to_sleep();
-    tick::add_relative_timer(timeout, move || {
-        awaken_task(task_id);
-    });
-    run_scheduler();
-}
 
 /// Awakens the given task and sets NEEDS_RESCHEDULE to true.
 pub(crate) fn awaken_task(task_id: TaskId) {

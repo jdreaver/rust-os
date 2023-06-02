@@ -7,7 +7,7 @@ use crate::sched::force_unlock_scheduler;
 use crate::serial_println;
 use crate::sync::{AtomicEnum, AtomicInt, WaitQueue};
 
-use super::schedcore::{run_scheduler, scheduler_lock};
+use super::schedcore::scheduler_lock;
 
 /// A `Task` is a unit of work that can be scheduled, like a thread or a process.
 #[derive(Debug)]
@@ -183,7 +183,7 @@ pub(super) extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *cons
     // Inform waiters that the task has exited.
     wait_queue.put_value(TaskExitCode::ExitSuccess);
 
-    run_scheduler();
+    scheduler_lock().run_scheduler();
 
     panic!("somehow returned to task_setup for dead task after running scheduler");
 }
