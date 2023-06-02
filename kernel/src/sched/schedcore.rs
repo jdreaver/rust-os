@@ -222,7 +222,7 @@ pub(crate) fn start_multitasking(
     init_task_start_fn: KernelTaskStartFunction,
     init_task_arg: *const (),
 ) {
-    MULTITASKING_STARTED.store(true, Ordering::SeqCst);
+    MULTITASKING_STARTED.store(true, Ordering::Release);
 
     let mut tasks = tasks_lock().lock_disable_interrupts();
     tasks.new_task(init_task_name, init_task_start_fn, init_task_arg);
@@ -246,7 +246,7 @@ const DEFAULT_TIME_SLICE: Milliseconds = Milliseconds::new(100);
 
 pub(crate) fn run_scheduler() {
     // Set NEEDS_RESCHEDULE to false if it hasn't been set already.
-    NEEDS_RESCHEDULE.swap(false, Ordering::SeqCst);
+    NEEDS_RESCHEDULE.swap(false, Ordering::Acquire);
 
     // Disable interrupts and take a lock on the the run queue. When a task is
     // started for the very first time, `task_setup` handles re-enabling these.
@@ -319,7 +319,7 @@ pub(crate) fn run_scheduler() {
 
 /// Function to run every time the kernel tick system ticks.
 pub(crate) fn scheduler_tick(time_between_ticks: Milliseconds) {
-    if !MULTITASKING_STARTED.load(Ordering::SeqCst) {
+    if !MULTITASKING_STARTED.load(Ordering::Acquire) {
         return;
     }
 
@@ -333,7 +333,7 @@ pub(crate) fn scheduler_tick(time_between_ticks: Milliseconds) {
 
     // If the task has run out of time, we need to run the scheduler.
     if slice == Milliseconds::new(0) {
-        NEEDS_RESCHEDULE.store(true, Ordering::SeqCst);
+        NEEDS_RESCHEDULE.store(true, Ordering::Release);
     }
 }
 
@@ -344,7 +344,7 @@ static NEEDS_RESCHEDULE: AtomicBool = AtomicBool::new(false);
 
 /// If the scheduler needs to run, then run it.
 pub(crate) fn run_scheduler_if_needed() {
-    if NEEDS_RESCHEDULE.swap(false, Ordering::SeqCst) {
+    if NEEDS_RESCHEDULE.swap(false, Ordering::Acquire) {
         run_scheduler();
     }
 }
@@ -354,7 +354,7 @@ pub(crate) fn go_to_sleep() -> TaskId {
     let lock = tasks_lock().lock_disable_interrupts();
     let current_task = lock.current_task();
     current_task.state.swap(TaskState::Sleeping);
-    NEEDS_RESCHEDULE.store(true, Ordering::SeqCst);
+    NEEDS_RESCHEDULE.store(true, Ordering::Release);
     current_task.id
 }
 
@@ -372,7 +372,7 @@ pub(crate) fn awaken_task(task_id: TaskId) {
     let lock = tasks_lock().lock_disable_interrupts();
     let task = lock.get_task_assert(task_id);
     task.state.swap(TaskState::ReadyToRun);
-    NEEDS_RESCHEDULE.store(true, Ordering::SeqCst);
+    NEEDS_RESCHEDULE.store(true, Ordering::Release);
 }
 
 /// Waits until the given task is finished.

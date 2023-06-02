@@ -113,7 +113,7 @@ impl<T> InitCell<T> {
 
     pub(crate) fn init(&self, value: T) {
         let ptr = Box::into_raw(Box::new(value));
-        let prev = self.ptr.swap(ptr, Ordering::SeqCst);
+        let prev = self.ptr.swap(ptr, Ordering::Acquire);
         assert!(
             prev.is_null(),
             "ERROR: InitCell already initialized, can't initialize again"
@@ -123,7 +123,7 @@ impl<T> InitCell<T> {
     pub(crate) fn get(&self) -> Option<&T> {
         // This is safe because we only ever write to the pointer once, so the
         // lifetime of the value does indeed match the lifetime of the InitCell.
-        unsafe { self.ptr.load(Ordering::SeqCst).as_ref() }
+        unsafe { self.ptr.load(Ordering::Acquire).as_ref() }
     }
 
     /// Wait (via a spin loop) until the value is initialized, then return a
@@ -142,7 +142,7 @@ impl<T> Drop for InitCell<T> {
     fn drop(&mut self) {
         // If the pointer is set, drop the value by converting back into a Box
         // and letting that drop.
-        let ptr = self.ptr.load(Ordering::SeqCst);
+        let ptr = self.ptr.load(Ordering::Acquire);
         if !ptr.is_null() {
             unsafe { Box::from_raw(ptr) };
         }
@@ -173,16 +173,16 @@ where
     }
 
     pub(crate) fn load(&self) -> T {
-        let val = <I as AtomicIntTrait>::load(&self.atom, Ordering::SeqCst);
+        let val = <I as AtomicIntTrait>::load(&self.atom, Ordering::Acquire);
         T::from(val)
     }
 
     pub(crate) fn store(&self, val: T) {
-        <I as AtomicIntTrait>::store(&self.atom, val.into(), Ordering::SeqCst);
+        <I as AtomicIntTrait>::store(&self.atom, val.into(), Ordering::Release);
     }
 
     pub(crate) fn swap(&self, val: T) -> T {
-        let old_val = <I as AtomicIntTrait>::swap(&self.atom, val.into(), Ordering::SeqCst);
+        let old_val = <I as AtomicIntTrait>::swap(&self.atom, val.into(), Ordering::Acquire);
         T::from(old_val)
     }
 }

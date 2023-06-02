@@ -133,7 +133,7 @@ static NEXT_OPEN_INTERRUPT_INDEX: AtomicU8 = AtomicU8::new(APIC_INTERRUPT_START_
 /// Install an interrupt handler in the IDT. Uses the next open interrupt index
 /// and returns the used index.
 pub(crate) fn install_interrupt(interrupt_id: InterruptHandlerID, handler: InterruptHandler) -> u8 {
-    let interrupt_index = NEXT_OPEN_INTERRUPT_INDEX.fetch_add(1, Ordering::SeqCst);
+    let interrupt_index = NEXT_OPEN_INTERRUPT_INDEX.fetch_add(1, Ordering::Relaxed);
     assert!(
         interrupt_index < SPURIOUS_INTERRUPT_VECTOR_INDEX,
         "Ran out of interrupt vectors"
