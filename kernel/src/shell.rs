@@ -253,7 +253,7 @@ fn run_command(command: &Command) {
         }
         Command::VirtIOBlockRead { device_id, sector } => {
             serial_println!("Reading VirtIO block sector {sector}...");
-            let cell = virtio::virtio_block_read(*device_id, *sector);
+            let cell = virtio::virtio_block_read(*device_id, *sector, 2);
             let response = cell.wait_sleep();
             let virtio::VirtIOBlockResponse::Read{ ref data } = *response else {
                 serial_println!("Unexpected response from block request: {response:x?}");

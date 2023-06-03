@@ -58,10 +58,14 @@ pub(crate) fn virtio_block_get_id(device_index: usize) -> Arc<WaitQueue<VirtIOBl
 pub(crate) fn virtio_block_read(
     device_index: usize,
     sector: u64,
+    num_512_blocks: u32,
 ) -> Arc<WaitQueue<VirtIOBlockResponse>> {
     let device_lock = VIRTIO_BLOCK.read();
     let device = device_lock.get(device_index).expect("invalid device index");
-    device.add_request(&BlockRequest::Read { sector })
+    device.add_request(&BlockRequest::Read {
+        sector,
+        num_512_blocks,
+    })
 }
 
 fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
@@ -86,11 +90,12 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
         let request = BlockRequest::from_raw(&raw_request);
 
         match request {
-            BlockRequest::Read { sector: _ } => {
+            BlockRequest::Read { sector: _, num_512_blocks } => {
+                let data_len = num_512_blocks * BlockRequest::READ_DATA_LEN_PER_BLOCK;
                 let bytes = unsafe {
                     core::slice::from_raw_parts(
                         buffer.address().as_u64() as *const u8,
-                        BlockRequest::READ_DATA_LEN as usize,
+                        data_len as usize,
                     )
                 };
                 data.cell.put_value(VirtIOBlockResponse::Read { data: bytes.to_vec() });
@@ -251,7 +256,7 @@ struct BlockConfigTopology {
 
 #[derive(Debug)]
 enum BlockRequest {
-    Read { sector: u64 },
+    Read { sector: u64, num_512_blocks: u32 },
     GetID,
 }
 
@@ -261,12 +266,16 @@ impl BlockRequest {
 
     /// All read requests MUST be a multiple of 512 bytes. We just use 512 for
     /// now.
-    const READ_DATA_LEN: u32 = 512;
+    const READ_DATA_LEN_PER_BLOCK: u32 = 512;
 
     fn to_raw(&self) -> RawBlockRequest {
         match self {
-            Self::Read { sector } => {
-                RawBlockRequest::new(BlockRequestType::In, *sector, Self::READ_DATA_LEN)
+            Self::Read {
+                sector,
+                num_512_blocks,
+            } => {
+                let data_len = num_512_blocks * Self::READ_DATA_LEN_PER_BLOCK;
+                RawBlockRequest::new(BlockRequestType::In, *sector, data_len)
             }
             Self::GetID => RawBlockRequest::new(BlockRequestType::GetID, 0, Self::GET_ID_DATA_LEN),
         }
@@ -274,7 +283,14 @@ impl BlockRequest {
 
     fn from_raw(raw: &RawBlockRequest) -> Self {
         match raw.request_type {
-            BlockRequestType::In => Self::Read { sector: raw.sector },
+            BlockRequestType::In => {
+                assert!(raw.data_len % Self::READ_DATA_LEN_PER_BLOCK == 0);
+                let num_512_blocks = raw.data_len / Self::READ_DATA_LEN_PER_BLOCK;
+                Self::Read {
+                    sector: raw.sector,
+                    num_512_blocks,
+                }
+            }
             BlockRequestType::GetID => Self::GetID,
             _ => panic!("Unsupported block request type: {:?}", raw.request_type),
         }
