@@ -1,3 +1,5 @@
+use core::ops::{Add, Mul};
+
 use bitflags::bitflags;
 
 use crate::strings::CStringBytes;
@@ -11,7 +13,7 @@ pub struct Superblock {
     pub reserved_blocks_count: u32,
     pub free_blocks_count: u32,
     pub free_inodes_count: u32,
-    pub first_data_block: u32,
+    pub first_data_block: BlockAddress,
     pub log_block_size: u32,
     pub log_frag_size: u32,
     pub blocks_per_group: u32,
@@ -87,8 +89,59 @@ impl Superblock {
     /// ```
     ///
     /// Common block sizes include 1KiB, 2KiB, 4KiB and 8Kib.
-    pub fn block_size(&self) -> usize {
-        1024 << self.log_block_size as usize
+    pub fn block_size(&self) -> BlockSize {
+        BlockSize(1024 << self.log_block_size)
+    }
+
+    pub fn block_descriptor_table_offset(&self) -> OffsetBytes {
+        (self.first_data_block + 1) * self.block_size()
+    }
+
+    pub fn block_descriptor_offset(&self, block_group: u64) -> OffsetBytes {
+        self.block_descriptor_table_offset() + OffsetBytes(block_group * 32)
+    }
+
+    pub fn num_block_groups(&self) -> usize {
+        let num_blocks = self.blocks_count as usize;
+        let blocks_per_group = self.blocks_per_group as usize;
+        num_blocks.div_ceil(blocks_per_group)
+    }
+}
+
+/// Address of a block in the filesystem.
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone)]
+pub struct BlockAddress(pub u32);
+
+impl Add<u32> for BlockAddress {
+    type Output = Self;
+
+    fn add(self, rhs: u32) -> Self::Output {
+        Self(self.0 + rhs)
+    }
+}
+
+impl Mul<BlockSize> for BlockAddress {
+    type Output = OffsetBytes;
+
+    fn mul(self, rhs: BlockSize) -> Self::Output {
+        OffsetBytes(u64::from(self.0) * u64::from(rhs.0))
+    }
+}
+
+/// Size of a block in bytes.
+#[derive(Debug, Copy, Clone)]
+pub struct BlockSize(pub u32);
+
+/// Address in bytes from the start of the disk.
+#[derive(Debug, Copy, Clone)]
+pub struct OffsetBytes(pub u64);
+
+impl Add<Self> for OffsetBytes {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
     }
 }
 

@@ -8,6 +8,7 @@
 //! - <https://git.kernel.org/pub/scm/utils/util-linux/util-linux.git/tree/libblkid/src/superblocks/ext.c>
 
 #![cfg_attr(not(test), no_std)]
+#![feature(int_roundings)]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 #![allow(
     clippy::cast_possible_truncation,
@@ -28,7 +29,9 @@
     clippy::wildcard_imports
 )]
 
+pub mod block_group;
 mod strings;
 pub mod superblock;
 
+pub use block_group::*;
 pub use superblock::*;
