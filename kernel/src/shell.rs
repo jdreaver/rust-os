@@ -110,9 +110,7 @@ enum Command<'a> {
     BootInfo,
     PrintACPI,
     RNG(u32),
-    VirtIOBlockList,
-    VirtIOBlockRead { device_id: usize, sector: u64 },
-    VirtIOBlockID { device_id: usize },
+    VirtIOBlock(VirtIOBlockCommand),
     FATBIOS { device_id: usize },
     EXT2Superblock { device_id: usize },
     EXT2ListRoot { device_id: usize },
@@ -124,62 +122,94 @@ enum Command<'a> {
     Unknown(&'a str),
 }
 
+enum VirtIOBlockCommand {
+    List,
+    Read { device_id: usize, sector: u64 },
+    ID { device_id: usize },
+}
+
 fn next_command(buffer: &[u8]) -> Option<Command> {
     let command_str = core::str::from_utf8(buffer);
     let Ok(command_str) = command_str else { return Some(Command::Invalid); };
 
     let words = command_str.split_whitespace().collect::<Vec<_>>();
 
-    match &words[..] {
-        [] => None,
-        ["test", "misc"] => Some(Command::TestMisc),
-        ["test", "hpet"] => Some(Command::TestHPET),
-        ["list-pci"] => Some(Command::ListPCI),
-        ["list-virtio"] => Some(Command::ListVirtIO),
-        ["boot-info"] => Some(Command::BootInfo),
-        ["print-acpi"] => Some(Command::PrintACPI),
-        ["rng", num_bytes_str] => {
-            let num_bytes = parse_or_print_error(num_bytes_str, "number of bytes")?;
-            Some(Command::RNG(num_bytes))
-        }
-        ["virtio-block", "list"] => Some(Command::VirtIOBlockList),
-        ["virtio-block", "read", device_id_str, sector_str] => {
-            let device_id = parse_or_print_error(device_id_str, "device ID")?;
-            let sector = parse_or_print_error(sector_str, "sector number")?;
-            Some(Command::VirtIOBlockRead { device_id, sector })
-        }
-        ["virtio-block", "id", device_id_str] => {
-            let device_id = parse_or_print_error(device_id_str, "device ID")?;
-            Some(Command::VirtIOBlockID { device_id })
-        }
-        ["fat", "bios", device_id_str] => {
-            let device_id = parse_or_print_error(device_id_str, "device ID")?;
-            Some(Command::FATBIOS { device_id })
-        }
-        ["ext2", "superblock", device_id_str] => {
-            let device_id = parse_or_print_error(device_id_str, "device ID")?;
-            Some(Command::EXT2Superblock { device_id })
-        }
-        ["ext2", "ls-root", device_id_str] => {
-            let device_id = parse_or_print_error(device_id_str, "device ID")?;
-            Some(Command::EXT2ListRoot { device_id })
-        }
-        ["timer", milliseconds_str] => {
-            let milliseconds = parse_or_print_error(milliseconds_str, "milliseconds")?;
-            Some(Command::Timer(Milliseconds::new(milliseconds)))
-        }
-        ["sleep", milliseconds_str] => {
-            let milliseconds = parse_or_print_error(milliseconds_str, "milliseconds")?;
-            Some(Command::Sleep(Milliseconds::new(milliseconds)))
-        }
-        ["prime-sync", nth_prime_str] => {
-            let nth_prime = parse_or_print_error(nth_prime_str, "prime number index")?;
-            Some(Command::PrimeSync(nth_prime))
-        }
-        ["prime-async", nth_prime_str] => {
-            let nth_prime = parse_or_print_error(nth_prime_str, "prime number index")?;
-            Some(Command::PrimeAsync(nth_prime))
-        }
+    match *words.first()? {
+        "test" => match &words[1..] {
+            ["misc"] => Some(Command::TestMisc),
+            ["hpet"] => Some(Command::TestHPET),
+            _ => Some(Command::Unknown(command_str)),
+        },
+        "list-pci" => Some(Command::ListPCI),
+        "list-virtio" => Some(Command::ListVirtIO),
+        "boot-info" => Some(Command::BootInfo),
+        "print-acpi" => Some(Command::PrintACPI),
+        "rng" => match &words[1..] {
+            [num_bytes_str] => {
+                let num_bytes = parse_or_print_error(num_bytes_str, "number of bytes")?;
+                Some(Command::RNG(num_bytes))
+            }
+            _ => Some(Command::Unknown(command_str)),
+        },
+        "block" => match &words[1..] {
+            ["list"] => Some(Command::VirtIOBlock(VirtIOBlockCommand::List)),
+            ["read", device_id_str, sector_str] => {
+                let device_id = parse_or_print_error(device_id_str, "device ID")?;
+                let sector = parse_or_print_error(sector_str, "sector number")?;
+                Some(Command::VirtIOBlock(VirtIOBlockCommand::Read {
+                    device_id,
+                    sector,
+                }))
+            }
+            ["id", device_id_str] => {
+                let device_id = parse_or_print_error(device_id_str, "device ID")?;
+                Some(Command::VirtIOBlock(VirtIOBlockCommand::ID { device_id }))
+            }
+            _ => Some(Command::Unknown(command_str)),
+        },
+        "fat" => match &words[1..] {
+            ["bios", device_id_str] => {
+                let device_id = parse_or_print_error(device_id_str, "device ID")?;
+                Some(Command::FATBIOS { device_id })
+            }
+            _ => Some(Command::Unknown(command_str)),
+        },
+        "ext2" => match &words[1..] {
+            ["superblock", device_id_str] => {
+                let device_id = parse_or_print_error(device_id_str, "device ID")?;
+                Some(Command::EXT2Superblock { device_id })
+            }
+            ["ls-root", device_id_str] => {
+                let device_id = parse_or_print_error(device_id_str, "device ID")?;
+                Some(Command::EXT2ListRoot { device_id })
+            }
+            _ => Some(Command::Unknown(command_str)),
+        },
+        "timer" => match &words[1..] {
+            [milliseconds_str] => {
+                let milliseconds = parse_or_print_error(milliseconds_str, "milliseconds")?;
+                Some(Command::Timer(Milliseconds::new(milliseconds)))
+            }
+            _ => Some(Command::Unknown(command_str)),
+        },
+        "sleep" => match &words[1..] {
+            [milliseconds_str] => {
+                let milliseconds = parse_or_print_error(milliseconds_str, "milliseconds")?;
+                Some(Command::Sleep(Milliseconds::new(milliseconds)))
+            }
+            _ => Some(Command::Unknown(command_str)),
+        },
+        "prime" => match &words[1..] {
+            [sync_str, nth_prime_str] => {
+                let nth_prime = parse_or_print_error(nth_prime_str, "prime number index")?;
+                match *sync_str {
+                    "sync" => Some(Command::PrimeSync(nth_prime)),
+                    "async" => Some(Command::PrimeAsync(nth_prime)),
+                    _ => Some(Command::Unknown(command_str)),
+                }
+            }
+            _ => Some(Command::Unknown(command_str)),
+        },
         _ => Some(Command::Unknown(command_str)),
     }
 }
@@ -263,10 +293,10 @@ fn run_command(command: &Command) {
             let buffer = cell.wait_sleep();
             serial_println!("Got RNG buffer: {buffer:x?}");
         }
-        Command::VirtIOBlockList => {
+        Command::VirtIOBlock(VirtIOBlockCommand::List) => {
             virtio::virtio_block_print_devices();
         }
-        Command::VirtIOBlockRead { device_id, sector } => {
+        Command::VirtIOBlock(VirtIOBlockCommand::Read { device_id, sector }) => {
             serial_println!("Reading VirtIO block sector {sector}...");
             let cell = virtio::virtio_block_read(*device_id, *sector, 2);
             let response = cell.wait_sleep();
@@ -276,7 +306,7 @@ fn run_command(command: &Command) {
             };
             serial_println!("Got block data: {data:x?}");
         }
-        Command::VirtIOBlockID { device_id } => {
+        Command::VirtIOBlock(VirtIOBlockCommand::ID { device_id }) => {
             serial_println!("Reading VirtIO block device ID...");
             let cell = virtio::virtio_block_get_id(*device_id);
             let response = cell.wait_sleep();
