@@ -263,10 +263,8 @@ fn run_command(command: &Command) {
 
             // If we detect a FAT filesystem, print out the BIOS Parameter Block
             if let [0xeb, 0x3c, 0x90] = &data[..3] {
-                let bios_param_block: fat::BIOSParameterBlock = unsafe {
-                    let ptr = data.as_ptr().cast::<fat::BIOSParameterBlock>();
-                    ptr.read()
-                };
+                let bios_param_block: fat::BIOSParameterBlock =
+                    unsafe { data.as_ptr().cast::<fat::BIOSParameterBlock>().read() };
                 serial_println!("BIOS Parameter Block: {:#x?}", bios_param_block);
             }
         }
