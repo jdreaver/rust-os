@@ -31,6 +31,7 @@ fn main() {
 
     let root_inode = lookup_inode(&mut file, &superblock, ext2::ROOT_DIRECTORY);
     println!("{:#X?}", root_inode);
+    read_directory(&mut file, &superblock, &root_inode);
 
     let hello_inode = lookup_inode(&mut file, &superblock, ext2::InodeNumber(12));
     println!("{:#X?}", hello_inode);
@@ -72,4 +73,18 @@ fn lookup_inode(
     let inode_table_block_address = block_group_descriptor.inode_table;
     let inode_offset = superblock.inode_offset(inode_table_block_address, local_inode_index);
     read_bytes(file, inode_offset.0)
+}
+
+fn read_directory(file: &mut File, superblock: &ext2::Superblock, inode: &ext2::Inode) {
+    assert!(inode.is_dir());
+
+    let direct_blocks = inode.direct_blocks;
+    for block_addr in direct_blocks.iter() {
+        let block_offset = superblock.block_address_bytes(block_addr);
+        let block_buf = read_n_bytes(file, block_offset.0, superblock.block_size().0 as usize);
+        let dir_block = ext2::DirectoryBlock(block_buf.as_slice());
+        for entry in dir_block.iter() {
+            println!("dir entry: {:#X?}", entry);
+        }
+    }
 }

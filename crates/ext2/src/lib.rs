@@ -30,10 +30,12 @@
 )]
 
 pub mod block_group;
+pub mod directory;
 pub mod inode;
 mod strings;
 pub mod superblock;
 
 pub use block_group::*;
+pub use directory::*;
 pub use inode::*;
 pub use superblock::*;
