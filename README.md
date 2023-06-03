@@ -91,6 +91,7 @@ make test
 
 ## TODO
 
+- Stack size: figure out why stacks need to be so large when compiling in debug mode. Is Rust putting a ton of debug info on the stack?
 - Review/refactor kernel stack + guard page code
 - Replace `allocate_and_map_page` with `allocate_and_map_pages`, which accepts a `PageRange`, so we don't have to keep taking a bunch of locks in a loop.
 - Synchronization primitives
