@@ -34,6 +34,7 @@ pub(crate) mod acpi;
 pub(crate) mod apic;
 pub(crate) mod barrier;
 pub(crate) mod boot_info;
+pub(crate) mod fs;
 pub(crate) mod gdt;
 pub(crate) mod heap;
 pub(crate) mod hpet;

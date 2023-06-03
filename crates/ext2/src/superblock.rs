@@ -72,7 +72,7 @@ impl Superblock {
     /// The superblock is always located at byte offset 1024 from the beginning of
     /// the file, block device or partition formatted with Ext2 and later variants
     /// (Ext3, Ext4).
-    pub const OFFSET_BYTES: usize = 1024;
+    pub const OFFSET_BYTES: OffsetBytes = OffsetBytes(1024);
 
     /// 16bit value identifying the file system as Ext2. The value is currently
     /// fixed to EXT2_SUPER_MAGIC of value 0xEF53.

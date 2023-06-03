@@ -1,8 +1,6 @@
 use std::fs::File;
 use std::os::unix::prelude::FileExt;
 
-use ext2::InodeBitmap;
-
 fn main() {
     // Get command line arguments, including a FAT disk file
     let args: Vec<String> = std::env::args().collect();
@@ -18,7 +16,7 @@ fn main() {
     println!("Reading ext2 disk file: {}", disk_file);
     let mut file = File::open(disk_file).expect("failed to open disk file");
 
-    let superblock: ext2::Superblock = read_bytes(&mut file, ext2::Superblock::OFFSET_BYTES as u64);
+    let superblock: ext2::Superblock = read_bytes(&mut file, ext2::Superblock::OFFSET_BYTES.0);
     println!("{:#X?}", superblock);
     println!("Num block groups: {}", superblock.num_block_groups());
     println!("Block size: {:#X?}", superblock.block_size());
@@ -65,7 +63,7 @@ fn lookup_inode(
         inode_bitmap_offset.0,
         superblock.block_size().0 as usize,
     );
-    let inode_bitmap = InodeBitmap(&inode_bitmap_buf);
+    let inode_bitmap = ext2::InodeBitmap(&inode_bitmap_buf);
     assert!(inode_bitmap
         .is_used(local_inode_index)
         .expect("inode doesn't exist"));

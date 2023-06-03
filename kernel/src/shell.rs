@@ -6,7 +6,7 @@ use uefi::table::{Runtime, SystemTable};
 use crate::hpet::Milliseconds;
 use crate::sync::SpinLock;
 use crate::{
-    acpi, boot_info, pci, sched, serial, serial_print, serial_println, tests, tick, virtio,
+    acpi, boot_info, fs, pci, sched, serial, serial_print, serial_println, tests, tick, virtio,
 };
 
 static NEXT_COMMAND_BUFFER: SpinLock<ShellBuffer> = SpinLock::new(ShellBuffer::new());
@@ -115,6 +115,7 @@ enum Command<'a> {
     VirtIOBlockID { device_id: usize },
     FATBIOS { device_id: usize },
     EXT2Superblock { device_id: usize },
+    EXT2ListRoot { device_id: usize },
     Timer(Milliseconds),
     Sleep(Milliseconds),
     PrimeSync(usize),
@@ -158,6 +159,10 @@ fn next_command(buffer: &[u8]) -> Option<Command> {
         ["ext2", "superblock", device_id_str] => {
             let device_id = parse_or_print_error(device_id_str, "device ID")?;
             Some(Command::EXT2Superblock { device_id })
+        }
+        ["ext2", "ls-root", device_id_str] => {
+            let device_id = parse_or_print_error(device_id_str, "device ID")?;
+            Some(Command::EXT2ListRoot { device_id })
         }
         ["timer", milliseconds_str] => {
             let milliseconds = parse_or_print_error(milliseconds_str, "milliseconds")?;
@@ -292,25 +297,15 @@ fn run_command(command: &Command) {
             serial_println!("BIOS Parameter Block: {:#x?}", bios_param_block);
         }
         Command::EXT2Superblock { device_id } => {
-            let sector = ext2::Superblock::OFFSET_BYTES as u64
-                / u64::from(virtio::VIRTIO_BLOCK_SECTOR_SIZE_BYTES);
-            let num_sectors = core::mem::size_of::<ext2::Superblock>()
-                .div_ceil(virtio::VIRTIO_BLOCK_SECTOR_SIZE_BYTES as usize);
-            let response =
-                virtio::virtio_block_read(*device_id, sector, num_sectors as u32).wait_sleep();
-            let virtio::VirtIOBlockResponse::Read{ ref data } = *response else {
-                serial_println!("Unexpected response from block request: {response:x?}");
-                return;
-            };
-
-            let superblock: ext2::Superblock =
-                unsafe { data.as_ptr().cast::<ext2::Superblock>().read() };
-            if superblock.magic_valid() {
-                serial_println!("Found ext2 superblock: {:#x?}", superblock);
-            } else {
-                let magic = superblock.magic;
-                serial_println!("No ext2 superblock found. Magic value was: {:x?}", magic);
-            }
+            let fs = fs::EXT2Filesystem::read_from_disk(*device_id)
+                .expect("failed to read EXT2 filesystem");
+            serial_println!("{:#x?}", fs.superblock());
+        }
+        Command::EXT2ListRoot { device_id } => {
+            let fs = fs::EXT2Filesystem::read_from_disk(*device_id)
+                .expect("failed to read EXT2 filesystem");
+            let root = fs.read_root();
+            serial_println!("{:#x?}", root);
         }
         Command::Timer(ms) => {
             let inner_ms = *ms;
