@@ -77,6 +77,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "ext2"
+version = "0.1.0"
+
+[[package]]
 name = "fat"
 version = "0.1.0"
 dependencies = [
@@ -228,6 +232,7 @@ dependencies = [
  "bitfield-struct",
  "bitflags 2.3.1",
  "bitmap-alloc",
+ "ext2",
  "fat",
  "lazy_static",
  "limine",

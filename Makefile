@@ -4,7 +4,8 @@ OVMF = $(shell nix build ./flake#OVMF --print-out-paths --no-link)/OVMF.fd
 QEMU_DEBUG_BIN = $(shell nix build ./flake#qemu-x86_64-debug --print-out-paths --no-link)/bin/qemu-system-x86_64
 QEMU_SOURCE_CODE = $(shell nix build ./flake#qemu-x86_64-debug --print-out-paths --no-link)/raw
 
-TEST_HDD = test.hdd
+TEST_FAT_HDD = test_fat.hdd
+TEST_EXT2_HDD = test_ext2.hdd
 
 RUST_BUILD_MODE = debug
 RUST_BUILD_MODE_FLAG =
@@ -58,7 +59,8 @@ endif
 
 # Use virtio for the disk:
 QEMU_COMMON_ARGS += -drive file=$(KERNEL_HDD),if=none,id=drive-virtio-disk0,format=raw -device virtio-blk-pci,scsi=off,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=0,serial=hello-blk
-QEMU_COMMON_ARGS += -drive file=$(TEST_HDD),if=none,id=drive-virtio-disk1,format=raw -device virtio-blk-pci,scsi=off,drive=drive-virtio-disk1,id=virtio-disk1,serial=test-blk
+QEMU_COMMON_ARGS += -drive file=$(TEST_FAT_HDD),if=none,id=drive-virtio-disk1,format=raw -device virtio-blk-pci,scsi=off,drive=drive-virtio-disk1,id=virtio-disk1,serial=test-fat
+QEMU_COMMON_ARGS += -drive file=$(TEST_EXT2_HDD),if=none,id=drive-virtio-disk2,format=raw -device virtio-blk-pci,scsi=off,drive=drive-virtio-disk2,id=virtio-disk2,serial=test-ext2
 QEMU_COMMON_ARGS += -smp 2 # Use 2 cores
 QEMU_COMMON_ARGS += -m 2G # More memory
 QEMU_COMMON_ARGS += -device virtio-rng-pci-non-transitional # RNG is the simplest virtio device. Good for testing.
@@ -67,7 +69,7 @@ QEMU_ARGS += $(QEMU_COMMON_ARGS)
 QEMU_ARGS += -M q35,accel=kvm # Use the q35 chipset. accel=kvm enables hardware acceleration, makes things way faster.
 
 .PHONY: run
-run: $(KERNEL_HDD) $(TEST_HDD)
+run: $(KERNEL_HDD) $(TEST_FAT_HDD) $(TEST_EXT2_HDD)
 	$(QEMU) $(QEMU_ARGS)
 
 # N.B. Run `make run-debug` in one terminal, and `make gdb` in another.
@@ -76,7 +78,7 @@ QEMU_DEBUG_ARGS += -M q35 # Use the q35 chipset, but don't use kvm acceleration 
 QEMU_DEBUG_ARGS += -d int,cpu_reset,guest_errors # Log some unexpected things. Run qemu-system-x86_64 -d help to see more.
 
 .PHONY: run-debug
-run-debug: $(KERNEL_HDD) $(TEST_HDD)
+run-debug: $(KERNEL_HDD) $(TEST_FAT_HDD) $(TEST_EXT2_HDD)
 	qemu-system-x86_64 $(QEMU_DEBUG_ARGS) -s -S
 
 .PHONY: gdb
@@ -126,8 +128,11 @@ $(KERNEL_HDD): kernel
 	sudo losetup -d `cat loopback_dev`
 	rm -rf loopback_dev img_mount
 
-$(TEST_HDD):
-	./crates/fat/scripts/create-test-image.sh $(TEST_HDD)
+$(TEST_FAT_HDD):
+	./crates/fat/scripts/create-test-image.sh $(TEST_FAT_HDD)
+
+$(TEST_EXT2_HDD):
+	./crates/ext2/scripts/create-test-ext2-image.sh $(TEST_EXT2_HDD)
 
 .PHONY: test
 test:

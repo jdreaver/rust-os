@@ -262,10 +262,19 @@ fn run_command(command: &Command) {
             serial_println!("Got block data: {data:x?}");
 
             // If we detect a FAT filesystem, print out the BIOS Parameter Block
-            if let [0xeb, 0x3c, 0x90] = &data[..3] {
+            if *sector == 0 && [0xeb, 0x3c, 0x90] == data[..3] {
                 let bios_param_block: fat::BIOSParameterBlock =
                     unsafe { data.as_ptr().cast::<fat::BIOSParameterBlock>().read() };
                 serial_println!("BIOS Parameter Block: {:#x?}", bios_param_block);
+            }
+
+            // Try to detect ext2
+            if *sector == 2 {
+                let superblock: ext2::Superblock =
+                    unsafe { data.as_ptr().cast::<ext2::Superblock>().read() };
+                if superblock.magic_valid() {
+                    serial_println!("Found ext2 superblock: {:#x?}", superblock);
+                }
             }
         }
         Command::VirtIOBlockID { device_id } => {
