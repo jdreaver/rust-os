@@ -37,14 +37,6 @@ pub(super) fn allocate_stack() -> KernelStack {
     allocator.allocate().expect("out of kernel stacks")
 }
 
-pub(super) fn free_stack(stack: &KernelStack) {
-    let mut lock = KERNEL_STACK_ALLOCATOR.lock_disable_interrupts();
-    let allocator = lock
-        .as_mut()
-        .expect("kernel stack allocator not initialized");
-    allocator.free(stack);
-}
-
 /// Allocator that hands out kernel stacks. All kernel stacks are the same size,
 /// and they have a guard page at the end of the stack.
 struct KernelStackAllocator<'a> {
@@ -130,6 +122,16 @@ impl KernelStack {
         let start_page = Page::containing_address(self.start_addr + memory::PAGE_SIZE);
         let end_page = Page::containing_address(self.start_addr + KERNEL_STACK_SIZE_BYTES - 1_u64);
         Page::range_inclusive(start_page, end_page)
+    }
+}
+
+impl Drop for KernelStack {
+    fn drop(&mut self) {
+        let mut lock = KERNEL_STACK_ALLOCATOR.lock_disable_interrupts();
+        let allocator = lock
+            .as_mut()
+            .expect("kernel stack allocator not initialized");
+        allocator.free(self);
     }
 }
 

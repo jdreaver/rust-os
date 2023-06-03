@@ -259,10 +259,7 @@ impl Scheduler {
         for id in &self.pending_tasks {
             let task = self.get_task_assert(*id);
             if task.state.load() == TaskState::Killed {
-                let task = self.tasks.remove(id);
-                if let Some(task) = task {
-                    stack::free_stack(&task.kernel_stack);
-                };
+                self.tasks.remove(id);
             } else {
                 remaining_pending_tasks.push_back(*id);
             }

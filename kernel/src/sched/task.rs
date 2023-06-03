@@ -19,7 +19,7 @@ pub(crate) struct Task {
 
     /// How much longer the task can run before it is preempted.
     pub(super) remaining_slice: AtomicInt<u64, Milliseconds>,
-    pub(super) kernel_stack: stack::KernelStack,
+    pub(super) _kernel_stack: stack::KernelStack,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -89,7 +89,7 @@ impl Task {
             state: AtomicEnum::new(TaskState::ReadyToRun),
             remaining_slice: AtomicInt::new(Milliseconds::new(0)),
             exit_wait_queue: Arc::new(WaitQueue::new()),
-            kernel_stack,
+            _kernel_stack: kernel_stack,
         }
     }
 }
