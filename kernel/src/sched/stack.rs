@@ -12,7 +12,8 @@ use crate::sync::SpinLock;
 ///
 /// N.B. This is quite large because apparently Rust debug programs use a ton of
 /// the stack. We don't need this much stack in release mode.
-const KERNEL_STACK_SIZE_BYTES: usize = 4 * memory::PAGE_SIZE;
+const KERNEL_STACK_SIZE_PAGES: usize = 4;
+const KERNEL_STACK_SIZE_BYTES: usize = KERNEL_STACK_SIZE_PAGES * memory::PAGE_SIZE;
 const KERNEL_STACK_START_VIRT_ADDR: usize = 0x_5555_0000_0000;
 
 const MAX_KERNEL_STACKS: usize = 256;
@@ -23,7 +24,7 @@ static mut KERNEL_ALLOC_BIT_CHUNKS: [u64; MAX_KERNEL_ALLOC_BIT_CHUNKS] =
 
 static KERNEL_STACK_ALLOCATOR: SpinLock<Option<KernelStackAllocator>> = SpinLock::new(None);
 
-pub(super) fn init() {
+pub(super) fn stack_init() {
     let allocator = KernelStackAllocator::new();
     KERNEL_STACK_ALLOCATOR.lock().replace(allocator);
 }
@@ -130,4 +131,21 @@ impl KernelStack {
         let end_page = Page::containing_address(self.start_addr + KERNEL_STACK_SIZE_BYTES - 1_u64);
         Page::range_inclusive(start_page, end_page)
     }
+}
+
+/// Useful function for page faults to determine if we hit a kernel guard page.
+pub(crate) fn is_kernel_guard_page(addr: VirtAddr) -> bool {
+    let above_kernel_stack = addr.as_u64() >= KERNEL_STACK_START_VIRT_ADDR as u64;
+    let kernel_stack_size = KERNEL_STACK_SIZE_BYTES as u64 * MAX_KERNEL_STACKS as u64;
+    let within_kernel_stack =
+        addr.as_u64() < KERNEL_STACK_START_VIRT_ADDR as u64 + kernel_stack_size;
+
+    if !(above_kernel_stack && within_kernel_stack) {
+        return false;
+    }
+
+    // The guard page is the first page in each stack
+    let relative_start = addr.as_u64() - KERNEL_STACK_START_VIRT_ADDR as u64;
+    let stack_page_index = relative_start / memory::PAGE_SIZE as u64;
+    stack_page_index % KERNEL_STACK_SIZE_PAGES as u64 == 0
 }

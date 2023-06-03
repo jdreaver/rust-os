@@ -91,13 +91,7 @@ make test
 
 ## TODO
 
-- TSS/GDT:
-  - DRY setting up the TSS for fault handlers.
-  - Investigate TSS and make sure I'm using it correctly (am I supposed to switch it between tasks? am I setting up the correct exceptions?)
 - Review/refactor kernel stack + guard page code
-- Debugging page fault
-  - `virtio-block read 1 0` hits a page fault when stack size is 4 pages (3 not including guard). Fixes when page size increased.
-  - How do we debug this better in gdb? I want a stack trace.
 - Replace `allocate_and_map_page` with `allocate_and_map_pages`, which accepts a `PageRange`, so we don't have to keep taking a bunch of locks in a loop.
 - Synchronization primitives
   - Mutex (not spinlock "mutex") that handles sleeping and waking

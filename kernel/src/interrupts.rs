@@ -5,6 +5,7 @@ use paste::paste;
 use seq_macro::seq;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
+use crate::sched::is_kernel_guard_page;
 use crate::sync::SpinLock;
 use crate::{apic, gdt, sched, serial_println};
 
@@ -157,7 +158,11 @@ extern "x86-interrupt" fn page_fault_handler(
     use x86_64::registers::control::Cr2;
 
     serial_println!("EXCEPTION: PAGE FAULT");
-    serial_println!("Accessed Address (CR2): {:#x?}", Cr2::read_raw());
+    let accessed_address = Cr2::read();
+    if is_kernel_guard_page(accessed_address) {
+        serial_println!("KERNEL GUARD PAGE WAS ACCESSED, LIKELY A STACK OVERFLOW!!!");
+    }
+    serial_println!("Accessed Address (CR2): {:?}", accessed_address);
     serial_println!("Error Code: {error_code:?}");
     serial_println!("{stack_frame:#?}");
 

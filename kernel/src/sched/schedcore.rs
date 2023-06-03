@@ -317,7 +317,7 @@ extern "C" fn idle_task_start(_arg: *const ()) {
 }
 
 pub(crate) fn init(acpi_info: &ACPIInfo) {
-    stack::init();
+    stack::stack_init();
 
     let processor_info = acpi_info.processor_info();
     let max_lapic_id = processor_info
