@@ -1,6 +1,18 @@
 use std::fs::File;
 use std::os::unix::prelude::FileExt;
 
+pub struct FileBlockReader(File);
+
+impl ext2::BlockReader for FileBlockReader {
+    fn read_num_bytes(&mut self, addr: ext2::OffsetBytes, num_bytes: usize) -> Vec<u8> {
+        let mut buf = vec![0; num_bytes];
+        self.0
+            .read_exact_at(&mut buf, addr.0)
+            .expect("failed to read bytes");
+        buf
+    }
+}
+
 fn main() {
     // Get command line arguments, including a FAT disk file
     let args: Vec<String> = std::env::args().collect();
@@ -14,75 +26,21 @@ fn main() {
 
     // Read a FAT disk file
     println!("Reading ext2 disk file: {}", disk_file);
-    let mut file = File::open(disk_file).expect("failed to open disk file");
+    let file = File::open(disk_file).expect("failed to open disk file");
+    let block_reader = FileBlockReader(file);
+    let mut reader = ext2::FilesystemReader::read(block_reader).expect("failed to read disk file");
 
-    let superblock: ext2::Superblock = read_bytes(&mut file, ext2::Superblock::OFFSET_BYTES.0);
+    let superblock = reader.superblock();
     println!("{:#X?}", superblock);
     println!("Num block groups: {}", superblock.num_block_groups());
     println!("Block size: {:#X?}", superblock.block_size());
 
-    let block_group_descriptor_0_offset =
-        superblock.block_descriptor_offset(ext2::BlockGroupIndex(0));
-    let block_group_descriptor_0: ext2::BlockGroupDescriptor =
-        read_bytes(&mut file, block_group_descriptor_0_offset.0);
-    println!("{:#X?}", block_group_descriptor_0);
-
-    let root_inode = lookup_inode(&mut file, &superblock, ext2::ROOT_DIRECTORY);
+    let root_inode = reader.read_root();
     println!("{:#X?}", root_inode);
-    read_directory(&mut file, &superblock, &root_inode);
+    reader.iter_directory(&root_inode, |dir_entry| {
+        println!("{:#X?}", dir_entry);
+    });
 
-    let hello_inode = lookup_inode(&mut file, &superblock, ext2::InodeNumber(12));
-    println!("{:#X?}", hello_inode);
-}
-
-fn read_bytes<T>(file: &mut File, offset: u64) -> T {
-    let buf = read_n_bytes(file, offset, std::mem::size_of::<T>());
-    unsafe { buf.as_ptr().cast::<T>().read() }
-}
-
-fn read_n_bytes(file: &mut File, offset: u64, n: usize) -> Vec<u8> {
-    let mut buf = vec![0; n];
-    file.read_exact_at(&mut buf, offset)
-        .expect("failed to read bytes");
-    buf
-}
-
-fn lookup_inode(
-    file: &mut File,
-    superblock: &ext2::Superblock,
-    inode_number: ext2::InodeNumber,
-) -> ext2::Inode {
-    let (block_group_index, local_inode_index) = superblock.inode_location(inode_number);
-    let block_group_offset = superblock.block_descriptor_offset(block_group_index);
-    let block_group_descriptor: ext2::BlockGroupDescriptor = read_bytes(file, block_group_offset.0);
-
-    let inode_bitmap_block_address = block_group_descriptor.inode_bitmap;
-    let inode_bitmap_offset = superblock.block_address_bytes(inode_bitmap_block_address);
-    let inode_bitmap_buf = read_n_bytes(
-        file,
-        inode_bitmap_offset.0,
-        superblock.block_size().0 as usize,
-    );
-    let inode_bitmap = ext2::InodeBitmap(&inode_bitmap_buf);
-    assert!(inode_bitmap
-        .is_used(local_inode_index)
-        .expect("inode doesn't exist"));
-
-    let inode_table_block_address = block_group_descriptor.inode_table;
-    let inode_offset = superblock.inode_offset(inode_table_block_address, local_inode_index);
-    read_bytes(file, inode_offset.0)
-}
-
-fn read_directory(file: &mut File, superblock: &ext2::Superblock, inode: &ext2::Inode) {
-    assert!(inode.is_dir());
-
-    let direct_blocks = inode.direct_blocks;
-    for block_addr in direct_blocks.iter() {
-        let block_offset = superblock.block_address_bytes(block_addr);
-        let block_buf = read_n_bytes(file, block_offset.0, superblock.block_size().0 as usize);
-        let dir_block = ext2::DirectoryBlock(block_buf.as_slice());
-        for entry in dir_block.iter() {
-            println!("dir entry: {:#X?}", entry);
-        }
-    }
+    // let hello_inode = lookup_inode(&mut file, &superblock, ext2::InodeNumber(12));
+    // println!("{:#X?}", hello_inode);
 }

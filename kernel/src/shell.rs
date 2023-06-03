@@ -297,15 +297,21 @@ fn run_command(command: &Command) {
             serial_println!("BIOS Parameter Block: {:#x?}", bios_param_block);
         }
         Command::EXT2Superblock { device_id } => {
-            let fs = fs::EXT2Filesystem::read_from_disk(*device_id)
+            let reader = ext2::FilesystemReader::read(fs::VirtioBlockReader::new(*device_id))
                 .expect("failed to read EXT2 filesystem");
-            serial_println!("{:#x?}", fs.superblock());
+            serial_println!("{:#x?}", reader.superblock());
         }
         Command::EXT2ListRoot { device_id } => {
-            let fs = fs::EXT2Filesystem::read_from_disk(*device_id)
+            let mut reader = ext2::FilesystemReader::read(fs::VirtioBlockReader::new(*device_id))
                 .expect("failed to read EXT2 filesystem");
-            let root = fs.read_root();
+            let root = reader.read_root();
             serial_println!("{:#x?}", root);
+            serial_println!("Listing root directory...");
+            reader.iter_directory(&root, |entry| {
+                let inode = entry.header.inode;
+                let file_type = entry.header.file_type;
+                serial_println!("{} (inode: {:?}, type: {:?})", entry.name, inode, file_type);
+            });
         }
         Command::Timer(ms) => {
             let inner_ms = *ms;

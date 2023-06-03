@@ -29,13 +29,17 @@
     clippy::wildcard_imports
 )]
 
+extern crate alloc;
+
 pub mod block_group;
 pub mod directory;
 pub mod inode;
+pub mod reader;
 mod strings;
 pub mod superblock;
 
 pub use block_group::*;
 pub use directory::*;
 pub use inode::*;
+pub use reader::*;
 pub use superblock::*;
