@@ -19,6 +19,10 @@ use super::VirtIODeviceConfig;
 
 static VIRTIO_BLOCK: RwLock<Vec<VirtIOBlockDevice>> = RwLock::new(Vec::new());
 
+/// All virtio-block sectors are 512 bytes. Also, all virtio-block requests need
+/// to be a multiple of 512 bytes.
+pub(crate) const VIRTIO_BLOCK_SECTOR_SIZE_BYTES: u32 = 512;
+
 pub(crate) fn try_init_virtio_block(device_config: VirtIODeviceConfig) {
     let device_id = device_config.pci_config().device_id();
     if device_id.vendor_id() != 0x1af4 {
@@ -58,13 +62,13 @@ pub(crate) fn virtio_block_get_id(device_index: usize) -> Arc<WaitQueue<VirtIOBl
 pub(crate) fn virtio_block_read(
     device_index: usize,
     sector: u64,
-    num_512_blocks: u32,
+    num_sectors: u32,
 ) -> Arc<WaitQueue<VirtIOBlockResponse>> {
     let device_lock = VIRTIO_BLOCK.read();
     let device = device_lock.get(device_index).expect("invalid device index");
     device.add_request(&BlockRequest::Read {
         sector,
-        num_512_blocks,
+        num_sectors,
     })
 }
 
@@ -90,8 +94,8 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
         let request = BlockRequest::from_raw(&raw_request);
 
         match request {
-            BlockRequest::Read { sector: _, num_512_blocks } => {
-                let data_len = num_512_blocks * BlockRequest::READ_DATA_LEN_PER_BLOCK;
+            BlockRequest::Read { sector: _, num_sectors } => {
+                let data_len = num_sectors * VIRTIO_BLOCK_SECTOR_SIZE_BYTES;
                 let bytes = unsafe {
                     core::slice::from_raw_parts(
                         buffer.address().as_u64() as *const u8,
@@ -256,7 +260,7 @@ struct BlockConfigTopology {
 
 #[derive(Debug)]
 enum BlockRequest {
-    Read { sector: u64, num_512_blocks: u32 },
+    Read { sector: u64, num_sectors: u32 },
     GetID,
 }
 
@@ -264,17 +268,13 @@ impl BlockRequest {
     /// All GET_ID requests MUST have a length of 20 bytes.
     const GET_ID_DATA_LEN: u32 = 20;
 
-    /// All read requests MUST be a multiple of 512 bytes. We just use 512 for
-    /// now.
-    const READ_DATA_LEN_PER_BLOCK: u32 = 512;
-
     fn to_raw(&self) -> RawBlockRequest {
         match self {
             Self::Read {
                 sector,
-                num_512_blocks,
+                num_sectors,
             } => {
-                let data_len = num_512_blocks * Self::READ_DATA_LEN_PER_BLOCK;
+                let data_len = num_sectors * VIRTIO_BLOCK_SECTOR_SIZE_BYTES;
                 RawBlockRequest::new(BlockRequestType::In, *sector, data_len)
             }
             Self::GetID => RawBlockRequest::new(BlockRequestType::GetID, 0, Self::GET_ID_DATA_LEN),
@@ -284,11 +284,11 @@ impl BlockRequest {
     fn from_raw(raw: &RawBlockRequest) -> Self {
         match raw.request_type {
             BlockRequestType::In => {
-                assert!(raw.data_len % Self::READ_DATA_LEN_PER_BLOCK == 0);
-                let num_512_blocks = raw.data_len / Self::READ_DATA_LEN_PER_BLOCK;
+                assert!(raw.data_len % VIRTIO_BLOCK_SECTOR_SIZE_BYTES == 0);
+                let num_sectors = raw.data_len / VIRTIO_BLOCK_SECTOR_SIZE_BYTES;
                 Self::Read {
                     sector: raw.sector,
-                    num_512_blocks,
+                    num_sectors,
                 }
             }
             BlockRequestType::GetID => Self::GetID,

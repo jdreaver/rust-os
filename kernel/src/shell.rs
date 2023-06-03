@@ -113,6 +113,8 @@ enum Command<'a> {
     VirtIOBlockList,
     VirtIOBlockRead { device_id: usize, sector: u64 },
     VirtIOBlockID { device_id: usize },
+    FATBIOS { device_id: usize },
+    EXT2Superblock { device_id: usize },
     Timer(Milliseconds),
     Sleep(Milliseconds),
     PrimeSync(usize),
@@ -148,6 +150,14 @@ fn next_command(buffer: &[u8]) -> Option<Command> {
         ["virtio-block", "id", device_id_str] => {
             let device_id = parse_or_print_error(device_id_str, "device ID")?;
             Some(Command::VirtIOBlockID { device_id })
+        }
+        ["fat", "bios", device_id_str] => {
+            let device_id = parse_or_print_error(device_id_str, "device ID")?;
+            Some(Command::FATBIOS { device_id })
+        }
+        ["ext2", "superblock", device_id_str] => {
+            let device_id = parse_or_print_error(device_id_str, "device ID")?;
+            Some(Command::EXT2Superblock { device_id })
         }
         ["timer", milliseconds_str] => {
             let milliseconds = parse_or_print_error(milliseconds_str, "milliseconds")?;
@@ -260,22 +270,6 @@ fn run_command(command: &Command) {
                 return;
             };
             serial_println!("Got block data: {data:x?}");
-
-            // If we detect a FAT filesystem, print out the BIOS Parameter Block
-            if *sector == 0 && [0xeb, 0x3c, 0x90] == data[..3] {
-                let bios_param_block: fat::BIOSParameterBlock =
-                    unsafe { data.as_ptr().cast::<fat::BIOSParameterBlock>().read() };
-                serial_println!("BIOS Parameter Block: {:#x?}", bios_param_block);
-            }
-
-            // Try to detect ext2
-            if *sector == 2 {
-                let superblock: ext2::Superblock =
-                    unsafe { data.as_ptr().cast::<ext2::Superblock>().read() };
-                if superblock.magic_valid() {
-                    serial_println!("Found ext2 superblock: {:#x?}", superblock);
-                }
-            }
         }
         Command::VirtIOBlockID { device_id } => {
             serial_println!("Reading VirtIO block device ID...");
@@ -286,6 +280,37 @@ fn run_command(command: &Command) {
                 return;
             };
             serial_println!("Got block ID: {id}");
+        }
+        Command::FATBIOS { device_id } => {
+            let response = virtio::virtio_block_read(*device_id, 0, 1).wait_sleep();
+            let virtio::VirtIOBlockResponse::Read{ ref data } = *response else {
+                serial_println!("Unexpected response from block request: {response:x?}");
+                return;
+            };
+            let bios_param_block: fat::BIOSParameterBlock =
+                unsafe { data.as_ptr().cast::<fat::BIOSParameterBlock>().read() };
+            serial_println!("BIOS Parameter Block: {:#x?}", bios_param_block);
+        }
+        Command::EXT2Superblock { device_id } => {
+            let sector = ext2::Superblock::OFFSET_BYTES as u64
+                / u64::from(virtio::VIRTIO_BLOCK_SECTOR_SIZE_BYTES);
+            let num_sectors = core::mem::size_of::<ext2::Superblock>()
+                .div_ceil(virtio::VIRTIO_BLOCK_SECTOR_SIZE_BYTES as usize);
+            let response =
+                virtio::virtio_block_read(*device_id, sector, num_sectors as u32).wait_sleep();
+            let virtio::VirtIOBlockResponse::Read{ ref data } = *response else {
+                serial_println!("Unexpected response from block request: {response:x?}");
+                return;
+            };
+
+            let superblock: ext2::Superblock =
+                unsafe { data.as_ptr().cast::<ext2::Superblock>().read() };
+            if superblock.magic_valid() {
+                serial_println!("Found ext2 superblock: {:#x?}", superblock);
+            } else {
+                let magic = superblock.magic;
+                serial_println!("No ext2 superblock found. Magic value was: {:x?}", magic);
+            }
         }
         Command::Timer(ms) => {
             let inner_ms = *ms;
