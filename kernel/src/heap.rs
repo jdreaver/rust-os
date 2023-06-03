@@ -26,10 +26,8 @@ pub(crate) fn init() -> Result<(), MapToError<Size4KiB>> {
         Page::range_inclusive(heap_start_page, heap_end_page)
     };
 
-    for page in page_range {
-        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-        memory::allocate_and_map_page(page, flags)?;
-    }
+    let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+    memory::allocate_and_map_pages(page_range, flags)?;
 
     unsafe {
         // `init() actually writes to the heap, which is why we can only

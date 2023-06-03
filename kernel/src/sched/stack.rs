@@ -60,11 +60,6 @@ impl KernelStackAllocator<'_> {
         );
         let stack = KernelStack { start_addr };
 
-        // Allocate physical memory
-        // let physical_size = KERNEL_STACK_SIZE_BYTES - memory::PAGE_SIZE;
-        // let buffer = PhysicalBuffer::allocate_zeroed(physical_size)
-        //     .expect("failed to allocate PhysicalBuffer for kernel stack");
-
         // Map the guard page as invalid
         unsafe {
             memory::map_guard_page(stack.guard_page())
@@ -72,10 +67,9 @@ impl KernelStackAllocator<'_> {
         }
 
         // Map the physical memory into the virtual address space
-        for page in stack.physically_mapped_pages() {
-            let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-            memory::allocate_and_map_page(page, flags).expect("failed to map kernel stack page");
-        }
+        let pages = stack.physically_mapped_pages();
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+        memory::allocate_and_map_pages(pages, flags).expect("failed to map kernel stack pages");
 
         // Zero out the memory
         unsafe {
@@ -86,8 +80,6 @@ impl KernelStackAllocator<'_> {
         Some(stack)
     }
 
-    // TODO: Instead of a free method, implement Drop for KernelStack that frees
-    // itself. I'm just a bit wary about calling a Mutex with Drop.
     fn free(&mut self, stack: &KernelStack) {
         let stack_index = (stack.start_addr.as_u64() - KERNEL_STACK_START_VIRT_ADDR as u64)
             / KERNEL_STACK_SIZE_BYTES as u64;

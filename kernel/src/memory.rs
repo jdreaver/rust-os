@@ -87,14 +87,18 @@ pub(crate) fn allocate_physical_frame<S: PageSize>() -> Option<PhysFrame<S>> {
 /// virtual page to the physical frame in the page table. Useful for
 /// initializing a virtual region that is known not to be backed by memory, like
 /// initializing the kernel heap.
-pub(crate) fn allocate_and_map_page(
-    page: Page,
+pub(crate) fn allocate_and_map_pages(
+    pages: impl Iterator<Item = Page>,
     flags: PageTableFlags,
 ) -> Result<(), MapToError<Size4KiB>> {
-    let frame = allocate_physical_frame::<Size4KiB>().ok_or(MapToError::FrameAllocationFailed)?;
     KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
         KERNEL_MAPPER.with_lock(|mapper| unsafe {
-            mapper.map_to(page, frame, flags, allocator)?.flush();
+            for page in pages {
+                let frame = allocator
+                    .allocate_frame()
+                    .ok_or(MapToError::FrameAllocationFailed)?;
+                mapper.map_to(page, frame, flags, allocator)?.flush();
+            }
             Ok(())
         })
     })
