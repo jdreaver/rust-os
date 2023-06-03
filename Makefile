@@ -16,6 +16,7 @@ KERNEL = kernel/target/x86_64-rust_os/$(RUST_BUILD_MODE)/rust-os
 
 # Not all crates support `cargo test`
 TEST_CRATES += crates/bitmap-alloc
+TEST_CRATES += crates/ext2
 TEST_CRATES += crates/fat
 TEST_CRATES += crates/ring_buffer
 TEST_CRATES += crates/vesa_framebuffer
