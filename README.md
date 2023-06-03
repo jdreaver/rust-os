@@ -93,7 +93,6 @@ make test
 
 - ext2
   - Make all current structs "raw", and create wrappers around e.g. superblock and the descriptor table. Using that we can compute basically anything.
-- Shell commands: do proper nesting. For example, have ext2 be a command, and then have sub-commands. We can also DRY parsing the device ID in the parsing stage, and also DRY building the FS when running the command.
 - Stack size: figure out why stacks need to be so large when compiling in debug mode. Is Rust putting a ton of debug info on the stack?
 - Synchronization primitives
   - Mutex (not spinlock "mutex") that handles sleeping and waking

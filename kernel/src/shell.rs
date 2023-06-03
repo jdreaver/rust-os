@@ -59,7 +59,7 @@ pub(crate) extern "C" fn run_serial_shell(_arg: *const ()) {
             match c {
                 b'\n' | b'\r' => {
                     serial_println!();
-                    let command = next_command(&buffer.buffer);
+                    let command = parse_command(&buffer.buffer);
                     if let Some(command) = command {
                         run_command(&command);
                     }
@@ -102,7 +102,8 @@ fn reset_terminal_line() {
     serial::serial1_write_bytes(b"\x1B[2K\r");
 }
 
-enum Command<'a> {
+#[derive(Debug)]
+enum Command {
     TestMisc,
     TestHPET,
     ListPCI,
@@ -116,117 +117,162 @@ enum Command<'a> {
     EXT2ListRoot { device_id: usize },
     Timer(Milliseconds),
     Sleep(Milliseconds),
-    PrimeSync(usize),
-    PrimeAsync(usize),
-    Invalid,
-    Unknown(&'a str),
+    Prime(PrimeCommand),
 }
 
+#[derive(Debug)]
 enum VirtIOBlockCommand {
     List,
     Read { device_id: usize, sector: u64 },
     ID { device_id: usize },
 }
 
-fn next_command(buffer: &[u8]) -> Option<Command> {
+#[derive(Debug)]
+struct PrimeCommand {
+    sync: bool,
+    nth_prime: usize,
+}
+
+#[allow(clippy::too_many_lines)]
+fn parse_command(buffer: &[u8]) -> Option<Command> {
     let command_str = core::str::from_utf8(buffer);
-    let Ok(command_str) = command_str else { return Some(Command::Invalid); };
+    let Ok(command_str) = command_str else {
+        serial_println!("Invalid UTF-8 in command: {:?}", buffer);
+        return None;
+    };
 
-    let words = command_str.split_whitespace().collect::<Vec<_>>();
+    let mut words = command_str.split_whitespace();
 
-    match *words.first()? {
-        "test" => match &words[1..] {
-            ["misc"] => Some(Command::TestMisc),
-            ["hpet"] => Some(Command::TestHPET),
-            _ => Some(Command::Unknown(command_str)),
+    #[allow(clippy::single_match_else)]
+    let command = match words.next()? {
+        "test" => match words.next() {
+            Some("misc") => Some(Command::TestMisc),
+            Some("hpet") => Some(Command::TestHPET),
+            _ => {
+                serial_println!("Usage: test [misc|hpet]");
+                None
+            }
         },
         "list-pci" => Some(Command::ListPCI),
         "list-virtio" => Some(Command::ListVirtIO),
         "boot-info" => Some(Command::BootInfo),
         "print-acpi" => Some(Command::PrintACPI),
-        "rng" => match &words[1..] {
-            [num_bytes_str] => {
-                let num_bytes = parse_or_print_error(num_bytes_str, "number of bytes")?;
-                Some(Command::RNG(num_bytes))
-            }
-            _ => Some(Command::Unknown(command_str)),
-        },
-        "block" => match &words[1..] {
-            ["list"] => Some(Command::VirtIOBlock(VirtIOBlockCommand::List)),
-            ["read", device_id_str, sector_str] => {
-                let device_id = parse_or_print_error(device_id_str, "device ID")?;
-                let sector = parse_or_print_error(sector_str, "sector number")?;
+        "rng" => {
+            let num_bytes = parse_next_word(&mut words, "num bytes", "rng <num_bytes>")?;
+            Some(Command::RNG(num_bytes))
+        }
+
+        "block" => match words.next() {
+            Some("list") => Some(Command::VirtIOBlock(VirtIOBlockCommand::List)),
+            Some("read") => {
+                let usage = "block read <device_id> <sector>";
+                let device_id = parse_next_word(&mut words, "device ID", usage)?;
+                let sector = parse_next_word(&mut words, "sector number", usage)?;
                 Some(Command::VirtIOBlock(VirtIOBlockCommand::Read {
                     device_id,
                     sector,
                 }))
             }
-            ["id", device_id_str] => {
-                let device_id = parse_or_print_error(device_id_str, "device ID")?;
+            Some("id") => {
+                let device_id = parse_next_word(&mut words, "device ID", "block id <device_id>")?;
                 Some(Command::VirtIOBlock(VirtIOBlockCommand::ID { device_id }))
             }
-            _ => Some(Command::Unknown(command_str)),
+            _ => {
+                serial_println!("Usage: block [list|read|id]");
+                None
+            }
         },
-        "fat" => match &words[1..] {
-            ["bios", device_id_str] => {
-                let device_id = parse_or_print_error(device_id_str, "device ID")?;
+        "fat" => match words.next() {
+            Some("bios") => {
+                let device_id = parse_next_word(&mut words, "device ID", "fat bios <device_id>")?;
                 Some(Command::FATBIOS { device_id })
             }
-            _ => Some(Command::Unknown(command_str)),
+            _ => {
+                serial_println!("Usage: fat [bios]");
+                None
+            }
         },
-        "ext2" => match &words[1..] {
-            ["superblock", device_id_str] => {
-                let device_id = parse_or_print_error(device_id_str, "device ID")?;
+        "ext2" => match words.next() {
+            Some("superblock") => {
+                let device_id =
+                    parse_next_word(&mut words, "device ID", "ext2 superblock [device_id]")?;
                 Some(Command::EXT2Superblock { device_id })
             }
-            ["ls-root", device_id_str] => {
-                let device_id = parse_or_print_error(device_id_str, "device ID")?;
+            Some("ls-root") => {
+                let device_id =
+                    parse_next_word(&mut words, "device ID", "ext2 ls-root [device_id]")?;
                 Some(Command::EXT2ListRoot { device_id })
             }
-            _ => Some(Command::Unknown(command_str)),
-        },
-        "timer" => match &words[1..] {
-            [milliseconds_str] => {
-                let milliseconds = parse_or_print_error(milliseconds_str, "milliseconds")?;
-                Some(Command::Timer(Milliseconds::new(milliseconds)))
+            _ => {
+                serial_println!("Usage: ext2 [superblock|ls-root]");
+                None
             }
-            _ => Some(Command::Unknown(command_str)),
         },
-        "sleep" => match &words[1..] {
-            [milliseconds_str] => {
-                let milliseconds = parse_or_print_error(milliseconds_str, "milliseconds")?;
-                Some(Command::Sleep(Milliseconds::new(milliseconds)))
-            }
-            _ => Some(Command::Unknown(command_str)),
-        },
-        "prime" => match &words[1..] {
-            [sync_str, nth_prime_str] => {
-                let nth_prime = parse_or_print_error(nth_prime_str, "prime number index")?;
-                match *sync_str {
-                    "sync" => Some(Command::PrimeSync(nth_prime)),
-                    "async" => Some(Command::PrimeAsync(nth_prime)),
-                    _ => Some(Command::Unknown(command_str)),
+        "timer" => {
+            let milliseconds = parse_next_word(&mut words, "milliseconds", "timer [milliseconds]")?;
+            Some(Command::Timer(Milliseconds::new(milliseconds)))
+        }
+        "sleep" => {
+            let milliseconds = parse_next_word(&mut words, "milliseconds", "sleep [milliseconds]")?;
+            Some(Command::Sleep(Milliseconds::new(milliseconds)))
+        }
+        "prime" => {
+            let usage = "prime [sync|async] <nth_prime>";
+            let sync = match words.next() {
+                Some("sync") => true,
+                Some("async") => false,
+                _ => {
+                    serial_println!("Usage: {usage}");
+                    return None;
                 }
-            }
-            _ => Some(Command::Unknown(command_str)),
-        },
-        _ => Some(Command::Unknown(command_str)),
+            };
+            let nth_prime = parse_next_word(&mut words, "prime number index", usage)?;
+            Some(Command::Prime(PrimeCommand { sync, nth_prime }))
+        }
+        _ => {
+            serial_println!("Unknown command: {:?}", command_str);
+            None
+        }
+    };
+
+    let command = command?;
+
+    let mut words = words.peekable();
+    if words.peek().is_some() {
+        let remaining = words.collect::<Vec<_>>().join(" ");
+        serial_println!(
+            "Too many arguments. Parsed command: {command:?}, remaining args: {remaining}"
+        );
+        None
+    } else {
+        Some(command)
     }
 }
 
-fn parse_or_print_error<T>(s: &str, name: &str) -> Option<T>
+fn parse_next_word<'a, T>(
+    words: &mut impl Iterator<Item = &'a str>,
+    name: &str,
+    usage_msg: &str,
+) -> Option<T>
 where
     T: core::str::FromStr + fmt::Display,
     T::Err: fmt::Display,
 {
-    let parsed = s.parse::<T>();
-    match parsed {
-        Ok(parsed) => Some(parsed),
-        Err(e) => {
-            serial_println!("Invalid {name} {s}: {e}");
-            None
+    let val = words.next().and_then(|word| {
+        let parsed = word.parse::<T>();
+        match parsed {
+            Ok(parsed) => Some(parsed),
+            Err(e) => {
+                serial_println!("Invalid {name}: {word}, error: {e}");
+                None
+            }
         }
+    });
+
+    if val.is_none() {
+        serial_println!("Usage: {usage_msg}");
     }
+    val
 }
 
 #[allow(clippy::too_many_lines)]
@@ -237,9 +283,6 @@ fn run_command(command: &Command) {
         }
         Command::TestHPET => {
             tests::test_hpet();
-        }
-        Command::Invalid => {
-            serial_println!("Invalid command");
         }
         Command::ListPCI => {
             serial_println!("Listing PCI devices...");
@@ -355,24 +398,20 @@ fn run_command(command: &Command) {
             sched::scheduler_lock().sleep_timeout(*ms);
             serial_println!("Slept for {ms}");
         }
-        Command::PrimeSync(n) => {
+        Command::Prime(PrimeCommand { sync, nth_prime }) => {
             let task_id = sched::scheduler_lock().new_task(
                 "calculate prime",
                 calculate_prime_task,
-                *n as *const (),
+                *nth_prime as *const (),
             );
-            sched::wait_on_task(task_id);
-        }
-        Command::PrimeAsync(n) => {
-            sched::scheduler_lock().new_task(
-                "calculate prime",
-                calculate_prime_task,
-                *n as *const (),
-            );
-            sched::scheduler_lock().run_scheduler();
-        }
-        Command::Unknown(command) => {
-            serial_println!("Unknown command: {}", command);
+            if *sync {
+                serial_println!("Waiting for task {task_id:?} to finish...");
+                sched::wait_on_task(task_id);
+                serial_println!("Task {task_id:?} finished!");
+            } else {
+                serial_println!("Task {task_id:?} is running in the background");
+                sched::scheduler_lock().run_scheduler();
+            }
         }
     }
 }
