@@ -91,17 +91,8 @@ make test
 
 ## TODO
 
-- Filesystem support
-  - FAT
-    - Example <https://github.com/rafalh/rust-fatfs>
-    - <https://wiki.osdev.org/FAT>
-  - ext2 is also a good idea
-    - <https://wiki.osdev.org/Ext2>
-    - <https://www.nongnu.org/ext2-doc/ext2.html>
-    - <https://en.wikipedia.org/wiki/Ext2>
-    - <https://github.com/pi-pi3/ext2-rs/tree/master>
-    - <https://git.kernel.org/pub/scm/utils/util-linux/util-linux.git/tree/libblkid/src/superblocks/ext.c>
-
+- ext2
+  - Make all current structs "raw", and create wrappers around e.g. superblock and the descriptor table. Using that we can compute basically anything.
 - Stack size: figure out why stacks need to be so large when compiling in debug mode. Is Rust putting a ton of debug info on the stack?
 - Synchronization primitives
   - Mutex (not spinlock "mutex") that handles sleeping and waking

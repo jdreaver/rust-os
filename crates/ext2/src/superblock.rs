@@ -2,7 +2,7 @@ use core::ops::{Add, Mul};
 
 use bitflags::bitflags;
 
-use crate::strings::CStringBytes;
+use crate::{strings::CStringBytes, InodeTableBlockAddress};
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#superblock>
 #[repr(C, packed)]
@@ -93,18 +93,44 @@ impl Superblock {
         BlockSize(1024 << self.log_block_size)
     }
 
-    pub fn block_descriptor_table_offset(&self) -> OffsetBytes {
-        (self.first_data_block + 1) * self.block_size()
+    pub fn block_address_bytes(&self, block_address: BlockAddress) -> OffsetBytes {
+        block_address * self.block_size()
     }
 
-    pub fn block_descriptor_offset(&self, block_group: u64) -> OffsetBytes {
-        self.block_descriptor_table_offset() + OffsetBytes(block_group * 32)
+    /// The block descriptor table is usually right after the superblock, but
+    /// the location is `first_data_block + 1`.
+    pub fn block_descriptor_table_offset(&self) -> OffsetBytes {
+        self.block_address_bytes(self.first_data_block + 1)
+    }
+
+    pub fn block_descriptor_offset(&self, block_group: BlockGroupIndex) -> OffsetBytes {
+        self.block_descriptor_table_offset() + OffsetBytes(u64::from(block_group.0) * 32)
     }
 
     pub fn num_block_groups(&self) -> usize {
         let num_blocks = self.blocks_count as usize;
         let blocks_per_group = self.blocks_per_group as usize;
         num_blocks.div_ceil(blocks_per_group)
+    }
+
+    /// Index for the block group containing the inode.
+    pub fn inode_location(&self, inode_number: InodeNumber) -> (BlockGroupIndex, LocalInodeIndex) {
+        let inode_index = inode_number.0 - 1;
+        let block_group_index = BlockGroupIndex(inode_index / self.inodes_per_group);
+        let local_inode_index = LocalInodeIndex(inode_index % self.inodes_per_group);
+        (block_group_index, local_inode_index)
+    }
+
+    /// See <https://www.nongnu.org/ext2-doc/ext2.html#inode-table>
+    pub fn inode_offset(
+        &self,
+        inode_table_address: InodeTableBlockAddress,
+        local_inode_index: LocalInodeIndex,
+    ) -> OffsetBytes {
+        let inode_table_offset = self.block_address_bytes(inode_table_address.0);
+        let relative_offset =
+            OffsetBytes(u64::from(self.inode_size) * u64::from(local_inode_index.0));
+        inode_table_offset + relative_offset
     }
 }
 
@@ -144,6 +170,26 @@ impl Add<Self> for OffsetBytes {
         Self(self.0 + rhs.0)
     }
 }
+
+/// How many inodes are in each block group.
+#[derive(Debug, Copy, Clone)]
+#[repr(transparent)]
+pub struct InodesPerGroup(pub u32);
+
+/// "Global" inode number within the filesystem.
+#[derive(Debug, Copy, Clone)]
+pub struct InodeNumber(pub u32);
+
+/// The root directory of the filesystem is always inode 2.
+pub const ROOT_DIRECTORY: InodeNumber = InodeNumber(2);
+
+/// A `LocalInodeIndex` is an inode's index within a block group.
+#[derive(Debug, Copy, Clone)]
+pub struct LocalInodeIndex(pub u32);
+
+/// Index for a given block group.
+#[derive(Debug, Copy, Clone)]
+pub struct BlockGroupIndex(pub u32);
 
 bitflags! {
     #[derive(Debug, Copy, Clone)]

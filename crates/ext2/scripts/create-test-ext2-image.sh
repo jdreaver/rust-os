@@ -10,7 +10,7 @@ fi
 output_file="$1"
 
 rm -f "$output_file"
-truncate -s 1G "$output_file"
+truncate -s 16M "$output_file"
 mkfs.ext2 "$output_file"
 
 # Mount the image to a temporary directory.
@@ -27,6 +27,7 @@ mkdir "$mount_dir/empty-dir"
 echo "Nested hello" > "$mount_dir/empty-dir/hello.txt"
 
 # Unmount
+sudo exa --tree -lahgnimuU "$mount_dir"
 sync "$mount_dir"
 sudo umount "$mount_dir"
 rm -rf "$mount_dir"
