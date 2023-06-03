@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bitflags = "2.3"
 
 [[bin]]
 name = "read-ext2"

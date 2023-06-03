@@ -1,3 +1,5 @@
+use bitflags::bitflags;
+
 use crate::strings::CStringBytes;
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#superblock>
@@ -34,9 +36,9 @@ pub struct Superblock {
     pub first_ino: u32,
     pub inode_size: u16,
     pub block_group_nr: u16,
-    pub feature_compat: u32,
-    pub feature_incompat: u32,
-    pub feature_ro_compat: u32,
+    pub feature_compat: FeatureCompatFlags,
+    pub feature_incompat: FeatureIncompatFlags,
+    pub feature_ro_compat: FeatureReadOnlyCompatFlags,
     pub uuid: [u8; 16],
     pub volume_name: CStringBytes<16>,
     pub last_mounted: CStringBytes<64>,
@@ -87,6 +89,60 @@ impl Superblock {
     /// Common block sizes include 1KiB, 2KiB, 4KiB and 8Kib.
     pub fn block_size(&self) -> usize {
         1024 << self.log_block_size as usize
+    }
+}
+
+bitflags! {
+    #[derive(Debug, Copy, Clone)]
+    #[repr(transparent)]
+    /// <https://www.nongnu.org/ext2-doc/ext2.html#s-feature-compat>
+    pub struct FeatureCompatFlags: u32 {
+        /// Block pre-allocation for new directories
+        const DIR_PREALLOC = 0x0001;
+
+        const IMAGIC_INODES = 0x0002;
+
+        /// An Ext3 journal exists
+        const HAS_JOURNAL = 0x0004;
+
+        /// Extended inode attributes are present
+        const EXT_ATTR = 0x0008;
+
+        /// Non-standard inode size used
+        const RESIZE_INODE = 0x0010;
+
+        /// Directory indexing (HTree)
+        const DIR_INDEX = 0x0020;
+    }
+}
+
+bitflags! {
+    #[derive(Debug, Copy, Clone)]
+    #[repr(transparent)]
+    /// <https://www.nongnu.org/ext2-doc/ext2.html#s-feature-incompat>
+    pub struct FeatureIncompatFlags: u32 {
+        /// Disk/File compression is used
+        const COMPRESSION = 0x0001;
+        const FILETYPE = 0x0002;
+        const RECOVER = 0x0004;
+        const JOURNAL_DEV = 0x0008;
+        const META_BG = 0x0010;
+    }
+}
+
+bitflags! {
+    #[derive(Debug, Copy, Clone)]
+    #[repr(transparent)]
+    /// <https://www.nongnu.org/ext2-doc/ext2.html#s-feature-ro-compat>
+    pub struct FeatureReadOnlyCompatFlags: u32 {
+        /// Sparse Superblock
+        const SPARSE_SUPER = 0x0001;
+
+        /// Filesystem uses a 64bit file size
+        const LARGE_FILE = 0x0002;
+
+        /// Binary tree sorted directory files
+        const BTREE_DIR = 0x0004;
     }
 }
 
