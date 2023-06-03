@@ -1,3 +1,4 @@
+use core::fmt;
 use core::ops::{Add, Mul};
 
 use bitflags::bitflags;
@@ -41,7 +42,7 @@ pub struct Superblock {
     pub feature_compat: FeatureCompatFlags,
     pub feature_incompat: FeatureIncompatFlags,
     pub feature_ro_compat: FeatureReadOnlyCompatFlags,
-    pub uuid: [u8; 16],
+    pub uuid: UUID,
     pub volume_name: CStringBytes<16>,
     pub last_mounted: CStringBytes<64>,
     pub algo_bitmap: u32,
@@ -52,7 +53,7 @@ pub struct Superblock {
     pub padding1: u16,
 
     // Journaling Support
-    pub journal_uuid: [u8; 16],
+    pub journal_uuid: UUID,
     pub journal_inum: u32,
     pub journal_dev: u32,
     pub last_orphan: u32,
@@ -242,6 +243,33 @@ bitflags! {
 
         /// Binary tree sorted directory files
         const BTREE_DIR = 0x0004;
+    }
+}
+
+#[derive(Copy, Clone)]
+#[repr(transparent)]
+pub struct UUID(pub [u8; 16]);
+
+impl fmt::Debug for UUID {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let write_bytes = |f: &mut fmt::Formatter<'_>, start: usize, end: usize| -> fmt::Result {
+            for i in start..=end {
+                write!(f, "{:02x}", self.0[i])?;
+            }
+            Ok(())
+        };
+
+        write!(f, "UUID(")?;
+        write_bytes(f, 0, 3)?;
+        write!(f, "-")?;
+        write_bytes(f, 4, 5)?;
+        write!(f, "-")?;
+        write_bytes(f, 6, 7)?;
+        write!(f, "-")?;
+        write_bytes(f, 8, 9)?;
+        write!(f, "-")?;
+        write_bytes(f, 10, 15)?;
+        write!(f, ")")
     }
 }
 
