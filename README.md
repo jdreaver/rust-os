@@ -91,6 +91,17 @@ make test
 
 ## TODO
 
+- Filesystem support
+  - FAT
+    - Example <https://github.com/rafalh/rust-fatfs>
+    - <https://wiki.osdev.org/FAT>
+  - ext2 is also a good idea
+    - <https://wiki.osdev.org/Ext2>
+    - <https://www.nongnu.org/ext2-doc/ext2.html>
+    - <https://en.wikipedia.org/wiki/Ext2>
+    - <https://github.com/pi-pi3/ext2-rs/tree/master>
+    - <https://git.kernel.org/pub/scm/utils/util-linux/util-linux.git/tree/libblkid/src/superblocks/ext.c>
+
 - Stack size: figure out why stacks need to be so large when compiling in debug mode. Is Rust putting a ton of debug info on the stack?
 - Synchronization primitives
   - Mutex (not spinlock "mutex") that handles sleeping and waking
@@ -99,8 +110,7 @@ make test
 - Deadlock debugging: find a way to detect deadlocks and print the locks involved
   - Should we fail if we are holding a spinlock for too long?
   - Consider naming spinlocks, and having the lock holder put their name once they take the lock. Then if we fail we can dump all of this info.
-- Multi-tasking (see resources below)
-  - Consider storing context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>. This makes it easier to manipulate during setup.
+- Consider storing task context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>. This makes it easier to manipulate during setup.
 - VirtIO improvements:
   - Create a physically contiguous heap, or slab allocator, or something for virtio buffer requests so we don't waste an entire page per tiny allocation.
     - Ensure we are still satisfying any alignment requirements for buffers. Read the spec!
@@ -112,11 +122,6 @@ make test
 - bitmap-alloc
   - Make page vs byte address part of the API b/c conversion is tricky and requires `div_ceil`. Newtypes/functions for both?
     - We could embrace `PhysAddr`, `PhysFrame`, `Size4KiB`, etc, but that would introduce dep on `x86_64` crate
-- Make a simple shell that runs hard-coded program names (not separate processes yet! Just inline code on the current thread)
-  - Show register values, internal structures, etc
-  - Have help be meaningful
-  - Split up tests and have subcommands like `test all` (all can be optional) `test interrupts`, `test memory-mappings`, etc
-  - Eventually replace using the serial device with vsock or virtio-console for speed. Maybe the primary interface to the OS could be a TUI, which would be super neat!
 - IOAPIC: Throw an error if IOAPIC number assigned to twice
 - IRQ locking:
   - Linux uses spin locks for each IRQ, as well as masking interrupts but telling the APIC it got the interrupt <https://www.oreilly.com/library/view/understanding-the-linux/0596005652/ch04s06.html>
@@ -147,29 +152,7 @@ make test
 - virtio-rng interrupt doesn't seem to fire with UEFI disabled (`make run UEFI=off`). Fix it.
   - virtio-blk interrupts work! Just a problem with RNG
 - Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
-- Filesystem support
-  - Example <https://github.com/rafalh/rust-fatfs>
-  - <https://wiki.osdev.org/FAT>
-- Allocator designs <https://os.phil-opp.com/allocator-designs/>
-- UEFI. I have it kind of set up, but I should poke at it more, and also investigate the Limine UEFI system table stuff
-- Tests
-  - <https://www.infinyon.com/blog/2021/04/rust-custom-test-harness/>
-  - Useful resource, but I couldn't get this to work with the staticlib setup <https://os.phil-opp.com/testing/>
-    - Try again with `main.rs`/ELF thanks to limine!
-    - Might be useful <https://blog.frankel.ch/different-test-scopes-rust/>
-    - Don't integrate with `cargo test`. Do `cargo build --tests` and have a `make test` target
-  - Things to test:
-    - Interrupts work (e.g. breakpoint).
-      - Ensure breakpoint handler is called and that we resume
-      - Ensure that fatal handlers like general protection fault are called then exit
-    - Panic works (can exit with success after panic)
-    - Double fault handlers work (e.g. stack overflow of kernel stack calls double fault handler)
-    - Heap allocated memory, especially deallocation (create a ton of objects larger than the heap in a loop, which ensures that deallocation is happening or we would run out of memory)
-- Unit tests for memory management, allocator, etc. Move to a new crate?
-- Add CI
-  - Check out <https://github.com/phil-opp/blog_os/blob/post-12/.github/workflows/code.yml>
-  - Consider using nix to load dependencies
-
+- Tests: Add thorough unit test suite we can trigger with shell command
 
 ## Resources
 
