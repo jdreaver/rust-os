@@ -98,7 +98,6 @@ make test
   - For example, putting a task to sleep or waking it up. Is this bad to do concurrently with the scheduler? Maybe instead of calling this the "state" it can be thought of as a "state intent", which the scheduler should action next time it changes the task's scheduling. Wait queues and channels do this, but they need a scheduler lock under the hood.
 - Stack size: figure out why stacks need to be so large when compiling in debug mode. Is Rust putting a ton of debug info on the stack?
 - Synchronization primitives
-  - Split up `sync.rs`
   - Mutex (not spinlock "mutex") that handles sleeping and waking
     - We can use `WaitQueue` along with `send_single_consumer` for wakeups. (The primary lock mechanism is still an atomic bool)
     - I like Linux's mutex where they store the current holder's task ID in an atomic variable
