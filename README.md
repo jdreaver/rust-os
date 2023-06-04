@@ -96,6 +96,9 @@ make test
 - Stack size: figure out why stacks need to be so large when compiling in debug mode. Is Rust putting a ton of debug info on the stack?
 - Synchronization primitives
   - Create channels as a replacement for many existing primitives: creating a channel creates one send and one or more receivers. The sender doesn't need an Arc or a lock, and receivers are simplified. They can be one shot, one messages to one consumer, one message to all consumers, etc
+  - Interesting building blocks to look at:
+    - <https://docs.rs/static_assertions/1.1.0/static_assertions/index.html>
+    - <https://docs.rs/crossbeam/latest/crossbeam/atomic/struct.AtomicCell.html>
   - Mutex (not spinlock "mutex") that handles sleeping and waking
     - I like Linux's mutex where they store the current holder's task ID in an atomic variable
   - In the future we should disable preemption when spin locks are taken

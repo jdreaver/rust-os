@@ -113,9 +113,9 @@ impl TryFrom<u8> for TaskState {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(Self::ReadyToRun),
-            1 => Ok(Self::Sleeping),
-            2 => Ok(Self::Killed),
+            value if value == Self::ReadyToRun as u8 => Ok(Self::ReadyToRun),
+            value if value == Self::Sleeping as u8 => Ok(Self::Sleeping),
+            value if value == Self::Killed as u8 => Ok(Self::Killed),
             _ => Err(()),
         }
     }
