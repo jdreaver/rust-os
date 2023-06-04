@@ -387,7 +387,7 @@ pub(crate) fn wait_on_task(target_task_id: TaskId) -> Option<TaskExitCode> {
         target_task.exit_wait_queue.clone()
     };
     let exit_code = exit_wait_queue.wait_sleep();
-    Some(*exit_code)
+    Some(exit_code)
 }
 
 /// Architecture-specific assembly code to switch from one task to another.

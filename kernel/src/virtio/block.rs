@@ -53,7 +53,7 @@ pub(crate) fn virtio_block_print_devices() {
     serial_println!("virtio block devices: {:#x?}", devices);
 }
 
-pub(crate) fn virtio_block_get_id(device_index: usize) -> Arc<WaitQueue<VirtIOBlockResponse>> {
+pub(crate) fn virtio_block_get_id(device_index: usize) -> Arc<WaitQueue<Arc<VirtIOBlockResponse>>> {
     let device_lock = VIRTIO_BLOCK.read();
     let device = device_lock.get(device_index).expect("invalid device index");
     device.add_request(&BlockRequest::GetID)
@@ -63,7 +63,7 @@ pub(crate) fn virtio_block_read(
     device_index: usize,
     sector: u64,
     num_sectors: u32,
-) -> Arc<WaitQueue<VirtIOBlockResponse>> {
+) -> Arc<WaitQueue<Arc<VirtIOBlockResponse>>> {
     let device_lock = VIRTIO_BLOCK.read();
     let device = device_lock.get(device_index).expect("invalid device index");
     device.add_request(&BlockRequest::Read {
@@ -102,7 +102,7 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
                         data_len as usize,
                     )
                 };
-                data.cell.put_value(VirtIOBlockResponse::Read { data: bytes.to_vec() });
+                data.cell.put_value(Arc::new(VirtIOBlockResponse::Read { data: bytes.to_vec() }));
             }
             BlockRequest::GetID => {
                 let s = unsafe {
@@ -114,7 +114,7 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
                         BlockRequest::GET_ID_DATA_LEN as usize,
                     )
                 };
-                data.cell.put_value(VirtIOBlockResponse::GetID { id: String::from(s) });
+                data.cell.put_value(Arc::new(VirtIOBlockResponse::GetID { id: String::from(s) }));
             }
         }
 
@@ -164,7 +164,7 @@ impl VirtIOBlockDevice {
         }
     }
 
-    fn add_request(&self, request: &BlockRequest) -> Arc<WaitQueue<VirtIOBlockResponse>> {
+    fn add_request(&self, request: &BlockRequest) -> Arc<WaitQueue<Arc<VirtIOBlockResponse>>> {
         let raw_request = request.to_raw();
         let (desc_chain, buffer) = raw_request.to_descriptor_chain();
 
@@ -492,7 +492,7 @@ impl BlockRequestStatus {
 struct BlockDeviceDescData {
     // Buffer is kept here so we can drop it when we are done with the request.
     buffer: PhysicalBuffer,
-    cell: Arc<WaitQueue<VirtIOBlockResponse>>,
+    cell: Arc<WaitQueue<Arc<VirtIOBlockResponse>>>,
 }
 
 #[derive(Debug)]

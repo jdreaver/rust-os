@@ -1,5 +1,4 @@
 use alloc::boxed::Box;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt;
 use core::marker::PhantomData;
@@ -293,21 +292,20 @@ where
 
 /// A value that can be waited on by tasks. Tasks sleep while they wait, and
 /// they are woken up when the value is written. Each waiting task is given a
-/// copy of the value via `Arc`. (TODO: We might want a primitive that only
-/// wakes up a single task, and gives that task the value directly without an
-/// `Arc`, then the other tasks must wait for a new value.)
+/// copy of the value. It is common to use `Arc` as the value type, to make
+/// copies cheap.
 #[derive(Debug)]
 pub(crate) struct WaitQueue<T>(SpinLock<WaitQueueInner<T>>);
 
 #[derive(Debug)]
 struct WaitQueueInner<T> {
-    value: Option<Arc<T>>,
+    value: Option<T>,
 
     /// The tasks waiting for the value to change.
     task_ids: Vec<TaskId>, // N.B. Vec faster than HashSet for small sets
 }
 
-impl<T> WaitQueue<T> {
+impl<T: Clone> WaitQueue<T> {
     pub(crate) const fn new() -> Self {
         Self(SpinLock::new(WaitQueueInner {
             value: None,
@@ -318,14 +316,14 @@ impl<T> WaitQueue<T> {
     /// Stores the value and wakes up the sleeping tasks.
     pub(crate) fn put_value(&self, val: T) {
         let mut inner = self.0.lock_disable_interrupts();
-        inner.value.replace(Arc::new(val));
+        inner.value.replace(val);
         for task_id in inner.task_ids.drain(..) {
             sched::awaken_task(task_id);
         }
     }
 
     /// Waits until the value is initialized, sleeping if necessary.
-    pub(crate) fn wait_sleep(&self) -> Arc<T> {
+    pub(crate) fn wait_sleep(&self) -> T {
         let task_id = sched::scheduler_lock().current_task_id();
         self.0.lock_disable_interrupts().task_ids.push(task_id);
 
