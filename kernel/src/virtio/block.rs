@@ -16,7 +16,7 @@ use super::queue::{
 };
 use super::VirtIODeviceConfig;
 
-static VIRTIO_BLOCK: RwLock<Vec<VirtIOBlockDevice>> = RwLock::new(Vec::new());
+static VIRTIO_BLOCK: RwLock<Vec<SpinLock<VirtIOBlockDevice>>> = RwLock::new(Vec::new());
 
 /// All virtio-block sectors are 512 bytes. Also, all virtio-block requests need
 /// to be a multiple of 512 bytes.
@@ -44,7 +44,7 @@ pub(crate) fn try_init_virtio_block(device_config: VirtIODeviceConfig) {
         virtio_block_interrupt,
     );
 
-    devices.push(device);
+    devices.push(SpinLock::new(device));
 }
 
 pub(crate) fn virtio_block_print_devices() {
@@ -53,8 +53,11 @@ pub(crate) fn virtio_block_print_devices() {
 }
 
 pub(crate) fn virtio_block_get_id(device_index: usize) -> OnceReceiver<VirtIOBlockResponse> {
-    let device_lock = VIRTIO_BLOCK.read();
-    let device = device_lock.get(device_index).expect("invalid device index");
+    let devices_lock = VIRTIO_BLOCK.read();
+    let mut device = devices_lock
+        .get(device_index)
+        .expect("invalid device index")
+        .lock_disable_interrupts();
     device.add_request(&BlockRequest::GetID)
 }
 
@@ -63,8 +66,11 @@ pub(crate) fn virtio_block_read(
     sector: u64,
     num_sectors: u32,
 ) -> OnceReceiver<VirtIOBlockResponse> {
-    let device_lock = VIRTIO_BLOCK.read();
-    let device = device_lock.get(device_index).expect("invalid device index");
+    let devices_lock = VIRTIO_BLOCK.read();
+    let mut device = devices_lock
+        .get(device_index)
+        .expect("invalid device index")
+        .lock_disable_interrupts();
     device.add_request(&BlockRequest::Read {
         sector,
         num_sectors,
@@ -72,12 +78,13 @@ pub(crate) fn virtio_block_read(
 }
 
 fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
-    let device_lock = VIRTIO_BLOCK.read();
-    let device = device_lock
+    let devices_lock = VIRTIO_BLOCK.read();
+    let device = devices_lock
         .get(handler_id as usize)
-        .expect("invalid device index");
+        .expect("invalid device index")
+        .lock_disable_interrupts();
 
-    let mut virtqueue_data = device.virtqueue_data.lock();
+    let mut virtqueue_data = device.virtqueue_data.lock_disable_interrupts();
     let virtqueue = device
         .initialized_device
         .get_virtqueue(VirtIOBlockDevice::QUEUE_INDEX);
@@ -163,7 +170,7 @@ impl VirtIOBlockDevice {
         }
     }
 
-    fn add_request(&self, request: &BlockRequest) -> OnceReceiver<VirtIOBlockResponse> {
+    fn add_request(&mut self, request: &BlockRequest) -> OnceReceiver<VirtIOBlockResponse> {
         let raw_request = request.to_raw();
         let (desc_chain, buffer) = raw_request.to_descriptor_chain();
 
@@ -172,7 +179,7 @@ impl VirtIOBlockDevice {
         let (sender, receiver) = once_channel();
         let data = BlockDeviceDescData { buffer, sender };
 
-        let virtqueue = self.initialized_device.get_virtqueue(Self::QUEUE_INDEX);
+        let virtqueue = self.initialized_device.get_virtqueue_mut(Self::QUEUE_INDEX);
 
         virtqueue_data.add_buffer(virtqueue, &desc_chain, data);
         virtqueue.notify_device();

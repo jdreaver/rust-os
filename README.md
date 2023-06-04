@@ -91,6 +91,8 @@ make test
 
 ## TODO
 
+- VirtQueue mut:
+  - Have` process_new_entries` require a `&mut self`, remove the SpinLock around `last_processed_used_index`
 - Potential scheduler race condition or sleep logic problem: I was running a bunch of shell commands, including the async, sleep, and ext2 commands, and after an ext2 command I saw we switched from the shell to the idle thread and never returned.
 - Filesystem
   - Make a VFS (deal with paths, mount a filesystem (probably a single one for now at root), etc)

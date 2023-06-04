@@ -4,7 +4,7 @@ use bitflags::bitflags;
 use crate::interrupts::InterruptHandlerID;
 use crate::memory::PhysicalBuffer;
 use crate::serial_println;
-use crate::sync::{once_channel, InitCell, OnceReceiver, OnceSender, SpinLock};
+use crate::sync::{once_channel, OnceReceiver, OnceSender, SpinLock};
 
 use super::device::VirtIOInitializedDevice;
 use super::queue::{
@@ -12,7 +12,7 @@ use super::queue::{
 };
 use super::VirtIODeviceConfig;
 
-static VIRTIO_RNG: InitCell<VirtIORNG> = InitCell::new();
+static VIRTIO_RNG: SpinLock<Option<VirtIORNG>> = SpinLock::new(None);
 
 pub(crate) fn try_init_virtio_rng(device_config: VirtIODeviceConfig) {
     let device_id = device_config.pci_config().device_id();
@@ -26,14 +26,13 @@ pub(crate) fn try_init_virtio_rng(device_config: VirtIODeviceConfig) {
     let mut virtio_rng = VirtIORNG::from_device(device_config);
     virtio_rng.enable_msix(0);
 
-    VIRTIO_RNG.init(virtio_rng);
+    VIRTIO_RNG.lock_disable_interrupts().replace(virtio_rng);
 }
 
 pub(crate) fn request_random_numbers(num_bytes: u32) -> OnceReceiver<Vec<u8>> {
-    VIRTIO_RNG
-        .get()
-        .expect("VirtIO RNG not initialized")
-        .request_random_numbers(num_bytes)
+    let mut lock = VIRTIO_RNG.lock_disable_interrupts();
+    let rng = lock.as_mut().expect("VirtIO RNG not initialized");
+    rng.request_random_numbers(num_bytes)
 }
 
 /// See "5.4 Entropy Device" in the VirtIO spec. The virtio entropy device
@@ -79,7 +78,7 @@ impl VirtIORNG {
         );
     }
 
-    fn request_random_numbers(&self, num_bytes: u32) -> OnceReceiver<Vec<u8>> {
+    fn request_random_numbers(&mut self, num_bytes: u32) -> OnceReceiver<Vec<u8>> {
         assert!(num_bytes > 0, "cannot request zero bytes from RNG!");
 
         // Create a descriptor chain for the buffer
@@ -98,7 +97,7 @@ impl VirtIORNG {
 
         // Disable interrupts so IRQ doesn't deadlock the spinlock
         let mut virtqueue_data = self.virtqueue_data.lock_disable_interrupts();
-        let virtqueue = self.initialized_device.get_virtqueue(Self::QUEUE_INDEX);
+        let virtqueue = self.initialized_device.get_virtqueue_mut(Self::QUEUE_INDEX);
         virtqueue_data.add_buffer(virtqueue, &[desc], request);
         virtqueue.notify_device();
 
@@ -123,7 +122,8 @@ struct VirtIORNGRequest {
 }
 
 fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
-    let rng = VIRTIO_RNG.get().expect("VirtIO RNG not initialized");
+    let mut lock = VIRTIO_RNG.lock_disable_interrupts();
+    let rng = lock.as_mut().expect("VirtIO RNG not initialized");
 
     let mut virtqueue_data = rng.virtqueue_data.lock();
     let virtqueue = rng.initialized_device.get_virtqueue(VirtIORNG::QUEUE_INDEX);

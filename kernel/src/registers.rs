@@ -22,11 +22,11 @@ impl<T> RegisterRW<T> {
 
     /// Read from the register using `read_volatile`.
     pub fn read(&self) -> T {
-        unsafe { core::ptr::read_volatile(self.address as *mut T) }
+        unsafe { core::ptr::read_volatile(self.address as *const T) }
     }
 
     /// Write to the register using `write_volatile`.
-    pub fn write(&self, val: T) {
+    pub fn write(&mut self, val: T) {
         unsafe {
             core::ptr::write_volatile(self.address as *mut T, val);
         }
@@ -34,7 +34,7 @@ impl<T> RegisterRW<T> {
 
     /// Modify the value of the register by reading it, applying the given
     /// function, and writing the result back.
-    pub fn modify(&self, f: impl FnOnce(T) -> T) {
+    pub fn modify(&mut self, f: impl FnOnce(T) -> T) {
         let val = self.read();
         self.write(f(val));
     }
@@ -45,7 +45,7 @@ impl<T> RegisterRW<T> {
     /// This is a nicer API in case all you are doing is calling mutable
     /// functions on the value, because otherwise you would probably `clone()`
     /// the value, mutate it, and then return the value anyway.
-    pub fn modify_mut(&self, f: impl FnOnce(&mut T)) {
+    pub fn modify_mut(&mut self, f: impl FnOnce(&mut T)) {
         let mut val = self.read();
         f(&mut val);
         self.write(val);
@@ -147,7 +147,7 @@ impl<T> RegisterWO<T> {
     }
 
     /// Write to the register using `write_volatile`.
-    pub fn write(&self, val: T) {
+    pub fn write(&mut self, val: T) {
         unsafe {
             core::ptr::write_volatile(self.address as *mut T, val);
         }
@@ -308,7 +308,7 @@ impl<T> VolatileArrayRW<T> {
     }
 
     /// Write to the array at `index` using `write_volatile`.
-    pub fn write(&self, index: usize, val: T) {
+    pub fn write(&mut self, index: usize, val: T) {
         assert!(
             index < self.len,
             "VolatileArrayRW write index out of bounds"
@@ -321,7 +321,7 @@ impl<T> VolatileArrayRW<T> {
 
     /// Modify the value of the array at `index` by reading it, applying the
     /// given function, and writing the result back.
-    pub fn modify(&self, index: usize, f: impl FnOnce(T) -> T) {
+    pub fn modify(&mut self, index: usize, f: impl FnOnce(T) -> T) {
         assert!(
             index < self.len,
             "VolatileArrayRW write index out of bounds"
@@ -337,7 +337,7 @@ impl<T> VolatileArrayRW<T> {
     /// This is a nicer API in case all you are doing is calling mutable
     /// functions on the value, because otherwise you would probably `clone()`
     /// the value, mutate it, and then return the value anyway.
-    pub fn modify_mut(&self, index: usize, f: impl FnOnce(&mut T)) {
+    pub fn modify_mut(&mut self, index: usize, f: impl FnOnce(&mut T)) {
         let mut val = self.read(index);
         f(&mut val);
         self.write(index, val);

@@ -36,7 +36,7 @@ impl<D> VirtQueueData<D> {
 
     pub(super) fn add_buffer(
         &mut self,
-        queue: &VirtQueue,
+        queue: &mut VirtQueue,
         descriptors: &[ChainedVirtQueueDescriptorElem],
         data: D,
     ) {
@@ -146,7 +146,10 @@ impl VirtQueue {
     ///
     /// The caller must also call `notify_device` once they are done adding
     /// buffers.
-    pub(super) fn add_buffer(&self, descriptors: &[ChainedVirtQueueDescriptorElem]) -> DescIndex {
+    pub(super) fn add_buffer(
+        &mut self,
+        descriptors: &[ChainedVirtQueueDescriptorElem],
+    ) -> DescIndex {
         let desc_index = self.descriptors.add_descriptor(descriptors);
         self.avail_ring.add_entry(desc_index);
         desc_index
@@ -263,7 +266,7 @@ impl VirtQueueDescriptorTable {
 
     /// Adds a group of chained descriptors to the descriptor table. Returns the
     /// index of the first descriptor.
-    fn add_descriptor(&self, descriptors: &[ChainedVirtQueueDescriptorElem]) -> DescIndex {
+    fn add_descriptor(&mut self, descriptors: &[ChainedVirtQueueDescriptorElem]) -> DescIndex {
         let mut first_idx: Option<DescIndex> = None;
         let mut prev_idx: Option<DescIndex> = None;
 
@@ -462,7 +465,7 @@ impl VirtQueueAvailRing {
         self.buffer.address()
     }
 
-    fn add_entry(&self, desc_index: DescIndex) {
+    fn add_entry(&mut self, desc_index: DescIndex) {
         // 2.7.13.2 Updating The Available Ring
         //
         // TODO: Check that the driver doesn't add more entries than are
