@@ -91,10 +91,11 @@ make test
 
 ## TODO
 
-- ext2
-  - Make all current structs "raw", and create wrappers around e.g. superblock and the descriptor table. Using that we can compute basically anything.
+- Filesystem
+  - Make a VFS (deal with paths, mount a filesystem (probably a single one for now at root), etc)
 - Stack size: figure out why stacks need to be so large when compiling in debug mode. Is Rust putting a ton of debug info on the stack?
 - Synchronization primitives
+  - Create channels as a replacement for many existing primitives: creating a channel creates one send and one or more receivers. The sender doesn't need an Arc or a lock, and receivers are simplified. They can be one shot, one messages to one consumer, one message to all consumers, etc
   - Mutex (not spinlock "mutex") that handles sleeping and waking
     - I like Linux's mutex where they store the current holder's task ID in an atomic variable
   - In the future we should disable preemption when spin locks are taken
@@ -413,3 +414,21 @@ the CPU may still reorder them.
 - <https://forum.osdev.org/viewtopic.php?t=46327&p=327049>
 - <https://eatplayhate.me/2010/09/04/memory-management-from-the-ground-up-2-foundations/>
 - <https://en.wikipedia.org/wiki/Buddy_memory_allocation>
+
+### File systems
+
+ext2:
+- <https://wiki.osdev.org/Ext2>
+- <https://www.nongnu.org/ext2-doc/ext2.html>
+- <https://en.wikipedia.org/wiki/Ext2>
+- <https://git.kernel.org/pub/scm/utils/util-linux/util-linux.git/tree/libblkid/src/superblocks/ext.c>
+
+Linux block devices:
+- <https://linux-kernel-labs.github.io/refs/heads/master/labs/block_device_drivers.html>
+- [https://lwn.net/Articles/27055/](https://lwn.net/Articles/27055/)
+- Chapter 16, Block Drivers in "Linux Device Drivers - Corbet, Koah-Hartman (3rd ed, 2005)"
+
+Linux VFS:
+- <https://www.kernel.org/doc/html/next/filesystems/vfs.html>
+- <https://tldp.org/LDP/khg/HyperNews/get/fs/vfstour.html>
+- Chapter 13 and 14 of "Linux Kernel Development - Love (3rd ed, 2010)"
