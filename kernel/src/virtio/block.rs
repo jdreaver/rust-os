@@ -1,5 +1,4 @@
 use alloc::string::String;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::bitflags;
 use core::mem;
@@ -8,7 +7,7 @@ use spin::RwLock;
 use crate::interrupts::InterruptHandlerID;
 use crate::memory::PhysicalBuffer;
 use crate::registers::RegisterRO;
-use crate::sync::{SpinLock, WaitQueue};
+use crate::sync::{once_channel, OnceReceiver, OnceSender, SpinLock};
 use crate::{register_struct, serial_println, strings};
 
 use super::device::VirtIOInitializedDevice;
@@ -53,7 +52,7 @@ pub(crate) fn virtio_block_print_devices() {
     serial_println!("virtio block devices: {:#x?}", devices);
 }
 
-pub(crate) fn virtio_block_get_id(device_index: usize) -> Arc<WaitQueue<Arc<VirtIOBlockResponse>>> {
+pub(crate) fn virtio_block_get_id(device_index: usize) -> OnceReceiver<VirtIOBlockResponse> {
     let device_lock = VIRTIO_BLOCK.read();
     let device = device_lock.get(device_index).expect("invalid device index");
     device.add_request(&BlockRequest::GetID)
@@ -63,7 +62,7 @@ pub(crate) fn virtio_block_read(
     device_index: usize,
     sector: u64,
     num_sectors: u32,
-) -> Arc<WaitQueue<Arc<VirtIOBlockResponse>>> {
+) -> OnceReceiver<VirtIOBlockResponse> {
     let device_lock = VIRTIO_BLOCK.read();
     let device = device_lock.get(device_index).expect("invalid device index");
     device.add_request(&BlockRequest::Read {
@@ -102,7 +101,7 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
                         data_len as usize,
                     )
                 };
-                data.cell.put_value(Arc::new(VirtIOBlockResponse::Read { data: bytes.to_vec() }));
+                data.sender.send(VirtIOBlockResponse::Read { data: bytes.to_vec() });
             }
             BlockRequest::GetID => {
                 let s = unsafe {
@@ -114,7 +113,7 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
                         BlockRequest::GET_ID_DATA_LEN as usize,
                     )
                 };
-                data.cell.put_value(Arc::new(VirtIOBlockResponse::GetID { id: String::from(s) }));
+                data.sender.send(VirtIOBlockResponse::GetID { id: String::from(s) });
             }
         }
 
@@ -164,23 +163,20 @@ impl VirtIOBlockDevice {
         }
     }
 
-    fn add_request(&self, request: &BlockRequest) -> Arc<WaitQueue<Arc<VirtIOBlockResponse>>> {
+    fn add_request(&self, request: &BlockRequest) -> OnceReceiver<VirtIOBlockResponse> {
         let raw_request = request.to_raw();
         let (desc_chain, buffer) = raw_request.to_descriptor_chain();
 
         // Disable interrupts so IRQ doesn't deadlock the spinlock
         let mut virtqueue_data = self.virtqueue_data.lock_disable_interrupts();
-        let data = BlockDeviceDescData {
-            buffer,
-            cell: Arc::new(WaitQueue::new()),
-        };
-        let copied_cell = data.cell.clone();
+        let (sender, receiver) = once_channel();
+        let data = BlockDeviceDescData { buffer, sender };
 
         let virtqueue = self.initialized_device.get_virtqueue(Self::QUEUE_INDEX);
 
         virtqueue_data.add_buffer(virtqueue, &desc_chain, data);
         virtqueue.notify_device();
-        copied_cell
+        receiver
     }
 }
 
@@ -492,7 +488,7 @@ impl BlockRequestStatus {
 struct BlockDeviceDescData {
     // Buffer is kept here so we can drop it when we are done with the request.
     buffer: PhysicalBuffer,
-    cell: Arc<WaitQueue<Arc<VirtIOBlockResponse>>>,
+    sender: OnceSender<VirtIOBlockResponse>,
 }
 
 #[derive(Debug)]

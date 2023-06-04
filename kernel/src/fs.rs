@@ -22,7 +22,7 @@ impl ext2::BlockReader for VirtioBlockReader {
 
         let response =
             virtio::virtio_block_read(self.device_id, sector, num_sectors as u32).wait_sleep();
-        let virtio::VirtIOBlockResponse::Read{ ref data } = *response else {
+        let virtio::VirtIOBlockResponse::Read{ ref data } = response else {
             panic!("unexpected virtio block response: {:?}", response);
         };
 

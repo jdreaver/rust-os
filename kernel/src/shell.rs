@@ -343,7 +343,7 @@ fn run_command(command: &Command) {
             serial_println!("Reading VirtIO block sector {sector}...");
             let cell = virtio::virtio_block_read(*device_id, *sector, 2);
             let response = cell.wait_sleep();
-            let virtio::VirtIOBlockResponse::Read{ ref data } = *response else {
+            let virtio::VirtIOBlockResponse::Read{ ref data } = response else {
                 serial_println!("Unexpected response from block request: {response:x?}");
                 return;
             };
@@ -353,7 +353,7 @@ fn run_command(command: &Command) {
             serial_println!("Reading VirtIO block device ID...");
             let cell = virtio::virtio_block_get_id(*device_id);
             let response = cell.wait_sleep();
-            let virtio::VirtIOBlockResponse::GetID{ ref id } = *response else {
+            let virtio::VirtIOBlockResponse::GetID{ ref id } = response else {
                 serial_println!("Unexpected response from block request: {response:x?}");
                 return;
             };
@@ -361,7 +361,7 @@ fn run_command(command: &Command) {
         }
         Command::FATBIOS { device_id } => {
             let response = virtio::virtio_block_read(*device_id, 0, 1).wait_sleep();
-            let virtio::VirtIOBlockResponse::Read{ ref data } = *response else {
+            let virtio::VirtIOBlockResponse::Read{ ref data } = response else {
                 serial_println!("Unexpected response from block request: {response:x?}");
                 return;
             };

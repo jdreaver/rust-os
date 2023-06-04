@@ -424,7 +424,7 @@ pub(crate) struct OnceSender<T> {
 impl<T> OnceSender<T> {
     /// Write a value to the channel so the receiver can read it. This can only
     /// be called once because it consumes `self`.
-    fn send(self, message: T) {
+    pub(crate) fn send(self, message: T) {
         // Safety: We only call this function once, which is enforced by this
         // function consuming `self`.
         unsafe { self.channel.send(message) };

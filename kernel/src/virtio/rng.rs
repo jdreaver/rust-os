@@ -1,11 +1,10 @@
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::bitflags;
 
 use crate::interrupts::InterruptHandlerID;
 use crate::memory::PhysicalBuffer;
 use crate::serial_println;
-use crate::sync::{InitCell, SpinLock, WaitQueue};
+use crate::sync::{once_channel, InitCell, OnceReceiver, OnceSender, SpinLock};
 
 use super::device::VirtIOInitializedDevice;
 use super::queue::{
@@ -30,7 +29,7 @@ pub(crate) fn try_init_virtio_rng(device_config: VirtIODeviceConfig) {
     VIRTIO_RNG.init(virtio_rng);
 }
 
-pub(crate) fn request_random_numbers(num_bytes: u32) -> Arc<WaitQueue<Arc<Vec<u8>>>> {
+pub(crate) fn request_random_numbers(num_bytes: u32) -> OnceReceiver<Vec<u8>> {
     VIRTIO_RNG
         .get()
         .expect("VirtIO RNG not initialized")
@@ -80,7 +79,7 @@ impl VirtIORNG {
         );
     }
 
-    fn request_random_numbers(&self, num_bytes: u32) -> Arc<WaitQueue<Arc<Vec<u8>>>> {
+    fn request_random_numbers(&self, num_bytes: u32) -> OnceReceiver<Vec<u8>> {
         assert!(num_bytes > 0, "cannot request zero bytes from RNG!");
 
         // Create a descriptor chain for the buffer
@@ -91,11 +90,11 @@ impl VirtIORNG {
             len: num_bytes,
             flags: VirtQueueDescriptorFlags::new().with_device_write(true),
         };
+        let (sender, receiver) = once_channel();
         let request = VirtIORNGRequest {
             _descriptor_buffer: buffer,
-            value: Arc::new(WaitQueue::new()),
+            sender,
         };
-        let copied_cell = request.value.clone();
 
         // Disable interrupts so IRQ doesn't deadlock the spinlock
         let mut virtqueue_data = self.virtqueue_data.lock_disable_interrupts();
@@ -103,7 +102,7 @@ impl VirtIORNG {
         virtqueue_data.add_buffer(virtqueue, &[desc], request);
         virtqueue.notify_device();
 
-        copied_cell
+        receiver
     }
 }
 
@@ -120,7 +119,7 @@ bitflags! {
 struct VirtIORNGRequest {
     // Buffer is kept here so we can drop it when we are done with the request.
     _descriptor_buffer: PhysicalBuffer,
-    value: Arc<WaitQueue<Arc<Vec<u8>>>>,
+    sender: OnceSender<Vec<u8>>,
 }
 
 fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
@@ -153,9 +152,6 @@ fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
             )
         };
 
-        request.value.put_value(Arc::new(buffer.to_vec()));
-
-        // N.B. The request's buffer gets dropped here! Just being explicit.
-        drop(request);
+        request.sender.send(buffer.to_vec());
     });
 }
