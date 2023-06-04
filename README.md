@@ -99,13 +99,8 @@ make test
 - Stack size: figure out why stacks need to be so large when compiling in debug mode. Is Rust putting a ton of debug info on the stack?
 - Synchronization primitives
   - Split up `sync.rs`
-  - Create channels as a replacement for many existing primitives: creating a channel creates one send and one or more receivers. The sender doesn't need an Arc or a lock, and receivers are simplified. They can be one shot, one messages to one consumer, one message to all consumers, etc
-    - We could have WaitQueue spit out Consumers (make sure these are not `Send`!) that are single shot. We only have to take a lock to ensure the consumer TaskId is recorded so the producer knows about it.
-    - For use cases that are truly one shot, we can create the producer and consumer at once but then don't allow adding more consumers.
-  - Interesting building blocks to look at:
-    - <https://docs.rs/static_assertions/1.1.0/static_assertions/index.html>
-    - <https://docs.rs/crossbeam/latest/crossbeam/atomic/struct.AtomicCell.html>
   - Mutex (not spinlock "mutex") that handles sleeping and waking
+    - We can use `WaitQueue` along with `send_single_consumer` for wakeups. (The primary lock mechanism is still an atomic bool)
     - I like Linux's mutex where they store the current holder's task ID in an atomic variable
   - In the future we should disable preemption when spin locks are taken
 - Deadlock debugging: find a way to detect deadlocks and print the locks involved

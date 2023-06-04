@@ -171,7 +171,7 @@ pub(super) extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *cons
     };
 
     // Inform waiters that the task has exited.
-    wait_queue.put_value(TaskExitCode::ExitSuccess);
+    wait_queue.send_all_consumers(TaskExitCode::ExitSuccess);
 
     scheduler_lock().run_scheduler();
 
