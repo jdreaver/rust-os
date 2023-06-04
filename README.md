@@ -92,6 +92,7 @@ make test
 ## TODO
 
 - Potential scheduler race condition or sleep logic problem: I was running a bunch of shell commands, including the async, sleep, and ext2 commands, and after an ext2 command I saw we switched from the shell to the idle thread and never returned.
+  - Really easy to trigger without kvm acceleration
   - I was able to trigger it with seemingly _just_ `ext2 ls-root 2`
 
     ```

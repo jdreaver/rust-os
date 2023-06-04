@@ -291,7 +291,7 @@ impl Scheduler {
 
     /// Puts the current task to sleep for the given number of milliseconds.
     pub(crate) fn sleep_timeout(&mut self, timeout: Milliseconds) {
-        let task_id = self.go_to_sleep();
+        let task_id = self.go_to_sleep_no_run_scheduler();
         tick::add_relative_timer(timeout, move || {
             scheduler_lock().awaken_task(task_id);
         });
@@ -305,12 +305,19 @@ impl Scheduler {
         self.needs_reschedule = true;
     }
 
-    /// Puts the current task to sleep and returns the current task ID.
-    pub(crate) fn go_to_sleep(&mut self) -> TaskId {
+    /// Puts the current task to sleep and returns the current task ID, but does
+    /// _not_ run the scheduler.
+    fn go_to_sleep_no_run_scheduler(&mut self) -> TaskId {
         self.needs_reschedule = true;
         let current_task = self.current_task();
         current_task.state.swap(TaskState::Sleeping);
         current_task.id
+    }
+
+    /// Puts the current task to sleep and runs the scheduler
+    pub(crate) fn go_to_sleep(&mut self) {
+        self.go_to_sleep_no_run_scheduler();
+        self.run_scheduler();
     }
 }
 
