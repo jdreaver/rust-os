@@ -33,22 +33,30 @@ impl<D> VirtQueueData<D> {
         Self { data }
     }
 
+    /// See "2.7.13 Supplying Buffers to The Device"
+    ///
+    /// The caller must also call `notify_device` once they are done adding
+    /// buffers.
     pub(super) fn add_buffer(
         &mut self,
         queue: &mut VirtQueue,
         descriptors: &[ChainedVirtQueueDescriptorElem],
         data: D,
     ) {
-        let desc_index = queue.add_buffer(descriptors);
+        let desc_index = queue.descriptors.add_descriptor(descriptors);
+
+        // Important to put the data in the vector before adding the descriptor
+        // index to the available ring. Otherwise, the device might read the
+        // descriptor index and trigger and interrupt before we put the data in
+        // the vector.
+        let previous_data = self.data[desc_index.0 as usize].replace(data);
         assert!(
-            self.data[desc_index.0 as usize].is_none(),
+            previous_data.is_none(),
             "descriptor index {} already has data",
             desc_index.0
         );
 
-        // TODO: There is a race condition here, because the device could see
-        // the descriptor before we set the data.
-        self.data[desc_index.0 as usize] = Some(data);
+        queue.avail_ring.add_entry(desc_index);
     }
 
     pub(super) fn process_new_entries<F>(&mut self, queue: &mut VirtQueue, mut f: F)
@@ -140,19 +148,6 @@ impl VirtQueue {
         }
     }
 
-    /// See "2.7.13 Supplying Buffers to The Device"
-    ///
-    /// The caller must also call `notify_device` once they are done adding
-    /// buffers.
-    pub(super) fn add_buffer(
-        &mut self,
-        descriptors: &[ChainedVirtQueueDescriptorElem],
-    ) -> DescIndex {
-        let desc_index = self.descriptors.add_descriptor(descriptors);
-        self.avail_ring.add_entry(desc_index);
-        desc_index
-    }
-
     /// Notify the device that we have written new data.
     pub(super) fn notify_device(&self) {
         // Ensures that any previous writes to the virtqueue are visible to the
@@ -164,7 +159,7 @@ impl VirtQueue {
         };
     }
 
-    pub(super) fn process_new_entries<F>(&mut self, mut f: F)
+    fn process_new_entries<F>(&mut self, mut f: F)
     where
         F: FnMut(VirtQueueUsedElem, VirtQueueDescriptorChainIterator),
     {
@@ -217,7 +212,7 @@ pub(super) struct VirtQueueDescriptorTable {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 #[repr(transparent)]
-pub(crate) struct DescIndex(u16);
+pub(super) struct DescIndex(u16);
 
 impl VirtQueueDescriptorTable {
     pub(super) unsafe fn allocate(queue_size: u16) -> Result<Self, AllocError> {
@@ -542,7 +537,7 @@ pub(super) struct VirtQueueUsedElem {
 impl VirtQueueUsedElem {
     // For some reason, the spec says that the id field is a u32, but descriptor
     // indices are u16.
-    pub(super) fn desc_index(self) -> DescIndex {
+    fn desc_index(self) -> DescIndex {
         match u16::try_from(self.id) {
             Ok(idx) => DescIndex(idx),
             Err(e) => panic!("used ring id entry {} is invalid: {e}", self.id),

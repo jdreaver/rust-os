@@ -91,16 +91,6 @@ make test
 
 ## TODO
 
-- Potential scheduler race condition or sleep logic problem: I was running a bunch of shell commands, including the async, sleep, and ext2 commands, and after an ext2 command I saw we switched from the shell to the idle thread and never returned.
-  - Really easy to trigger without kvm acceleration
-  - I was able to trigger it with seemingly _just_ `ext2 ls-root 2`
-
-    ```
-    ksh > ext2 ls-root 2
-    ...
-    ksh > SCHEDULER: Switching from 'shell' TaskId(3) SP: TaskKernelStackPointer(555500017f80) (@ 0x444444440220) to '__IDLE_TASK__' TaskId(1) SP: TaskKernelStackPointer(5555000073d0)
-    ```
-
 - Filesystem
   - Make a VFS (deal with paths, mount a filesystem (probably a single one for now at root), etc)
 - Task struct access: investigate not hiding all tasks (or just the current tasks) inside the big scheduler lock. Are there situations where it is okay to modify a task if the scheduler is running concurrently? Can we lock individual tasks? Is this inviting a deadlock?
