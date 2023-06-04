@@ -91,7 +91,7 @@ make test
 
 ## TODO
 
-- `awaken_task`: Make `awaken_task` a scheduler `&mut self` method so it is clear it needs a lock. The timer function I was worried about can just explicitly lock the scheduler.
+- Potential scheduler race condition or sleep logic problem: I was running a bunch of shell commands, including the async, sleep, and ext2 commands, and after an ext2 command I saw we switched from the shell to the idle thread and never returned.
 - Filesystem
   - Make a VFS (deal with paths, mount a filesystem (probably a single one for now at root), etc)
 - Task struct access: investigate not hiding all tasks (or just the current tasks) inside the big scheduler lock. Are there situations where it is okay to modify a task if the scheduler is running concurrently? Can we lock individual tasks? Is this inviting a deadlock?
@@ -104,6 +104,7 @@ make test
     - I like Linux's mutex where they store the current holder's task ID in an atomic variable
   - In the future we should disable preemption when spin locks are taken
 - Deadlock debugging: find a way to detect deadlocks and print the locks involved
+  - Linux has a neat debugging system for mutexes <https://docs.kernel.org/locking/mutex-design.html#semantics>
   - Should we fail if we are holding a spinlock for too long?
   - Consider naming spinlocks, and having the lock holder put their name once they take the lock. Then if we fail we can dump all of this info.
 - Consider storing task context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>. This makes it easier to manipulate during setup.

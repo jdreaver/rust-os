@@ -293,9 +293,16 @@ impl Scheduler {
     pub(crate) fn sleep_timeout(&mut self, timeout: Milliseconds) {
         let task_id = self.go_to_sleep();
         tick::add_relative_timer(timeout, move || {
-            awaken_task(task_id);
+            scheduler_lock().awaken_task(task_id);
         });
         self.run_scheduler();
+    }
+
+    /// Awakens the given task and sets needs_reschedule to true.
+    pub(crate) fn awaken_task(&mut self, task_id: TaskId) {
+        let task = self.get_task_assert(task_id);
+        task.state.swap(TaskState::ReadyToRun);
+        self.needs_reschedule = true;
     }
 
     /// Puts the current task to sleep and returns the current task ID.
@@ -367,14 +374,6 @@ pub(crate) fn scheduler_tick(time_between_ticks: Milliseconds) {
     if slice == Milliseconds::new(0) {
         scheduler.needs_reschedule = true;
     }
-}
-
-/// Awakens the given task and sets needs_reschedule to true.
-pub(crate) fn awaken_task(task_id: TaskId) {
-    let mut scheduler = scheduler_lock();
-    let task = scheduler.get_task_assert(task_id);
-    task.state.swap(TaskState::ReadyToRun);
-    scheduler.needs_reschedule = true;
 }
 
 /// Waits until the given task is finished.
