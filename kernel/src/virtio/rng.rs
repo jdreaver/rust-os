@@ -40,7 +40,7 @@ pub(crate) fn request_random_numbers(num_bytes: u32) -> OnceReceiver<Vec<u8>> {
 #[derive(Debug)]
 struct VirtIORNG {
     initialized_device: VirtIOInitializedDevice,
-    virtqueue_data: SpinLock<VirtQueueData<VirtIORNGRequest>>,
+    virtqueue_data: VirtQueueData<VirtIORNGRequest>,
 }
 
 impl VirtIORNG {
@@ -62,7 +62,7 @@ impl VirtIORNG {
 
         Self {
             initialized_device,
-            virtqueue_data: SpinLock::new(virtqueue_data),
+            virtqueue_data,
         }
     }
 
@@ -95,10 +95,8 @@ impl VirtIORNG {
             sender,
         };
 
-        // Disable interrupts so IRQ doesn't deadlock the spinlock
-        let mut virtqueue_data = self.virtqueue_data.lock_disable_interrupts();
         let virtqueue = self.initialized_device.get_virtqueue_mut(Self::QUEUE_INDEX);
-        virtqueue_data.add_buffer(virtqueue, &[desc], request);
+        self.virtqueue_data.add_buffer(virtqueue, &[desc], request);
         virtqueue.notify_device();
 
         receiver
@@ -125,8 +123,10 @@ fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
     let mut lock = VIRTIO_RNG.lock_disable_interrupts();
     let rng = lock.as_mut().expect("VirtIO RNG not initialized");
 
-    let mut virtqueue_data = rng.virtqueue_data.lock();
-    let virtqueue = rng.initialized_device.get_virtqueue(VirtIORNG::QUEUE_INDEX);
+    let virtqueue_data = &mut rng.virtqueue_data;
+    let virtqueue = rng
+        .initialized_device
+        .get_virtqueue_mut(VirtIORNG::QUEUE_INDEX);
 
     virtqueue_data.process_new_entries(virtqueue, |used_entry, mut descriptor_chain, request| {
         let Some(request) = request else {

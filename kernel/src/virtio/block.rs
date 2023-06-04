@@ -79,15 +79,15 @@ pub(crate) fn virtio_block_read(
 
 fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
     let devices_lock = VIRTIO_BLOCK.read();
-    let device = devices_lock
+    let device: &mut VirtIOBlockDevice = &mut devices_lock
         .get(handler_id as usize)
         .expect("invalid device index")
         .lock_disable_interrupts();
 
-    let mut virtqueue_data = device.virtqueue_data.lock_disable_interrupts();
+    let virtqueue_data = &mut device.virtqueue_data;
     let virtqueue = device
         .initialized_device
-        .get_virtqueue(VirtIOBlockDevice::QUEUE_INDEX);
+        .get_virtqueue_mut(VirtIOBlockDevice::QUEUE_INDEX);
 
     virtqueue_data.process_new_entries(virtqueue, |used_entry, mut descriptor_chain, data| {
         let Some(data) = data else {
@@ -134,7 +134,7 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
 struct VirtIOBlockDevice {
     initialized_device: VirtIOInitializedDevice,
     _block_config: BlockConfigRegisters,
-    virtqueue_data: SpinLock<VirtQueueData<BlockDeviceDescData>>,
+    virtqueue_data: VirtQueueData<BlockDeviceDescData>,
 }
 
 impl VirtIOBlockDevice {
@@ -166,7 +166,7 @@ impl VirtIOBlockDevice {
         Self {
             initialized_device,
             _block_config: block_config,
-            virtqueue_data: SpinLock::new(virtqueue_data),
+            virtqueue_data,
         }
     }
 
@@ -174,14 +174,12 @@ impl VirtIOBlockDevice {
         let raw_request = request.to_raw();
         let (desc_chain, buffer) = raw_request.to_descriptor_chain();
 
-        // Disable interrupts so IRQ doesn't deadlock the spinlock
-        let mut virtqueue_data = self.virtqueue_data.lock_disable_interrupts();
         let (sender, receiver) = once_channel();
         let data = BlockDeviceDescData { buffer, sender };
 
         let virtqueue = self.initialized_device.get_virtqueue_mut(Self::QUEUE_INDEX);
 
-        virtqueue_data.add_buffer(virtqueue, &desc_chain, data);
+        self.virtqueue_data.add_buffer(virtqueue, &desc_chain, data);
         virtqueue.notify_device();
         receiver
     }

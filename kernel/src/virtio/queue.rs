@@ -9,7 +9,6 @@ use x86_64::PhysAddr;
 use crate::barrier::barrier;
 use crate::memory::PhysicalBuffer;
 use crate::registers::{RegisterRW, VolatileArrayRW};
-use crate::sync::SpinLock;
 
 use super::config::VirtIONotifyConfig;
 
@@ -52,7 +51,7 @@ impl<D> VirtQueueData<D> {
         self.data[desc_index.0 as usize] = Some(data);
     }
 
-    pub(super) fn process_new_entries<F>(&mut self, queue: &VirtQueue, mut f: F)
+    pub(super) fn process_new_entries<F>(&mut self, queue: &mut VirtQueue, mut f: F)
     where
         F: FnMut(VirtQueueUsedElem, VirtQueueDescriptorChainIterator, Option<D>),
     {
@@ -83,9 +82,8 @@ pub(super) struct VirtQueue {
     used_ring: VirtQueueUsedRing,
 
     /// Used to record how many used ring entries have been processed by the
-    /// driver. This is a spinlock so we can ensure multiple threads using the
-    /// driver don't process the same entries.
-    last_processed_used_index: SpinLock<WrappingIndex>,
+    /// driver.
+    last_processed_used_index: WrappingIndex,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -138,7 +136,7 @@ impl VirtQueue {
             descriptors,
             avail_ring,
             used_ring,
-            last_processed_used_index: SpinLock::new(WrappingIndex(0)),
+            last_processed_used_index: WrappingIndex(0),
         }
     }
 
@@ -166,21 +164,20 @@ impl VirtQueue {
         };
     }
 
-    pub(super) fn process_new_entries<F>(&self, mut f: F)
+    pub(super) fn process_new_entries<F>(&mut self, mut f: F)
     where
         F: FnMut(VirtQueueUsedElem, VirtQueueDescriptorChainIterator),
     {
-        let mut last_processed_lock = self.last_processed_used_index.lock();
-        let last_processed = *last_processed_lock;
         let used_index = self.used_ring.idx.read();
 
+        let last_processed = self.last_processed_used_index;
         for i in last_processed.0..used_index.0 {
             let i = WrappingIndex(i);
             let (used_elem, chain) = self.get_used_ring_entry(i);
             f(used_elem, chain);
         }
 
-        *last_processed_lock = used_index;
+        self.last_processed_used_index = used_index;
     }
 
     fn get_used_ring_entry(
