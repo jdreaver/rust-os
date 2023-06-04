@@ -1,4 +1,4 @@
-use alloc::vec::Vec;
+use core::cmp::min;
 use core::fmt;
 
 use bitflags::Flags;
@@ -16,7 +16,6 @@ use super::queue::{
 #[derive(Debug)]
 pub(super) struct VirtIOInitializedDevice {
     pub(super) config: VirtIODeviceConfig,
-    virtqueues: Vec<VirtQueue>,
 }
 
 impl VirtIOInitializedDevice {
@@ -25,6 +24,8 @@ impl VirtIOInitializedDevice {
     pub(super) fn new<F>(
         device_config: VirtIODeviceConfig,
         negotiate_device_bits: impl FnOnce(&mut F),
+        max_virtqueues: u16,
+        mut setup_virtqueue: impl FnMut(VirtQueue),
     ) -> Self
     where
         F: fmt::Debug + Flags<Bits = u128>,
@@ -84,7 +85,8 @@ impl VirtIOInitializedDevice {
             num_queues > 0,
             "number of queues in a VirtIO device must be greater than 0"
         );
-        let mut virtqueues = Vec::with_capacity(num_queues as usize);
+
+        let num_queues = min(num_queues, max_virtqueues);
         for i in 0..num_queues {
             let idx = VirtQueueIndex(i);
             config.queue_select().write(idx);
@@ -116,7 +118,7 @@ impl VirtIOInitializedDevice {
             // Enable the queue
             config.queue_enable().write(1);
 
-            virtqueues.push(VirtQueue::new(
+            setup_virtqueue(VirtQueue::new(
                 idx,
                 device_config.notify_config(),
                 config.queue_notify_off().read(),
@@ -135,48 +137,7 @@ impl VirtIOInitializedDevice {
 
         Self {
             config: device_config,
-            virtqueues,
         }
-    }
-
-    pub(super) fn get_virtqueue(&self, index: VirtQueueIndex) -> &VirtQueue {
-        // N.B. For some reason, if we use self.virtqueues.get() here, we get a
-        // panic if the the index is out of bounds. It looks like:
-        //
-        // PANIC: panicked at 'unsafe precondition(s) violated:
-        // slice::from_raw_parts requires the pointer to be aligned and
-        // non-null, and the total size of the slice not to exceed
-        // `isize::MAX`',
-        // /nix/store/3as61k7p1hknj86pk1mr8izx04xkw4pp-rust-default-1.71.0-nightly-2023-05-28/lib/rustlib/src/rust/library/core/src/panicking.rs:126:5
-        //
-        // Therefore we just check the index range manually.
-        assert!(
-            index.0 < self.virtqueues.len() as u16,
-            "tried to access virtqueue {} but there are only {} virtqueues",
-            index.0,
-            self.virtqueues.len()
-        );
-        &self.virtqueues[index.0 as usize]
-    }
-
-    pub(super) fn get_virtqueue_mut(&mut self, index: VirtQueueIndex) -> &mut VirtQueue {
-        // N.B. For some reason, if we use self.virtqueues.get() here, we get a
-        // panic if the the index is out of bounds. It looks like:
-        //
-        // PANIC: panicked at 'unsafe precondition(s) violated:
-        // slice::from_raw_parts requires the pointer to be aligned and
-        // non-null, and the total size of the slice not to exceed
-        // `isize::MAX`',
-        // /nix/store/3as61k7p1hknj86pk1mr8izx04xkw4pp-rust-default-1.71.0-nightly-2023-05-28/lib/rustlib/src/rust/library/core/src/panicking.rs:126:5
-        //
-        // Therefore we just check the index range manually.
-        assert!(
-            index.0 < self.virtqueues.len() as u16,
-            "tried to access virtqueue {} but there are only {} virtqueues",
-            index.0,
-            self.virtqueues.len()
-        );
-        &mut self.virtqueues[index.0 as usize]
     }
 
     pub(super) fn install_virtqueue_msix_handler(

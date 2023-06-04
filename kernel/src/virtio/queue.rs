@@ -20,30 +20,30 @@ use super::config::VirtIONotifyConfig;
 #[derive(Debug)]
 pub(super) struct VirtQueueData<D> {
     data: Vec<Option<D>>,
+    queue: VirtQueue,
 }
 
 impl<D> VirtQueueData<D> {
-    pub(super) fn new(queue: &VirtQueue) -> Self {
+    pub(super) fn new(queue: VirtQueue) -> Self {
         let queue_size = queue.descriptors.descriptors.len();
         let mut data = Vec::with_capacity(queue_size);
         for _ in 0..queue_size {
             data.push(None);
         }
 
-        Self { data }
+        Self { data, queue }
+    }
+
+    pub(super) fn index(&self) -> VirtQueueIndex {
+        self.queue.index
     }
 
     /// See "2.7.13 Supplying Buffers to The Device"
     ///
     /// The caller must also call `notify_device` once they are done adding
     /// buffers.
-    pub(super) fn add_buffer(
-        &mut self,
-        queue: &mut VirtQueue,
-        descriptors: &[ChainedVirtQueueDescriptorElem],
-        data: D,
-    ) {
-        let desc_index = queue.descriptors.add_descriptor(descriptors);
+    pub(super) fn add_buffer(&mut self, descriptors: &[ChainedVirtQueueDescriptorElem], data: D) {
+        let desc_index = self.queue.descriptors.add_descriptor(descriptors);
 
         // Important to put the data in the vector before adding the descriptor
         // index to the available ring. Otherwise, the device might read the
@@ -56,18 +56,24 @@ impl<D> VirtQueueData<D> {
             desc_index.0
         );
 
-        queue.avail_ring.add_entry(desc_index);
+        self.queue.avail_ring.add_entry(desc_index);
     }
 
-    pub(super) fn process_new_entries<F>(&mut self, queue: &mut VirtQueue, mut f: F)
+    pub(super) fn process_new_entries<F>(&mut self, mut f: F)
     where
         F: FnMut(VirtQueueUsedElem, VirtQueueDescriptorChainIterator, Option<D>),
     {
-        queue.process_new_entries(|used_entry, descriptor_chain| {
-            let desc_index = used_entry.desc_index();
-            let data = self.data[desc_index.0 as usize].take();
-            f(used_entry, descriptor_chain, data);
-        });
+        self.queue
+            .process_new_entries(|used_entry, descriptor_chain| {
+                let desc_index = used_entry.desc_index();
+                let data = self.data[desc_index.0 as usize].take();
+                f(used_entry, descriptor_chain, data);
+            });
+    }
+
+    /// Notify the device that we have written new data.
+    pub(super) fn notify_device(&self) {
+        self.queue.notify_device();
     }
 }
 
@@ -149,7 +155,7 @@ impl VirtQueue {
     }
 
     /// Notify the device that we have written new data.
-    pub(super) fn notify_device(&self) {
+    fn notify_device(&self) {
         // Ensures that any previous writes to the virtqueue are visible to the
         // device before we notify it.
         barrier();

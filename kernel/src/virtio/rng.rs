@@ -7,9 +7,7 @@ use crate::serial_println;
 use crate::sync::{once_channel, OnceReceiver, OnceSender, SpinLock};
 
 use super::device::VirtIOInitializedDevice;
-use super::queue::{
-    ChainedVirtQueueDescriptorElem, VirtQueueData, VirtQueueDescriptorFlags, VirtQueueIndex,
-};
+use super::queue::{ChainedVirtQueueDescriptorElem, VirtQueueData, VirtQueueDescriptorFlags};
 use super::VirtIODeviceConfig;
 
 static VIRTIO_RNG: SpinLock<Option<VirtIORNG>> = SpinLock::new(None);
@@ -40,12 +38,10 @@ pub(crate) fn request_random_numbers(num_bytes: u32) -> OnceReceiver<Vec<u8>> {
 #[derive(Debug)]
 struct VirtIORNG {
     initialized_device: VirtIOInitializedDevice,
-    virtqueue_data: VirtQueueData<VirtIORNGRequest>,
+    virtqueue: VirtQueueData<VirtIORNGRequest>,
 }
 
 impl VirtIORNG {
-    // There is just a single virtqueue
-    const QUEUE_INDEX: VirtQueueIndex = VirtQueueIndex(0);
     const VENDOR_IDS: [u16; 2] = [0x1005, 0x1044];
 
     fn from_device(device_config: VirtIODeviceConfig) -> Self {
@@ -55,14 +51,21 @@ impl VirtIORNG {
             "VirtIORNG: Device ID mismatch, got {device_id}"
         );
 
-        let initialized_device =
-            VirtIOInitializedDevice::new(device_config, |_: &mut RNGFeatureBits| {});
-        let virtqueue = initialized_device.get_virtqueue(Self::QUEUE_INDEX);
-        let virtqueue_data = VirtQueueData::new(virtqueue);
+        let mut virtqueue = None;
+        let initialized_device = VirtIOInitializedDevice::new(
+            device_config,
+            |_: &mut RNGFeatureBits| {},
+            1,
+            |found_virtqueue| {
+                virtqueue = Some(found_virtqueue);
+            },
+        );
+        let virtqueue = virtqueue.expect("VirtIORNG: no virtqueue found");
+        let virtqueue = VirtQueueData::new(virtqueue);
 
         Self {
             initialized_device,
-            virtqueue_data,
+            virtqueue,
         }
     }
 
@@ -70,7 +73,7 @@ impl VirtIORNG {
         let msix_table_id = 0;
         let handler_id = 1; // If we had multiple RNG devices, we could disambiguate them
         self.initialized_device.install_virtqueue_msix_handler(
-            Self::QUEUE_INDEX,
+            self.virtqueue.index(),
             msix_table_id,
             processor_id,
             handler_id,
@@ -95,9 +98,8 @@ impl VirtIORNG {
             sender,
         };
 
-        let virtqueue = self.initialized_device.get_virtqueue_mut(Self::QUEUE_INDEX);
-        self.virtqueue_data.add_buffer(virtqueue, &[desc], request);
-        virtqueue.notify_device();
+        self.virtqueue.add_buffer(&[desc], request);
+        self.virtqueue.notify_device();
 
         receiver
     }
@@ -123,35 +125,31 @@ fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
     let mut lock = VIRTIO_RNG.lock_disable_interrupts();
     let rng = lock.as_mut().expect("VirtIO RNG not initialized");
 
-    let virtqueue_data = &mut rng.virtqueue_data;
-    let virtqueue = rng
-        .initialized_device
-        .get_virtqueue_mut(VirtIORNG::QUEUE_INDEX);
-
-    virtqueue_data.process_new_entries(virtqueue, |used_entry, mut descriptor_chain, request| {
-        let Some(request) = request else {
+    rng.virtqueue
+        .process_new_entries(|used_entry, mut descriptor_chain, request| {
+            let Some(request) = request else {
             serial_println!("VirtIO RNG: no request for used entry: {used_entry:#x?}");
             return;
         };
 
-        let descriptor = descriptor_chain.next().expect("no descriptor in chain");
-        assert!(
-            descriptor_chain.next().is_none(),
-            "more than one descriptor in RNG chain"
-        );
+            let descriptor = descriptor_chain.next().expect("no descriptor in chain");
+            assert!(
+                descriptor_chain.next().is_none(),
+                "more than one descriptor in RNG chain"
+            );
 
-        // The used entry should be using the exact same buffer we just
-        // created, but let's pretend we didn't know that.
-        let buffer = unsafe {
-            core::slice::from_raw_parts(
-                descriptor.addr.as_u64() as *const u8,
-                // NOTE: Using the length from the used entry, not the buffer
-                // length, b/c the RNG device might not have written the whole
-                // thing!
-                used_entry.len as usize,
-            )
-        };
+            // The used entry should be using the exact same buffer we just
+            // created, but let's pretend we didn't know that.
+            let buffer = unsafe {
+                core::slice::from_raw_parts(
+                    descriptor.addr.as_u64() as *const u8,
+                    // NOTE: Using the length from the used entry, not the buffer
+                    // length, b/c the RNG device might not have written the whole
+                    // thing!
+                    used_entry.len as usize,
+                )
+            };
 
-        request.sender.send(buffer.to_vec());
-    });
+            request.sender.send(buffer.to_vec());
+        });
 }

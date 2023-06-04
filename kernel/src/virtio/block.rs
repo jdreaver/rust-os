@@ -11,9 +11,7 @@ use crate::sync::{once_channel, OnceReceiver, OnceSender, SpinLock};
 use crate::{register_struct, serial_println, strings};
 
 use super::device::VirtIOInitializedDevice;
-use super::queue::{
-    ChainedVirtQueueDescriptorElem, VirtQueueData, VirtQueueDescriptorFlags, VirtQueueIndex,
-};
+use super::queue::{ChainedVirtQueueDescriptorElem, VirtQueueData, VirtQueueDescriptorFlags};
 use super::VirtIODeviceConfig;
 
 static VIRTIO_BLOCK: RwLock<Vec<SpinLock<VirtIOBlockDevice>>> = RwLock::new(Vec::new());
@@ -37,7 +35,7 @@ pub(crate) fn try_init_virtio_block(device_config: VirtIODeviceConfig) {
     let device_index = devices.len();
     let handler_id = device_index as u32; // Use device index to disambiguate devices
     device.initialized_device.install_virtqueue_msix_handler(
-        VirtIOBlockDevice::QUEUE_INDEX,
+        device.virtqueue.index(),
         0,
         0,
         handler_id,
@@ -84,12 +82,7 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
         .expect("invalid device index")
         .lock_disable_interrupts();
 
-    let virtqueue_data = &mut device.virtqueue_data;
-    let virtqueue = device
-        .initialized_device
-        .get_virtqueue_mut(VirtIOBlockDevice::QUEUE_INDEX);
-
-    virtqueue_data.process_new_entries(virtqueue, |used_entry, mut descriptor_chain, data| {
+    device.virtqueue.process_new_entries(|used_entry, mut descriptor_chain, data| {
         let Some(data) = data else {
             serial_println!("VirtIO Block: no virtqueue data entry for used entry: {used_entry:#x?}");
             return;
@@ -134,11 +127,10 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
 struct VirtIOBlockDevice {
     initialized_device: VirtIOInitializedDevice,
     _block_config: BlockConfigRegisters,
-    virtqueue_data: VirtQueueData<BlockDeviceDescData>,
+    virtqueue: VirtQueueData<BlockDeviceDescData>,
 }
 
 impl VirtIOBlockDevice {
-    const QUEUE_INDEX: VirtQueueIndex = VirtQueueIndex(0);
     const VENDOR_IDS: [u16; 2] = [0x1001, 0x1042];
 
     fn from_device(device_config: VirtIODeviceConfig) -> Self {
@@ -148,11 +140,20 @@ impl VirtIOBlockDevice {
             "VirtIOBlockDevice: Device ID mismatch, got {device_id}"
         );
 
-        let initialized_device =
-            VirtIOInitializedDevice::new(device_config, |features: &mut BlockDeviceFeatureBits| {
+        let mut virtqueue = None;
+        let initialized_device = VirtIOInitializedDevice::new(
+            device_config,
+            |features: &mut BlockDeviceFeatureBits| {
                 // Don't use multi queue for now
                 features.remove(BlockDeviceFeatureBits::MQ);
-            });
+            },
+            1,
+            |found_virtqueue| {
+                virtqueue = Some(found_virtqueue);
+            },
+        );
+        let virtqueue = virtqueue.expect("VirtIORNG: no virtqueue found");
+        let virtqueue = VirtQueueData::new(virtqueue);
 
         let block_config = unsafe {
             BlockConfigRegisters::from_address(
@@ -160,13 +161,10 @@ impl VirtIOBlockDevice {
             )
         };
 
-        let virtqueue = initialized_device.get_virtqueue(Self::QUEUE_INDEX);
-        let virtqueue_data = VirtQueueData::new(virtqueue);
-
         Self {
             initialized_device,
             _block_config: block_config,
-            virtqueue_data,
+            virtqueue,
         }
     }
 
@@ -177,10 +175,8 @@ impl VirtIOBlockDevice {
         let (sender, receiver) = once_channel();
         let data = BlockDeviceDescData { buffer, sender };
 
-        let virtqueue = self.initialized_device.get_virtqueue_mut(Self::QUEUE_INDEX);
-
-        self.virtqueue_data.add_buffer(virtqueue, &desc_chain, data);
-        virtqueue.notify_device();
+        self.virtqueue.add_buffer(&desc_chain, data);
+        self.virtqueue.notify_device();
         receiver
     }
 }
