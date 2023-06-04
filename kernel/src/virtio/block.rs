@@ -11,7 +11,9 @@ use crate::sync::{once_channel, OnceReceiver, OnceSender, SpinLock};
 use crate::{register_struct, serial_println, strings};
 
 use super::device::VirtIOInitializedDevice;
-use super::queue::{ChainedVirtQueueDescriptorElem, VirtQueueData, VirtQueueDescriptorFlags};
+use super::queue::{
+    ChainedVirtQueueDescriptorElem, VirtQueue, VirtQueueData, VirtQueueDescriptorFlags,
+};
 use super::VirtIODeviceConfig;
 
 static VIRTIO_BLOCK: RwLock<Vec<SpinLock<VirtIOBlockDevice>>> = RwLock::new(Vec::new());
@@ -140,20 +142,20 @@ impl VirtIOBlockDevice {
             "VirtIOBlockDevice: Device ID mismatch, got {device_id}"
         );
 
-        let mut virtqueue = None;
-        let initialized_device = VirtIOInitializedDevice::new(
+        let (initialized_device, virtqueues) = VirtIOInitializedDevice::new(
             device_config,
             |features: &mut BlockDeviceFeatureBits| {
                 // Don't use multi queue for now
                 features.remove(BlockDeviceFeatureBits::MQ);
             },
             1,
-            |found_virtqueue| {
-                virtqueue = Some(found_virtqueue);
-            },
         );
-        let virtqueue = virtqueue.expect("VirtIORNG: no virtqueue found");
-        let virtqueue = VirtQueueData::new(virtqueue);
+        let num_virtqueues = virtqueues.len();
+        let virtqueue = if let Ok::<[VirtQueue; 1], _>([virtqueue]) = virtqueues.try_into() {
+            VirtQueueData::new(virtqueue)
+        } else {
+            panic!("VirtIORNG: expected exactly one virtqueue, got {num_virtqueues}");
+        };
 
         let block_config = unsafe {
             BlockConfigRegisters::from_address(

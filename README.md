@@ -109,9 +109,6 @@ make test
 - VirtIO improvements:
   - Create a physically contiguous heap, or slab allocator, or something for virtio buffer requests so we don't waste an entire page per tiny allocation.
     - Ensure we are still satisfying any alignment requirements for buffers. Read the spec!
-  - Lock free: is it possible to do writing without needing locks? Processing probably demands locks.
-  - Ensure we don't accidentally reuse descriptors while we are waiting for a response from the device. Don't automatically just wrap around! This is what might require a mutex rather than just atomic integers?
-  - I think there is a race condition with the interrupts with the current non-locking mechanism. Ensure that if there are concurrent writes while an interrupt, then an interrupt won't miss a read (e.g. there will at least be a followup interrupt)
   - Remember features we negotiate, and ensure we are accounting for the different features in the logic (especially around notifications)
 - PCI device locking and `&mut` (and really locking anything that wraps registers)
   - Ensure modifying PCI devices requires a `&mut` reference to some actual "device" object. That means we shouldn't pass around raw registers. Something should be wrapping these.

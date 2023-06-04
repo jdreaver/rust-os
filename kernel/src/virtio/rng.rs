@@ -7,7 +7,9 @@ use crate::serial_println;
 use crate::sync::{once_channel, OnceReceiver, OnceSender, SpinLock};
 
 use super::device::VirtIOInitializedDevice;
-use super::queue::{ChainedVirtQueueDescriptorElem, VirtQueueData, VirtQueueDescriptorFlags};
+use super::queue::{
+    ChainedVirtQueueDescriptorElem, VirtQueue, VirtQueueData, VirtQueueDescriptorFlags,
+};
 use super::VirtIODeviceConfig;
 
 static VIRTIO_RNG: SpinLock<Option<VirtIORNG>> = SpinLock::new(None);
@@ -51,17 +53,15 @@ impl VirtIORNG {
             "VirtIORNG: Device ID mismatch, got {device_id}"
         );
 
-        let mut virtqueue = None;
-        let initialized_device = VirtIOInitializedDevice::new(
-            device_config,
-            |_: &mut RNGFeatureBits| {},
-            1,
-            |found_virtqueue| {
-                virtqueue = Some(found_virtqueue);
-            },
-        );
-        let virtqueue = virtqueue.expect("VirtIORNG: no virtqueue found");
-        let virtqueue = VirtQueueData::new(virtqueue);
+        let (initialized_device, virtqueues) =
+            VirtIOInitializedDevice::new(device_config, |_: &mut RNGFeatureBits| {}, 1);
+
+        let num_virtqueues = virtqueues.len();
+        let virtqueue = if let Ok::<[VirtQueue; 1], _>([virtqueue]) = virtqueues.try_into() {
+            VirtQueueData::new(virtqueue)
+        } else {
+            panic!("VirtIORNG: expected exactly one virtqueue, got {num_virtqueues}");
+        };
 
         Self {
             initialized_device,

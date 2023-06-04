@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use core::cmp::min;
 use core::fmt;
 
@@ -25,8 +26,7 @@ impl VirtIOInitializedDevice {
         device_config: VirtIODeviceConfig,
         negotiate_device_bits: impl FnOnce(&mut F),
         max_virtqueues: u16,
-        mut setup_virtqueue: impl FnMut(VirtQueue),
-    ) -> Self
+    ) -> (Self, Vec<VirtQueue>)
     where
         F: fmt::Debug + Flags<Bits = u128>,
     {
@@ -87,6 +87,7 @@ impl VirtIOInitializedDevice {
         );
 
         let num_queues = min(num_queues, max_virtqueues);
+        let mut virtqueues = Vec::with_capacity(num_queues as usize);
         for i in 0..num_queues {
             let idx = VirtQueueIndex(i);
             config.queue_select().write(idx);
@@ -118,7 +119,7 @@ impl VirtIOInitializedDevice {
             // Enable the queue
             config.queue_enable().write(1);
 
-            setup_virtqueue(VirtQueue::new(
+            virtqueues.push(VirtQueue::new(
                 idx,
                 device_config.notify_config(),
                 config.queue_notify_off().read(),
@@ -135,9 +136,10 @@ impl VirtIOInitializedDevice {
         status.set_driver_ok(true);
         config.device_status().write(status);
 
-        Self {
+        let device = Self {
             config: device_config,
-        }
+        };
+        (device, virtqueues)
     }
 
     pub(super) fn install_virtqueue_msix_handler(
