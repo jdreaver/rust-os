@@ -1,10 +1,15 @@
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::cell::UnsafeCell;
 use core::fmt;
 use core::marker::PhantomData;
+use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
 use core::ptr;
-use core::sync::atomic::{AtomicPtr, AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::{
+    AtomicBool, AtomicPtr, AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering,
+};
 
 use spin::mutex::{SpinMutex, SpinMutexGuard};
 
@@ -295,63 +300,156 @@ where
 /// copy of the value. It is common to use `Arc` as the value type, to make
 /// copies cheap.
 #[derive(Debug)]
-pub(crate) struct WaitQueue<T>(SpinLock<WaitQueueInner<T>>);
-
-#[derive(Debug)]
-struct WaitQueueInner<T> {
-    value: Option<T>,
-
-    /// The tasks waiting for the value to change.
-    task_ids: Vec<TaskId>, // N.B. Vec faster than HashSet for small sets
+pub(crate) struct WaitQueue<T> {
+    /// Holds the sending side of all the channels we need to send values to.
+    channel_senders: SpinLock<Vec<OnceSender<T>>>,
 }
 
-impl<T: Clone> WaitQueue<T> {
+impl<T> WaitQueue<T> {
     pub(crate) const fn new() -> Self {
-        Self(SpinLock::new(WaitQueueInner {
-            value: None,
-            task_ids: Vec::new(),
-        }))
+        Self {
+            channel_senders: SpinLock::new(Vec::new()),
+        }
     }
 
-    /// Stores the value and wakes up the sleeping tasks.
-    pub(crate) fn put_value(&self, val: T) {
-        let mut inner = self.0.lock_disable_interrupts();
-        inner.value.replace(val);
-        for task_id in inner.task_ids.drain(..) {
-            sched::awaken_task(task_id);
+    /// Sends value to just the first waiting task and wakes it up. Use
+    /// `put_value` to send to all sleeping tasks.
+    pub(crate) fn _put_single_value(&self, val: T) {
+        let mut senders = self.channel_senders.lock_disable_interrupts();
+        if let Some(sender) = senders.pop() {
+            sender.send(val);
         }
     }
 
     /// Waits until the value is initialized, sleeping if necessary.
     pub(crate) fn wait_sleep(&self) -> T {
-        let task_id = sched::scheduler_lock().current_task_id();
-        self.0.lock_disable_interrupts().task_ids.push(task_id);
+        // Create a new channel and add it to the list of channels to send
+        // values to.
+        let (sender, receiver) = once_channel();
+        self.channel_senders.lock_disable_interrupts().push(sender);
 
+        receiver.wait_sleep()
+    }
+}
+
+impl<T: Clone> WaitQueue<T> {
+    /// Sends value to all waiting tasks and wakes them up.
+    pub(crate) fn put_value(&self, val: T) {
+        let mut senders = self.channel_senders.lock_disable_interrupts();
+        for sender in senders.drain(..) {
+            sender.send(val.clone());
+        }
+    }
+}
+
+pub(crate) fn once_channel<T>() -> (OnceSender<T>, OnceReceiver<T>) {
+    let receiver_task_id = sched::scheduler_lock().current_task_id();
+    let channel = Arc::new(OnceChannel::new());
+    let sender = OnceSender {
+        channel: channel.clone(),
+        receiver_task_id,
+    };
+    let receiver = OnceReceiver {
+        channel,
+        _no_send: PhantomData,
+    };
+    (sender, receiver)
+}
+
+/// A channel that can be written to once and read from once.
+#[derive(Debug)]
+pub(crate) struct OnceChannel<T> {
+    message: UnsafeCell<MaybeUninit<T>>,
+    ready: AtomicBool,
+}
+
+unsafe impl<T> Sync for OnceChannel<T> where T: Send {}
+
+impl<T> OnceChannel<T> {
+    fn new() -> Self {
+        Self {
+            message: UnsafeCell::new(MaybeUninit::zeroed()),
+            ready: AtomicBool::new(false),
+        }
+    }
+
+    /// Write a value to the channel.
+    ///
+    /// # Safety
+    ///
+    /// This function should only be called once. This is important because
+    /// writing a value discards the old value, and we will never drop the old
+    /// value (this is a `MaybeUninit` feature/limitation). We panic if we call
+    /// this function twice, but it is still marked unsafe so the caller is
+    /// careful.
+    unsafe fn send(&self, message: T) {
+        unsafe {
+            self.message.get().write(MaybeUninit::new(message));
+        };
+        let old = self.ready.swap(true, Ordering::Release);
+        assert!(!old, "ERROR: Tried to send to a channel twice");
+    }
+
+    fn receive(&self) -> Option<T> {
+        if self.ready.swap(false, Ordering::Acquire) {
+            // Safety: We should only read a message once, since we are reifying
+            // it from a single memory location. The swap above is an extra
+            // safeguard to ensure we don't read the message twice.
+            let message = unsafe { self.message.get().read().assume_init_read() };
+            Some(message)
+        } else {
+            None
+        }
+    }
+}
+
+impl<T> Drop for OnceChannel<T> {
+    fn drop(&mut self) {
+        if self.ready.load(Ordering::Acquire) {
+            // Safety: We only ever store the message in `send`, which sets
+            // `ready` to `true`. Therefore we can assume that this message has
+            // been initialized.
+            unsafe { self.message.get_mut().assume_init_drop() }
+        }
+    }
+}
+
+/// Sender side of a `OnceChannel`.
+#[derive(Debug)]
+pub(crate) struct OnceSender<T> {
+    channel: Arc<OnceChannel<T>>,
+    receiver_task_id: TaskId,
+}
+
+impl<T> OnceSender<T> {
+    /// Write a value to the channel so the receiver can read it. This can only
+    /// be called once because it consumes `self`.
+    fn send(self, message: T) {
+        // Safety: We only call this function once, which is enforced by this
+        // function consuming `self`.
+        unsafe { self.channel.send(message) };
+        sched::awaken_task(self.receiver_task_id);
+    }
+}
+
+/// Receiver side of a `OnceChannel`.
+#[derive(Debug)]
+pub(crate) struct OnceReceiver<T> {
+    channel: Arc<OnceChannel<T>>,
+
+    // This is a hack to make `OnceReceiver` not implement `Send`. This is
+    // necessary so the `TaskId` of the receiver doesn't change. If the `TaskId`
+    // changed, then the sender would wake up the wrong task.
+    _no_send: PhantomData<*const ()>,
+}
+
+impl<T> OnceReceiver<T> {
+    pub(crate) fn wait_sleep(&self) -> T {
         loop {
-            {
-                let mut inner = self.0.lock_disable_interrupts();
-
-                if let Some(value) = &inner.value {
-                    let value = value.clone();
-
-                    // Remove task ID from the list of waiting tasks.
-                    let index = inner.task_ids.iter().position(|id| *id == task_id);
-                    if let Some(index) = index {
-                        inner.task_ids.swap_remove(index);
-                    }
-
-                    return value;
-                }
-
-                // Value isn't present. Go back to sleep. It is important we do
-                // this while the lock is still taken or else a producer might
-                // write the value before this line and we may never wake up.
-                sched::scheduler_lock().go_to_sleep();
+            if let Some(message) = self.channel.receive() {
+                return message;
             }
-
-            // Important to run the scheduler outside of the lock, otherwise
-            // we can deadlock.
-            sched::scheduler_lock().run_scheduler();
+            sched::scheduler_lock().go_to_sleep();
         }
     }
 }

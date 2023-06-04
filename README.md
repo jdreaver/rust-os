@@ -91,11 +91,17 @@ make test
 
 ## TODO
 
+- `awaken_task`: Make `awaken_task` a scheduler `&mut self` method so it is clear it needs a lock. The timer function I was worried about can just explicitly lock the scheduler.
 - Filesystem
   - Make a VFS (deal with paths, mount a filesystem (probably a single one for now at root), etc)
+- Task struct access: investigate not hiding all tasks (or just the current tasks) inside the big scheduler lock. Are there situations where it is okay to modify a task if the scheduler is running concurrently? Can we lock individual tasks? Is this inviting a deadlock?
+  - For example, putting a task to sleep or waking it up. Is this bad to do concurrently with the scheduler? Maybe instead of calling this the "state" it can be thought of as a "state intent", which the scheduler should action next time it changes the task's scheduling. Wait queues and channels do this, but they need a scheduler lock under the hood.
 - Stack size: figure out why stacks need to be so large when compiling in debug mode. Is Rust putting a ton of debug info on the stack?
 - Synchronization primitives
+  - Split up `sync.rs`
   - Create channels as a replacement for many existing primitives: creating a channel creates one send and one or more receivers. The sender doesn't need an Arc or a lock, and receivers are simplified. They can be one shot, one messages to one consumer, one message to all consumers, etc
+    - We could have WaitQueue spit out Consumers (make sure these are not `Send`!) that are single shot. We only have to take a lock to ensure the consumer TaskId is recorded so the producer knows about it.
+    - For use cases that are truly one shot, we can create the producer and consumer at once but then don't allow adding more consumers.
   - Interesting building blocks to look at:
     - <https://docs.rs/static_assertions/1.1.0/static_assertions/index.html>
     - <https://docs.rs/crossbeam/latest/crossbeam/atomic/struct.AtomicCell.html>
