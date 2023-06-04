@@ -1,6 +1,5 @@
 use alloc::vec::Vec;
 use core::cmp::min;
-use core::fmt;
 
 use bitflags::Flags;
 
@@ -28,7 +27,7 @@ impl VirtIOInitializedDevice {
         max_virtqueues: u16,
     ) -> (Self, Vec<VirtQueue>)
     where
-        F: fmt::Debug + Flags<Bits = u128>,
+        F: Flags<Bits = u128>,
     {
         let config = device_config.common_virtio_config();
 
