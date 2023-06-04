@@ -104,7 +104,7 @@ impl KernelStack {
     /// Get the virtual address of the top (highest memory address) of the
     /// stack.
     pub(crate) fn top_addr(&self) -> VirtAddr {
-        self.start_addr + KERNEL_STACK_SIZE_BYTES - 1_u64
+        self.start_addr + KERNEL_STACK_SIZE_BYTES
     }
 
     fn guard_page(&self) -> Page {

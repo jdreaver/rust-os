@@ -56,30 +56,25 @@ impl Task {
         let stack_top = unsafe {
             // -7 because we need to align to a u64.
             #[allow(clippy::cast_ptr_alignment)]
-            let stack_top_pointer = kernel_stack
-                .top_addr()
-                .as_mut_ptr::<u8>()
-                .sub(7)
-                .cast::<usize>();
+            let stack_top_pointer = kernel_stack.top_addr().as_mut_ptr::<u8>().cast::<usize>();
             assert!(stack_top_pointer as usize % 8 == 0, "stack top not aligned");
 
             // Push the RIP for the task_setup.
-            *stack_top_pointer = task_setup as usize;
+            *stack_top_pointer.sub(1) = task_setup as usize;
 
             // Set rsi, which will end up as the second argument to task_setup when
             // we `ret` to it in `switch_to_task` (this is the C calling
             // convention).
-            *stack_top_pointer.sub(6) = arg as usize;
+            *stack_top_pointer.sub(7) = arg as usize;
 
             // Set rdi, which will end up as the first argument to task_setup when
             // we `ret` to it in `switch_to_task` (this is the C calling
             // convention).
-            *stack_top_pointer.sub(7) = start_fn as usize;
+            *stack_top_pointer.sub(8) = start_fn as usize;
 
-            // N.B. The stack_top already accounts for the task_setup RIP, so we
-            // don't need to add +1 here.
-            let num_general_purpose_registers = 15; // Ensure this matches `switch_to_task`!!!
-            stack_top_pointer.sub(num_general_purpose_registers) as usize
+            let num_general_purpose_registers = 15;
+            let stack_top_offset = num_general_purpose_registers + 1; // +1 for the RIP
+            stack_top_pointer.sub(stack_top_offset) as usize
         };
 
         Self {
