@@ -8,27 +8,31 @@ use crate::interrupts;
 use crate::interrupts::{InterruptHandler, InterruptHandlerID};
 
 use super::config::{VirtIOConfigStatus, VirtIODeviceConfig};
-use super::features::ReservedFeatureBits;
+use super::features::{Features, ReservedFeatureBits};
 use super::queue::{
     VirtQueue, VirtQueueAvailRing, VirtQueueDescriptorTable, VirtQueueIndex, VirtQueueUsedRing,
 };
 
 #[derive(Debug)]
-pub(super) struct VirtIOInitializedDevice {
+pub(super) struct VirtIOInitializedDevice<F>
+where
+    F: Flags<Bits = u128>,
+{
     pub(super) config: VirtIODeviceConfig,
+    pub(super) _features: Features<F>,
 }
 
-impl VirtIOInitializedDevice {
+impl<F> VirtIOInitializedDevice<F>
+where
+    F: Flags<Bits = u128>,
+{
     /// See "3 General Initialization And Device Operation" and "4.1.5
     /// PCI-specific Initialization And Device Operation"
-    pub(super) fn new<F>(
+    pub(super) fn new(
         device_config: VirtIODeviceConfig,
         negotiate_device_bits: impl FnOnce(&mut F),
         max_virtqueues: u16,
-    ) -> (Self, Vec<VirtQueue>)
-    where
-        F: Flags<Bits = u128>,
-    {
+    ) -> (Self, Vec<VirtQueue>) {
         let config = device_config.common_virtio_config();
 
         // Reset the VirtIO device by writing 0 to the status register (see
@@ -52,7 +56,7 @@ impl VirtIOInitializedDevice {
         // Feature negotiation. There are up to 128 feature bits, and
         // the feature registers are 32 bits wide, so we use the feature
         // selection registers 4 times to select features.
-        let mut device_features = device_config.get_device_features::<F>();
+        let mut features = device_config.get_device_features::<F>();
 
         // Disable VIRTIO_F_EVENT_IDX so we don't need to mess with `used_event`
         // in avail ring.
@@ -60,14 +64,13 @@ impl VirtIOInitializedDevice {
         // TODO: Record that we did this in the virtqueues so they know to set
         // `used_event` or not in the avail ring, instead of just assuming that
         // we did this.
-        device_features.negotiate_reserved_bits(|bits| {
+        features.negotiate_reserved_bits(|bits| {
             bits.remove(ReservedFeatureBits::EVENT_IDX);
         });
 
         // Write the features we want to enable
-        let mut driver_features = device_features;
-        driver_features.negotiate_device_bits(negotiate_device_bits);
-        device_config.set_driver_features(&driver_features);
+        features.negotiate_device_bits(negotiate_device_bits);
+        device_config.set_driver_features(&features);
 
         // Set the FEATURES_OK status bit to indicate that the driver has
         // written the feature bits.
@@ -137,6 +140,7 @@ impl VirtIOInitializedDevice {
 
         let device = Self {
             config: device_config,
+            _features: features,
         };
         (device, virtqueues)
     }

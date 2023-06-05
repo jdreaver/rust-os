@@ -39,7 +39,7 @@ pub(crate) fn request_random_numbers(num_bytes: u32) -> OnceReceiver<Vec<u8>> {
 /// supplies high-quality randomness for guest use.
 #[derive(Debug)]
 struct VirtIORNG {
-    initialized_device: VirtIOInitializedDevice,
+    initialized_device: VirtIOInitializedDevice<RNGFeatureBits>,
     virtqueue: VirtQueueData<VirtIORNGRequest>,
 }
 

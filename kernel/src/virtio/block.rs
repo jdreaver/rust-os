@@ -127,7 +127,7 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
 /// See "5.2 Block Device" in the VirtIO spec.
 #[derive(Debug)]
 struct VirtIOBlockDevice {
-    initialized_device: VirtIOInitializedDevice,
+    initialized_device: VirtIOInitializedDevice<BlockDeviceFeatureBits>,
     _block_config: BlockConfigRegisters,
     virtqueue: VirtQueueData<BlockDeviceDescData>,
 }
