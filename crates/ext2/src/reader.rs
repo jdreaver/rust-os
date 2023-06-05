@@ -58,23 +58,50 @@ impl<R: BlockReader> FilesystemReader<R> {
         Some(self.block_reader.read_bytes(inode_offset))
     }
 
+    pub fn inode_size(&self, inode: &Inode) -> u64 {
+        // In revision 0, we only have 32-bit sizes.
+        if self.superblock.rev_level == 0 {
+            return u64::from(inode.size_low);
+        }
+
+        (u64::from(inode.size_high) << 32) | u64::from(inode.size_low)
+    }
+
+    pub fn iter_file_blocks<F>(&mut self, inode: &Inode, func: F)
+    where
+        F: Fn(Vec<u8>),
+    {
+        let mut seen_size = 0;
+        let total_size = self.inode_size(inode);
+
+        let direct_blocks = inode.direct_blocks;
+        for block_addr in direct_blocks.iter() {
+            let block_offset = self.superblock.block_address_bytes(block_addr);
+            let mut block_buf = self
+                .block_reader
+                .read_num_bytes(block_offset, self.superblock.block_size().0 as usize);
+
+            if seen_size + block_buf.len() as u64 > total_size {
+                block_buf.truncate((total_size - seen_size) as usize);
+            }
+            seen_size += block_buf.len() as u64;
+
+            func(block_buf);
+        }
+    }
+
     pub fn iter_directory<F>(&mut self, inode: &Inode, func: F)
     where
         F: Fn(DirectoryEntry),
     {
         assert!(inode.is_dir());
 
-        let direct_blocks = inode.direct_blocks;
-        for block_addr in direct_blocks.iter() {
-            let block_offset = self.superblock.block_address_bytes(block_addr);
-            let block_buf = self
-                .block_reader
-                .read_num_bytes(block_offset, self.superblock.block_size().0 as usize);
+        self.iter_file_blocks(inode, |block_buf| {
             let dir_block = DirectoryBlock(block_buf.as_slice());
             for dir_entry in dir_block.iter() {
                 func(dir_entry);
             }
-        }
+        });
     }
 }
 

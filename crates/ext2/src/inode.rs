@@ -37,6 +37,11 @@ impl Inode {
         let mode = self.mode;
         mode.contains(InodeMode::IFDIR)
     }
+
+    pub fn is_file(&self) -> bool {
+        let mode = self.mode;
+        mode.contains(InodeMode::IFREG)
+    }
 }
 
 bitflags! {

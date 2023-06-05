@@ -1,3 +1,4 @@
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -112,9 +113,19 @@ enum Command {
     PrintACPI,
     RNG(u32),
     VirtIOBlock(VirtIOBlockCommand),
-    FATBIOS { device_id: usize },
-    EXT2Superblock { device_id: usize },
-    EXT2ListRoot { device_id: usize },
+    FATBIOS {
+        device_id: usize,
+    },
+    EXT2Superblock {
+        device_id: usize,
+    },
+    EXT2ListRoot {
+        device_id: usize,
+    },
+    EXT2CatInode {
+        device_id: usize,
+        inode_number: ext2::InodeNumber,
+    },
     Timer(Milliseconds),
     Sleep(Milliseconds),
     Prime(PrimeCommand),
@@ -195,29 +206,46 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
         "ext2" => match words.next() {
             Some("superblock") => {
                 let device_id =
-                    parse_next_word(&mut words, "device ID", "ext2 superblock [device_id]")?;
+                    parse_next_word(&mut words, "device ID", "ext2 superblock <device_id>")?;
                 Some(Command::EXT2Superblock { device_id })
             }
             Some("ls-root") => {
                 let device_id =
-                    parse_next_word(&mut words, "device ID", "ext2 ls-root [device_id]")?;
+                    parse_next_word(&mut words, "device ID", "ext2 ls-root <device_id>")?;
                 Some(Command::EXT2ListRoot { device_id })
             }
+            Some("cat-inode") => {
+                let device_id = parse_next_word(
+                    &mut words,
+                    "device ID",
+                    "ext2 cat-inode <device_id> <inode_number>",
+                )?;
+                let inode_number = parse_next_word(
+                    &mut words,
+                    "inode number",
+                    "ext2 cat-inode <device_id> <inode_number>",
+                )?;
+                let inode_number = ext2::InodeNumber(inode_number);
+                Some(Command::EXT2CatInode {
+                    device_id,
+                    inode_number,
+                })
+            }
             _ => {
-                serial_println!("Usage: ext2 [superblock|ls-root]");
+                serial_println!("Usage: ext2 <superblock|ls-root>");
                 None
             }
         },
         "timer" => {
-            let milliseconds = parse_next_word(&mut words, "milliseconds", "timer [milliseconds]")?;
+            let milliseconds = parse_next_word(&mut words, "milliseconds", "timer <milliseconds>")?;
             Some(Command::Timer(Milliseconds::new(milliseconds)))
         }
         "sleep" => {
-            let milliseconds = parse_next_word(&mut words, "milliseconds", "sleep [milliseconds]")?;
+            let milliseconds = parse_next_word(&mut words, "milliseconds", "sleep <milliseconds>")?;
             Some(Command::Sleep(Milliseconds::new(milliseconds)))
         }
         "prime" => {
-            let usage = "prime [sync|async] <nth_prime>";
+            let usage = "prime <sync|async> <nth_prime>";
             let sync = match words.next() {
                 Some("sync") => true,
                 Some("async") => false,
@@ -384,6 +412,26 @@ fn run_command(command: &Command) {
                 let inode = entry.header.inode;
                 let file_type = entry.header.file_type;
                 serial_println!("{} (inode: {:?}, type: {:?})", entry.name, inode, file_type);
+            });
+        }
+        Command::EXT2CatInode {
+            device_id,
+            inode_number,
+        } => {
+            let mut reader = ext2::FilesystemReader::read(fs::VirtioBlockReader::new(*device_id))
+                .expect("failed to read EXT2 filesystem");
+            let Some(inode) = reader.read_inode(*inode_number) else {
+                serial_println!("inode {:?} not found", inode_number);
+                return;
+            };
+            if !inode.is_file() {
+                serial_println!("inode {:?} is not a file", inode_number);
+                return;
+            }
+            serial_println!("{:#x?}", inode);
+            serial_println!("Reading inode...");
+            reader.iter_file_blocks(&inode, |blocks| {
+                serial_print!("{}", String::from_utf8_lossy(&blocks));
             });
         }
         Command::Timer(ms) => {

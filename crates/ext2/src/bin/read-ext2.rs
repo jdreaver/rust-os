@@ -41,6 +41,12 @@ fn main() {
         println!("{:#X?}", dir_entry);
     });
 
-    // let hello_inode = lookup_inode(&mut file, &superblock, ext2::InodeNumber(12));
-    // println!("{:#X?}", hello_inode);
+    let hello_inode = reader.read_inode(ext2::InodeNumber(12)).expect("failed to find hello");
+    println!("{:#X?}", hello_inode);
+
+    print!("hello content: ");
+    reader.iter_file_blocks(&hello_inode, |blocks| {
+        print!("{}", String::from_utf8_lossy(&blocks));
+    });
+    println!();
 }
