@@ -135,8 +135,12 @@ enum VirtIOBlockCommand {
 #[derive(Debug)]
 enum EXT2Command {
     Superblock,
-    ListRoot,
-    CatInode { inode_number: ext2::InodeNumber },
+    ListInode {
+        inode_number: Option<ext2::InodeNumber>,
+    },
+    CatInode {
+        inode_number: ext2::InodeNumber,
+    },
 }
 
 #[derive(Debug)]
@@ -173,7 +177,6 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
             let num_bytes = parse_next_word(&mut words, "num bytes", "rng <num_bytes>")?;
             Some(Command::RNG(num_bytes))
         }
-
         "block" => match words.next() {
             Some("list") => Some(Command::VirtIOBlock(VirtIOBlockCommand::List)),
             Some("read") => {
@@ -210,7 +213,15 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
 
             let subcommand = match words.next() {
                 Some("superblock") => Some(EXT2Command::Superblock),
-                Some("ls-root") => Some(EXT2Command::ListRoot),
+                Some("ls-inode") => {
+                    let inode_number = parse_next_word(
+                        &mut words,
+                        "inode number",
+                        "ext2 <device_id> ls-inode [inode_number] (defaults to root)",
+                    );
+                    let inode_number = inode_number.map(ext2::InodeNumber);
+                    Some(EXT2Command::ListInode { inode_number })
+                }
                 Some("cat-inode") => {
                     let inode_number = parse_next_word(
                         &mut words,
@@ -396,11 +407,19 @@ fn run_command(command: &Command) {
                 EXT2Command::Superblock => {
                     serial_println!("{:#x?}", reader.superblock());
                 }
-                EXT2Command::ListRoot => {
-                    let root = reader.read_root();
-                    serial_println!("{:#x?}", root);
+                EXT2Command::ListInode { inode_number } => {
+                    let inode = if let Some(inode_number) = inode_number {
+                        let Some(inode) = reader.read_inode(*inode_number) else {
+                            serial_println!("inode {:?} not found", inode_number);
+                            return;
+                        };
+                        inode
+                    } else {
+                        reader.read_root()
+                    };
+                    serial_println!("{:#x?}", inode);
                     serial_println!("Listing root directory...");
-                    reader.iter_directory(&root, |entry| {
+                    reader.iter_directory(&inode, |entry| {
                         let inode = entry.header.inode;
                         let file_type = entry.header.file_type;
                         serial_println!("{} (inode: {inode:?}, type: {file_type:?})", entry.name);
