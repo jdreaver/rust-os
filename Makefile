@@ -89,24 +89,6 @@ gdb: # No deps because we don't want an accidental rebuild if `make debug` alrea
 kernel:
 	cd kernel && cargo build $(RUST_BUILD_MODE_FLAG)
 
-# Old ISO build. Run in QEMU with: -cdrom $(ISO)
-# ISO = kernel.iso
-# $(ISO): kernel
-# 	rm -rf iso_root
-# 	mkdir -p iso_root
-#
-# 	cp $(KERNEL) \
-# 		limine.cfg $(LIMINE)/limine.sys $(LIMINE)/limine-cd.bin $(LIMINE)/limine-cd-efi.bin iso_root/
-#
-# 	xorriso -as mkisofs -b limine-cd.bin \
-# 		-no-emul-boot -boot-load-size 4 -boot-info-table \
-# 		--efi-boot limine-cd-efi.bin \
-# 		-efi-boot-part --efi-boot-image --protective-msdos-label \
-# 		iso_root -o $@
-#
-# 	$(LIMINE)/limine-deploy $@
-# 	rm -rf iso_root
-
 # Adapted from https://github.com/limine-bootloader/limine-barebones/blob/trunk/GNUmakefile
 $(KERNEL_HDD): kernel
 	rm -f $(KERNEL_HDD)
