@@ -58,14 +58,23 @@ where
         // selection registers 4 times to select features.
         let mut features = device_config.get_device_features::<F>();
 
-        // Disable VIRTIO_F_EVENT_IDX so we don't need to mess with `used_event`
-        // in avail ring.
+        // Disable some features
         //
         // TODO: Record that we did this in the virtqueues so they know to set
         // `used_event` or not in the avail ring, instead of just assuming that
         // we did this.
         features.negotiate_reserved_bits(|bits| {
+            // Disable VIRTIO_F_EVENT_IDX so we don't need to mess with `used_event`
+            // in avail ring.
             bits.remove(ReservedFeatureBits::EVENT_IDX);
+
+            // Disable VIRTIO_F_NOTIFICATION_DATA so we don't need to deal with
+            // extra offset information when notifying device of new avail ring
+            // entries.
+            bits.remove(ReservedFeatureBits::NOTIFICATION_DATA);
+
+            // We don't use NOTIF_CONFIG_DATA
+            bits.remove(ReservedFeatureBits::NOTIF_CONFIG_DATA);
         });
 
         // Write the features we want to enable

@@ -232,7 +232,7 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
                     Some(EXT2Command::CatInode { inode_number })
                 }
                 _ => {
-                    serial_println!("Usage: ext2 <device-id> <superblock|ls-root|cat-inode>");
+                    serial_println!("Usage: ext2 <device-id> <superblock|ls-inode|cat-inode>");
                     None
                 }
             };
