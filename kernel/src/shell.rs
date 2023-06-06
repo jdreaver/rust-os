@@ -121,6 +121,7 @@ enum Command {
         device_id: usize,
     },
     Ls(FilePath),
+    Cat(FilePath),
     FATBIOS {
         device_id: usize,
     },
@@ -212,6 +213,10 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
         "ls" => {
             let path = parse_next_word(&mut words, "path", "ls <path>")?;
             Some(Command::Ls(path))
+        }
+        "cat" => {
+            let path = parse_next_word(&mut words, "path", "cat <path>")?;
+            Some(Command::Cat(path))
         }
         "fat" => match words.next() {
             Some("bios") => {
@@ -413,6 +418,7 @@ fn run_command(command: &Command) {
             serial_println!("Mounted ext2 filesystem from VirtIO block device {device_id}");
         }
         Command::Ls(path) => {
+            // TODO: Abstract this into VFS layer
             serial_println!("ls: {path:?}");
             let mut lock = MOUNTED_ROOT_FILE_SYSTEM.lock();
             let Some(reader) = lock.as_mut() else {
@@ -424,7 +430,6 @@ fn run_command(command: &Command) {
                 return;
             }
 
-            // TODO: Abstract this into VFS layer
             let Some(inode) = traverse_path(reader, path) else {
                 serial_println!("No such file or directory: {}", path);
                 return;
@@ -441,6 +446,35 @@ fn run_command(command: &Command) {
                 serial_println!("{}{}", entry.name, trailing_slash);
                 true
             });
+        }
+        Command::Cat(path) => {
+            // TODO: Abstract this into VFS layer
+            serial_println!("cat: {path:?}");
+            let mut lock = MOUNTED_ROOT_FILE_SYSTEM.lock();
+            let Some(reader) = lock.as_mut() else {
+                serial_println!("No filesystem mounted. Run 'mount <device_id>' first.");
+                return;
+            };
+            if !path.absolute {
+                serial_println!("Path must be absolute. Got {}", path);
+                return;
+            }
+
+            let Some(inode) = traverse_path(reader, path) else {
+                serial_println!("No such file or directory: {}", path);
+                return;
+            };
+
+            serial_println!("{path} has inode {inode:?}");
+            if !inode.is_file() {
+                serial_println!("Not a file");
+                return;
+            }
+
+            reader.iter_file_blocks(&inode, |blocks| {
+                serial_print!("{}", String::from_utf8_lossy(&blocks));
+            });
+            serial_println!();
         }
         Command::FATBIOS { device_id } => {
             let response = virtio::virtio_block_read(*device_id, 0, 1).wait_sleep();
