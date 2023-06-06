@@ -3,6 +3,8 @@ use core::fmt::Write;
 use lazy_static::lazy_static;
 use x86_64::instructions::port::{PortRead, PortWrite};
 
+use crate::ansiterm;
+
 /// Serial port that can be written to, but not read from. This is useful for
 /// printing to the host from the guest without having to worry about
 /// synchronization, disabling interrupts, locking, etc.
@@ -81,7 +83,7 @@ impl WriteOnlySerialPort {
         }
     }
 
-    fn write_str(&self, s: &str) {
+    fn write_str_bytes(&self, s: &str) {
         for byte in s.bytes() {
             self.write(byte);
         }
@@ -100,6 +102,13 @@ impl WriteOnlySerialPort {
     }
 }
 
+impl Write for WriteOnlySerialPort {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        self.write_str_bytes(s);
+        Ok(())
+    }
+}
+
 /// This type exists just so we can use the `Write` trait. Useful for use with
 /// the `write!` macro. We don't want to implement `Write` directly on
 /// `WriteOnlySerialPort` because we don't want to have to make a global mutable
@@ -108,14 +117,14 @@ pub(crate) struct SerialWriter();
 
 impl Write for SerialWriter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        SERIAL1.write_str(s);
+        SERIAL1.write_str_bytes(s);
         Ok(())
     }
 }
 
 lazy_static! {
     static ref SERIAL1: WriteOnlySerialPort = {
-        let serial_port = WriteOnlySerialPort::new();
+        let mut serial_port = WriteOnlySerialPort::new();
         serial_port.init();
 
         // When running in UEFI, the OVMF firmware prints a ton of crap
@@ -137,7 +146,11 @@ lazy_static! {
         // - `[0m` resets all styles and colors
         // - `[H` moves the cursor to the top left
         // - `[J` clears the screen from the cursor down
-        serial_port.write_str("\x1B[0m\x1B[H\x1B[J");
+        write!(serial_port, "{}{}{}",
+            ansiterm::CLEAR_FORMAT,
+            ansiterm::AnsiEscapeSequence::MoveCursorTopLeft,
+            ansiterm::AnsiEscapeSequence::ClearScreenFromCursorToEnd,
+        ).expect("Failed to clear serial port");
 
         serial_port
     };
@@ -195,7 +208,7 @@ pub(crate) fn serial1_write_byte(byte: u8) {
     SERIAL1.write(byte);
 }
 
-pub(crate) fn serial1_write_bytes(bytes: &[u8]) {
+pub(crate) fn _serial1_write_bytes(bytes: &[u8]) {
     for byte in bytes {
         serial1_write_byte(*byte);
     }

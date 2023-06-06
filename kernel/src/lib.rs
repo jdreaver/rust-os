@@ -31,6 +31,7 @@
 extern crate alloc;
 
 pub(crate) mod acpi;
+pub(crate) mod ansiterm;
 pub(crate) mod apic;
 pub(crate) mod barrier;
 pub(crate) mod boot_info;

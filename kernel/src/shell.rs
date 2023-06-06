@@ -8,7 +8,8 @@ use crate::hpet::Milliseconds;
 use crate::sync::SpinLock;
 use crate::vfs::FilePath;
 use crate::{
-    acpi, boot_info, fs, pci, sched, serial, serial_print, serial_println, tests, tick, virtio,
+    acpi, ansiterm, boot_info, fs, pci, sched, serial, serial_print, serial_println, tests, tick,
+    virtio,
 };
 
 static NEXT_COMMAND_BUFFER: SpinLock<ShellBuffer> = SpinLock::new(ShellBuffer::new());
@@ -46,7 +47,12 @@ impl ShellBuffer {
 
     fn redraw_buffer(&self) {
         reset_terminal_line();
-        serial_print!("ksh > ");
+        serial_print!(
+            "{}{}ksh > {}",
+            ansiterm::GREEN,
+            ansiterm::BOLD,
+            ansiterm::CLEAR_FORMAT
+        );
         for c in &self.buffer {
             serial::serial1_write_byte(*c);
         }
@@ -92,6 +98,16 @@ pub(crate) extern "C" fn run_serial_shell(_arg: *const ()) {
                     buffer.clear();
                     break;
                 }
+                ansiterm::ANSI_ESCAPE => {
+                    let left_bracket = serial::serial1_read_byte();
+                    if left_bracket != b'[' {
+                        serial_println!("invalid escape sequence: {}", left_bracket);
+                        break;
+                    }
+                    let escaped_char = serial::serial1_read_byte();
+                    serial_println!("\ngot ANSI escape char: {}", escaped_char);
+                    break;
+                }
                 _ => {
                     reset_terminal_line();
                     serial_println!("Don't know what to do with ASCII char: {c}");
@@ -103,8 +119,8 @@ pub(crate) extern "C" fn run_serial_shell(_arg: *const ()) {
 }
 
 fn reset_terminal_line() {
-    // Clears line (with ESC[2K) and returns cursor to start of line (with \r)
-    serial::serial1_write_bytes(b"\x1B[2K\r");
+    // Clears line and returns cursor to start of line
+    serial_print!("{}\r", ansiterm::AnsiEscapeSequence::ClearEntireLine);
 }
 
 #[derive(Debug)]
