@@ -1,3 +1,5 @@
+use alloc::string::String;
+
 use crate::InodeNumber;
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#linked-directories>
@@ -18,8 +20,8 @@ pub struct DirectoryBlockIterator<'a> {
     offset: usize,
 }
 
-impl<'a> Iterator for DirectoryBlockIterator<'a> {
-    type Item = DirectoryEntry<'a>;
+impl Iterator for DirectoryBlockIterator<'_> {
+    type Item = DirectoryEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.offset >= self.block.0.len() {
@@ -35,6 +37,7 @@ impl<'a> Iterator for DirectoryBlockIterator<'a> {
         let name_end = name_start + header.name_len as usize;
         let name_slice = &self.block.0[name_start..name_end];
         let name = core::str::from_utf8(name_slice).unwrap_or("<invalid UTF-8>");
+        let name = String::from(name);
 
         self.offset += header.rec_len as usize;
 
@@ -45,12 +48,12 @@ impl<'a> Iterator for DirectoryBlockIterator<'a> {
 }
 
 #[derive(Debug)]
-pub struct DirectoryEntry<'a> {
+pub struct DirectoryEntry {
     pub header: DirectoryEntryHeader,
-    pub name: &'a str,
+    pub name: String,
 }
 
-impl DirectoryEntry<'_> {
+impl DirectoryEntry {
     pub fn is_dir(&self) -> bool {
         self.header.file_type == DirectoryEntryFileType::Directory
     }

@@ -5,6 +5,7 @@ use crate::{
     OffsetBytes, Superblock, ROOT_DIRECTORY,
 };
 
+#[derive(Debug)]
 pub struct FilesystemReader<R> {
     superblock: Superblock,
     block_reader: R,
