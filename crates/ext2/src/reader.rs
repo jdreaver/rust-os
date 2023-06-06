@@ -67,9 +67,9 @@ impl<R: BlockReader> FilesystemReader<R> {
         (u64::from(inode.size_high) << 32) | u64::from(inode.size_low)
     }
 
-    pub fn iter_file_blocks<F>(&mut self, inode: &Inode, func: F)
+    pub fn iter_file_blocks<F>(&mut self, inode: &Inode, mut func: F)
     where
-        F: Fn(Vec<u8>),
+        F: FnMut(Vec<u8>),
     {
         let mut seen_size = 0;
         let total_size = self.inode_size(inode);
@@ -90,16 +90,18 @@ impl<R: BlockReader> FilesystemReader<R> {
         }
     }
 
-    pub fn iter_directory<F>(&mut self, inode: &Inode, func: F)
+    pub fn iter_directory<F>(&mut self, inode: &Inode, mut func: F)
     where
-        F: Fn(DirectoryEntry),
+        F: FnMut(DirectoryEntry) -> bool,
     {
         assert!(inode.is_dir());
 
         self.iter_file_blocks(inode, |block_buf| {
             let dir_block = DirectoryBlock(block_buf.as_slice());
             for dir_entry in dir_block.iter() {
-                func(dir_entry);
+                if !func(dir_entry) {
+                    break;
+                }
             }
         });
     }

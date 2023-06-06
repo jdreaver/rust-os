@@ -23,8 +23,8 @@ sudo chown "$user" "$mount_dir"
 
 # Populate some files
 echo "Hello, world!" > "$mount_dir/hello.txt"
-mkdir "$mount_dir/empty-dir"
-echo "Nested hello" > "$mount_dir/empty-dir/hello.txt"
+mkdir "$mount_dir/nested-dir"
+echo "Nested hello" > "$mount_dir/nested-dir/nested.txt"
 
 # Unmount
 sudo exa --tree -lahgnimuU "$mount_dir"

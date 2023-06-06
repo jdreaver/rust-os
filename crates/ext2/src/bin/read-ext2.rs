@@ -39,6 +39,7 @@ fn main() {
     println!("{:#X?}", root_inode);
     reader.iter_directory(&root_inode, |dir_entry| {
         println!("{:#X?}", dir_entry);
+        true
     });
 
     let hello_inode = reader.read_inode(ext2::InodeNumber(12)).expect("failed to find hello");

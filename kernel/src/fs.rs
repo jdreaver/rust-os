@@ -7,7 +7,7 @@ pub(crate) struct VirtioBlockReader {
 }
 
 impl VirtioBlockReader {
-    pub fn new(device_id: usize) -> Self {
+    pub(crate) fn new(device_id: usize) -> Self {
         Self { device_id }
     }
 }

@@ -52,6 +52,7 @@ pub(crate) mod strings;
 pub(crate) mod sync;
 pub(crate) mod tests;
 pub(crate) mod tick;
+pub(crate) mod vfs;
 pub(crate) mod virtio;
 
 pub fn start() -> ! {

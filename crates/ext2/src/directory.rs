@@ -50,6 +50,20 @@ pub struct DirectoryEntry<'a> {
     pub name: &'a str,
 }
 
+impl DirectoryEntry<'_> {
+    pub fn is_dir(&self) -> bool {
+        self.header.file_type == DirectoryEntryFileType::Directory
+    }
+
+    pub fn is_dot(&self) -> bool {
+        self.name == "."
+    }
+
+    pub fn is_dotdot(&self) -> bool {
+        self.name == ".."
+    }
+}
+
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#linked-directory-entry-structure>
 #[repr(C, packed)]
 #[derive(Debug)]
@@ -61,7 +75,7 @@ pub struct DirectoryEntryHeader {
 }
 
 #[repr(u8)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DirectoryEntryFileType {
     Unknown = 0,
     RegularFile = 1,

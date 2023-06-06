@@ -6,11 +6,15 @@ use uefi::table::{Runtime, SystemTable};
 
 use crate::hpet::Milliseconds;
 use crate::sync::SpinLock;
+use crate::vfs::FilePath;
 use crate::{
     acpi, boot_info, fs, pci, sched, serial, serial_print, serial_println, tests, tick, virtio,
 };
 
 static NEXT_COMMAND_BUFFER: SpinLock<ShellBuffer> = SpinLock::new(ShellBuffer::new());
+
+static MOUNTED_ROOT_FILE_SYSTEM: SpinLock<Option<ext2::FilesystemReader<fs::VirtioBlockReader>>> =
+    SpinLock::new(None);
 
 struct ShellBuffer {
     buffer: Vec<u8>,
@@ -113,6 +117,10 @@ enum Command {
     PrintACPI,
     RNG(u32),
     VirtIOBlock(VirtIOBlockCommand),
+    Mount {
+        device_id: usize,
+    },
+    Ls(FilePath),
     FATBIOS {
         device_id: usize,
     },
@@ -197,6 +205,14 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
                 None
             }
         },
+        "mount" => {
+            let device_id = parse_next_word(&mut words, "device ID", "mount <device_id>")?;
+            Some(Command::Mount { device_id })
+        }
+        "ls" => {
+            let path = parse_next_word(&mut words, "path", "ls <path>")?;
+            Some(Command::Ls(path))
+        }
         "fat" => match words.next() {
             Some("bios") => {
                 let device_id = parse_next_word(&mut words, "device ID", "fat bios <device_id>")?;
@@ -390,6 +406,42 @@ fn run_command(command: &Command) {
             };
             serial_println!("Got block ID: {id}");
         }
+        Command::Mount { device_id } => {
+            let reader = ext2::FilesystemReader::read(fs::VirtioBlockReader::new(*device_id))
+                .expect("failed to read EXT2 filesystem");
+            MOUNTED_ROOT_FILE_SYSTEM.lock().replace(reader);
+            serial_println!("Mounted ext2 filesystem from VirtIO block device {device_id}");
+        }
+        Command::Ls(path) => {
+            serial_println!("ls: {path:?}");
+            let mut lock = MOUNTED_ROOT_FILE_SYSTEM.lock();
+            let Some(reader) = lock.as_mut() else {
+                serial_println!("No filesystem mounted. Run 'mount <device_id>' first.");
+                return;
+            };
+            if !path.absolute {
+                serial_println!("Path must be absolute. Got {}", path);
+                return;
+            }
+
+            // TODO: Abstract this into VFS layer
+            let Some(inode) = traverse_path(reader, path) else {
+                serial_println!("No such file or directory: {}", path);
+                return;
+            };
+
+            serial_println!("{path} has inode {inode:?}");
+            if !inode.is_dir() {
+                serial_println!("Not a directory");
+                return;
+            }
+
+            reader.iter_directory(&inode, |entry| {
+                let trailing_slash = if entry.is_dir() { "/" } else { "" };
+                serial_println!("{}{}", entry.name, trailing_slash);
+                true
+            });
+        }
         Command::FATBIOS { device_id } => {
             let response = virtio::virtio_block_read(*device_id, 0, 1).wait_sleep();
             let virtio::VirtIOBlockResponse::Read{ ref data } = response else {
@@ -423,6 +475,7 @@ fn run_command(command: &Command) {
                         let inode = entry.header.inode;
                         let file_type = entry.header.file_type;
                         serial_println!("{} (inode: {inode:?}, type: {file_type:?})", entry.name);
+                        true
                     });
                 }
                 EXT2Command::CatInode { inode_number } => {
@@ -499,4 +552,30 @@ fn naive_nth_prime(n: usize) -> usize {
             }
         }
     }
+}
+
+// TODO: This should probably be in a VFS layer
+fn traverse_path<R: ext2::BlockReader>(
+    reader: &mut ext2::FilesystemReader<R>,
+    path: &FilePath,
+) -> Option<ext2::Inode> {
+    let mut inode = reader.read_root();
+    for component in &path.components {
+        let mut found_inode_number = None;
+        reader.iter_directory(&inode, |entry| {
+            if entry.name == component.as_str() {
+                found_inode_number.replace(entry.header.inode);
+                return false;
+            }
+            true
+        });
+        if let Some(found_inode_number) = found_inode_number {
+            inode = reader
+                .read_inode(found_inode_number)
+                .expect("ERROR: found inode {found_inode_number} but failed to read it");
+        } else {
+            return None;
+        }
+    }
+    Some(inode)
 }
