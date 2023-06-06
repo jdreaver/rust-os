@@ -54,6 +54,10 @@ pub struct DirectoryEntry {
 }
 
 impl DirectoryEntry {
+    pub fn is_file(&self) -> bool {
+        self.header.file_type == DirectoryEntryFileType::RegularFile
+    }
+
     pub fn is_dir(&self) -> bool {
         self.header.file_type == DirectoryEntryFileType::Directory
     }
