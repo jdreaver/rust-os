@@ -116,7 +116,7 @@ impl IOAPIC {
         IOAPICVersion::from(raw)
     }
 
-    /// See "3.2.4. 82093AA (IOAPIC) IOREDTBL[23:0]—I/O REDIRECTION TABLE REGISTERS"
+    /// See "3.2.4. 82093AA (IOAPIC) IOREDTBL\[23:0\]—I/O REDIRECTION TABLE REGISTERS"
     #[allow(dead_code)] // TODO: Remove once used
     fn read_ioredtbl(&self, entry: u8) -> IOAPICRedirectionTableRegister {
         // Intel IOAPIC only has 24 entries
@@ -126,7 +126,7 @@ impl IOAPIC {
         IOAPICRedirectionTableRegister::from(raw)
     }
 
-    /// See "3.2.4. 82093AA (IOAPIC) IOREDTBL[23:0]—I/O REDIRECTION TABLE REGISTERS"
+    /// See "3.2.4. 82093AA (IOAPIC) IOREDTBL\[23:0\]—I/O REDIRECTION TABLE REGISTERS"
     fn write_ioredtbl(&self, entry: u8, value: IOAPICRedirectionTableRegister) {
         // Intel IOAPIC only has 24 entries
         assert!(entry < 24, "Intel IOAPIC only has 24 entries!");
@@ -185,7 +185,7 @@ struct IOAPICVersion {
 const IOAPIC_REDIRECTION_TABLE_REGISTER_OFFSET: u8 = 0x10;
 
 #[bitfield(u64)]
-/// See "3.2.4. 82093AA (IOAPIC) IOREDTBL[23:0]—I/O REDIRECTION TABLE REGISTERS"
+/// See "3.2.4. 82093AA (IOAPIC) IOREDTBL\[23:0\]—I/O REDIRECTION TABLE REGISTERS"
 struct IOAPICRedirectionTableRegister {
     interrupt_vector: u8,
     #[bits(3)]
