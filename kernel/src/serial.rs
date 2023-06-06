@@ -5,12 +5,13 @@ use x86_64::instructions::port::{PortRead, PortWrite};
 
 use crate::ansiterm;
 
-/// Serial port that can be written to, but not read from. This is useful for
-/// printing to the host from the guest without having to worry about
-/// synchronization, disabling interrupts, locking, etc.
+/// Reads and writes to a serial port. See <https://wiki.osdev.org/Serial_Ports>
 ///
-/// See <https://wiki.osdev.org/Serial_Ports>
-struct WriteOnlySerialPort {
+/// Note that this doesn't do any sort of locking, so multiple writers may write
+/// concurrently. This is important so we can print inside of non-maskable
+/// exception handlers without worrying about deadlocks. Any desired locking
+/// should be done at a higher level.
+struct SerialPort {
     // data is technically read/write, but we only use it for writing
     data: u16,
     int_en: u16,
@@ -20,7 +21,7 @@ struct WriteOnlySerialPort {
     line_sts: u16,
 }
 
-impl WriteOnlySerialPort {
+impl SerialPort {
     const COM1_PORT: u16 = 0x3F8;
 
     const LINE_STATUS_DATA_READY: u8 = 1 << 0;
@@ -102,7 +103,7 @@ impl WriteOnlySerialPort {
     }
 }
 
-impl Write for WriteOnlySerialPort {
+impl Write for SerialPort {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         self.write_str_bytes(s);
         Ok(())
@@ -111,7 +112,7 @@ impl Write for WriteOnlySerialPort {
 
 /// This type exists just so we can use the `Write` trait. Useful for use with
 /// the `write!` macro. We don't want to implement `Write` directly on
-/// `WriteOnlySerialPort` because we don't want to have to make a global mutable
+/// `SerialPort` because we don't want to have to make a global mutable
 /// reference to it.
 pub(crate) struct SerialWriter();
 
@@ -123,8 +124,8 @@ impl Write for SerialWriter {
 }
 
 lazy_static! {
-    static ref SERIAL1: WriteOnlySerialPort = {
-        let mut serial_port = WriteOnlySerialPort::new();
+    static ref SERIAL1: SerialPort = {
+        let mut serial_port = SerialPort::new();
         serial_port.init();
 
         // When running in UEFI, the OVMF firmware prints a ton of crap
