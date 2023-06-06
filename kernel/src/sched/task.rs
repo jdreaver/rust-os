@@ -2,7 +2,6 @@ use alloc::sync::Arc;
 
 use crate::hpet::Milliseconds;
 use crate::sched::force_unlock_scheduler;
-use crate::serial_println;
 use crate::sync::{AtomicEnum, AtomicInt, WaitQueue};
 
 use super::schedcore::scheduler_lock;
@@ -156,7 +155,7 @@ pub(super) extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *cons
     let wait_queue = {
         let lock = scheduler_lock();
         let current_task = lock.current_task();
-        serial_println!(
+        log::info!(
             "task_setup: task {} {:?} task_fn returned, halting",
             current_task.name,
             current_task.id

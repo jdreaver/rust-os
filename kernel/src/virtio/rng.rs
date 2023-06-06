@@ -3,7 +3,6 @@ use bitflags::bitflags;
 
 use crate::interrupts::InterruptHandlerID;
 use crate::memory::PhysicalBuffer;
-use crate::serial_println;
 use crate::sync::{once_channel, OnceReceiver, OnceSender, SpinLock};
 
 use super::device::VirtIOInitializedDevice;
@@ -128,9 +127,9 @@ fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
     rng.virtqueue
         .process_new_entries(|used_entry, mut descriptor_chain, request| {
             let Some(request) = request else {
-            serial_println!("VirtIO RNG: no request for used entry: {used_entry:#x?}");
-            return;
-        };
+                log::warn!("VirtIO RNG: no request for used entry: {used_entry:#x?}");
+                return;
+            };
 
             let descriptor = descriptor_chain.next().expect("no descriptor in chain");
             assert!(

@@ -7,7 +7,7 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, Pag
 
 use crate::sched::is_kernel_guard_page;
 use crate::sync::SpinLock;
-use crate::{apic, gdt, sched, serial_println};
+use crate::{apic, gdt, sched};
 
 /// CPU exception interrupt vectors stop at 32.
 const FIRST_EXTERNAL_INTERRUPT_VECTOR: usize = 32;
@@ -147,8 +147,8 @@ pub(crate) fn install_interrupt(interrupt_id: InterruptHandlerID, handler: Inter
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
-    serial_println!("EXCEPTION: BREAKPOINT");
-    serial_println!("{stack_frame:#?}");
+    log::warn!("EXCEPTION: BREAKPOINT");
+    log::warn!("{stack_frame:#?}");
 }
 
 extern "x86-interrupt" fn page_fault_handler(
@@ -157,14 +157,14 @@ extern "x86-interrupt" fn page_fault_handler(
 ) {
     use x86_64::registers::control::Cr2;
 
-    serial_println!("EXCEPTION: PAGE FAULT");
+    log::error!("EXCEPTION: PAGE FAULT");
     let accessed_address = Cr2::read();
     if is_kernel_guard_page(accessed_address) {
-        serial_println!("KERNEL GUARD PAGE WAS ACCESSED, LIKELY A STACK OVERFLOW!!!");
+        log::error!("KERNEL GUARD PAGE WAS ACCESSED, LIKELY A STACK OVERFLOW!!!");
     }
-    serial_println!("Accessed Address (CR2): {:?}", accessed_address);
-    serial_println!("Error Code: {error_code:?}");
-    serial_println!("{stack_frame:#?}");
+    log::error!("Accessed Address (CR2): {:?}", accessed_address);
+    log::error!("Error Code: {error_code:?}");
+    log::error!("{stack_frame:#?}");
 
     loop {
         x86_64::instructions::hlt();
@@ -175,9 +175,9 @@ extern "x86-interrupt" fn general_protection_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: u64,
 ) {
-    serial_println!("EXCEPTION: GENERAL PROTECTION FAULT");
-    serial_println!("error_code: {error_code}");
-    serial_println!("{stack_frame:#?}");
+    log::error!("EXCEPTION: GENERAL PROTECTION FAULT");
+    log::error!("error_code: {error_code}");
+    log::error!("{stack_frame:#?}");
 }
 
 extern "x86-interrupt" fn double_fault_handler(

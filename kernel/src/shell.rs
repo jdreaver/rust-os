@@ -99,13 +99,7 @@ pub(crate) extern "C" fn run_serial_shell(_arg: *const ()) {
                     break;
                 }
                 ansiterm::ANSI_ESCAPE => {
-                    let left_bracket = serial::serial1_read_byte();
-                    if left_bracket != b'[' {
-                        serial_println!("invalid escape sequence: {}", left_bracket);
-                        break;
-                    }
-                    let escaped_char = serial::serial1_read_byte();
-                    serial_println!("\ngot ANSI escape char: {}", escaped_char);
+                    handle_ansi_escape_sequence();
                     break;
                 }
                 _ => {
@@ -121,6 +115,18 @@ pub(crate) extern "C" fn run_serial_shell(_arg: *const ()) {
 fn reset_terminal_line() {
     // Clears line and returns cursor to start of line
     serial_print!("{}\r", ansiterm::AnsiEscapeSequence::ClearEntireLine);
+}
+
+/// Handle ANSI escape sequences we care about. This isn't intended to be
+/// exhaustive.
+fn handle_ansi_escape_sequence() {
+    let left_bracket = serial::serial1_read_byte();
+    if left_bracket != b'[' {
+        serial_println!("invalid escape sequence: {}", left_bracket);
+        return;
+    }
+    let escaped_char = serial::serial1_read_byte();
+    serial_println!("\ngot ANSI escape char: {}", escaped_char);
 }
 
 #[derive(Debug)]
@@ -412,7 +418,7 @@ fn run_command(command: &Command) {
             let cell = virtio::virtio_block_read(*device_id, *sector, 2);
             let response = cell.wait_sleep();
             let virtio::VirtIOBlockResponse::Read{ ref data } = response else {
-                serial_println!("Unexpected response from block request: {response:x?}");
+                log::error!("Unexpected response from block request: {response:x?}");
                 return;
             };
             serial_println!("Got block data: {data:x?}");
@@ -422,7 +428,7 @@ fn run_command(command: &Command) {
             let cell = virtio::virtio_block_get_id(*device_id);
             let response = cell.wait_sleep();
             let virtio::VirtIOBlockResponse::GetID{ ref id } = response else {
-                serial_println!("Unexpected response from block request: {response:x?}");
+                log::error!("Unexpected response from block request: {response:x?}");
                 return;
             };
             serial_println!("Got block ID: {id}");
@@ -495,7 +501,7 @@ fn run_command(command: &Command) {
         Command::FATBIOS { device_id } => {
             let response = virtio::virtio_block_read(*device_id, 0, 1).wait_sleep();
             let virtio::VirtIOBlockResponse::Read{ ref data } = response else {
-                serial_println!("Unexpected response from block request: {response:x?}");
+                log::error!("Unexpected response from block request: {response:x?}");
                 return;
             };
             let bios_param_block: fat::BIOSParameterBlock =
@@ -548,7 +554,7 @@ fn run_command(command: &Command) {
         Command::Timer(ms) => {
             let inner_ms = *ms;
             tick::add_relative_timer(*ms, move || {
-                serial_println!("Timer that lasted {inner_ms} expired!");
+                log::info!("Timer that lasted {inner_ms} expired!");
             });
             serial_println!("Created a timer for {ms} from now");
         }

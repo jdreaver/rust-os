@@ -42,6 +42,7 @@ pub(crate) mod hpet;
 pub(crate) mod interrupts;
 pub(crate) mod ioapic;
 pub(crate) mod keyboard;
+pub(crate) mod logging;
 pub(crate) mod memory;
 pub(crate) mod pci;
 #[allow(dead_code)] // This could be its own crate
@@ -57,6 +58,8 @@ pub(crate) mod vfs;
 pub(crate) mod virtio;
 
 pub fn start() -> ! {
+    logging::init();
+
     gdt::init();
     interrupts::init_interrupts();
 
@@ -99,7 +102,7 @@ pub fn start() -> ! {
 }
 
 pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
-    serial_println!("PANIC: {info}");
+    log::error!("PANIC: {info}");
     hlt_loop()
 }
 

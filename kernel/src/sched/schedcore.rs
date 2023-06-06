@@ -6,7 +6,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use crate::acpi::ACPIInfo;
 use crate::hpet::Milliseconds;
 use crate::sync::{InitCell, SpinLock, SpinLockInterruptGuard};
-use crate::{apic, serial_println, tick};
+use crate::{apic, tick};
 
 use super::stack;
 use super::task::{
@@ -204,10 +204,10 @@ impl Scheduler {
         unsafe {
             if *prev_stack_ptr == next_stack_ptr {
                 // We're already running the next task, so just return.
-                serial_println!("WARNING: Tried to switch to the same task!");
+                log::warn!("Tried to switch to the same task!");
                 return;
             }
-            serial_println!(
+            log::info!(
                 "SCHEDULER: Switching from '{}' {:?} SP: {:x?} (@ {prev_stack_ptr:?}) to '{}' {:?} SP: {next_stack_ptr:x?}",
                 prev_task.name,
                 prev_task.id,

@@ -4,7 +4,7 @@ use x86_64::instructions::port::Port;
 
 use crate::interrupts::InterruptHandlerID;
 use crate::sync::SpinLock;
-use crate::{interrupts, ioapic, serial_println};
+use crate::{interrupts, ioapic};
 
 pub(crate) fn init_keyboard() {
     let interrupt_vector = interrupts::install_interrupt(1, keyboard_interrupt_handler);
@@ -33,9 +33,9 @@ fn keyboard_interrupt_handler(_vector: u8, _handler_id: InterruptHandlerID) {
         if let Some(key) = keyboard.process_keyevent(key_event) {
             match key {
                 DecodedKey::Unicode(character) => {
-                    serial_println!("FOUND UNICODE CHAR {character}");
+                    log::info!("FOUND UNICODE CHAR {character}");
                 }
-                DecodedKey::RawKey(key) => serial_println!("FOUND RAW CHAR {key:?}"),
+                DecodedKey::RawKey(key) => log::info!("FOUND RAW CHAR {key:?}"),
             }
         }
     }

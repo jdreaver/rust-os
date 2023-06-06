@@ -42,7 +42,9 @@ fn main() {
         true
     });
 
-    let hello_inode = reader.read_inode(ext2::InodeNumber(12)).expect("failed to find hello");
+    let hello_inode = reader
+        .read_inode(ext2::InodeNumber(12))
+        .expect("failed to find hello");
     println!("{:#X?}", hello_inode);
 
     print!("hello content: ");
