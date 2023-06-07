@@ -15,9 +15,6 @@ use crate::{
 
 static NEXT_COMMAND_BUFFER: SpinLock<ShellBuffer> = SpinLock::new(ShellBuffer::new());
 
-static MOUNTED_ROOT_FILE_SYSTEM: SpinLock<Option<Box<dyn vfs::FileSystem + Send>>> =
-    SpinLock::new(None);
-
 struct ShellBuffer {
     buffer: Vec<u8>,
 }
@@ -469,10 +466,10 @@ fn run_command(command: &Command) {
                     Box::new(fs::Sysfs)
                 }
             };
-            MOUNTED_ROOT_FILE_SYSTEM.lock().replace(filesystem);
+            vfs::mount_root_filesystem(filesystem);
         }
         Command::Unmount => {
-            MOUNTED_ROOT_FILE_SYSTEM.lock().take();
+            vfs::unmount_root_filesystem();
             serial_println!("Unmounted filesystem");
         }
         Command::Ls(path) => {
@@ -620,7 +617,7 @@ fn naive_nth_prime(n: usize) -> usize {
 }
 
 fn get_path_inode(path: &vfs::FilePath) -> Option<vfs::Inode> {
-    let mut lock = MOUNTED_ROOT_FILE_SYSTEM.lock();
+    let mut lock = vfs::root_filesystem_lock();
     let Some(filesystem) = lock.as_mut() else {
         serial_println!("No filesystem mounted. Run 'mount <device_id>' first.");
         return None;

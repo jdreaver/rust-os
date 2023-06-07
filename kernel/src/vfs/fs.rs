@@ -4,7 +4,24 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use crate::sync::{SpinLock, SpinLockGuard};
+
 use super::FilePath;
+
+static MOUNTED_ROOT_FILE_SYSTEM: SpinLock<Option<Box<dyn FileSystem + Send>>> = SpinLock::new(None);
+
+pub(crate) fn mount_root_filesystem(fs: Box<dyn FileSystem + Send>) {
+    MOUNTED_ROOT_FILE_SYSTEM.lock().replace(fs);
+}
+
+pub(crate) fn unmount_root_filesystem() {
+    MOUNTED_ROOT_FILE_SYSTEM.lock().take();
+}
+
+pub(crate) fn root_filesystem_lock(
+) -> SpinLockGuard<'static, Option<Box<dyn FileSystem + Send + 'static>>> {
+    MOUNTED_ROOT_FILE_SYSTEM.lock()
+}
 
 /// Top level VFS abstraction for an underlying filesystem.
 pub(crate) trait FileSystem {
