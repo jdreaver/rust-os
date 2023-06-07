@@ -93,9 +93,8 @@ make test
 
 - Filesystem
   - Don't require locking filesystem while iterating over file blocks and directories. Have a method that locks the block storage reader very briefly to submit the block request and then wait for the response. Then, once we have a response, lock for the next request, etc. Requires some redesign if the `iter_*` methods in `ext2`. Maybe we need explicit locking on the internal `block_reader`, or we just say that `block_reader` is never `&mut` so it forces it to use a SpinLock under the hood (is burying a spinlock like that dangerous?)
-  - VFS design:
-    - Have concrete structs for e.g. inode, superblock, direntry etc. Have a field that is a `dyn` pointer (via `Arc`?) back to an actual implementation to do something with the inode. Then we have a "witness" to what specific filesystem the inode is from.
-  - Abstract path traversal code, and do it in VFS (need an interface over ext2?)
+    - This is also probably a good use case for a Mutex and not a spin lock, since we could be waiting a while for disk IO.
+  - Instead of returning `Vec` for directories, consider returning an `impl Iterator` (except you probably can't do that with traits...)
   - Once VFS is implemented, add a sysfs with things like processes, pci devices, virtio devices, memory info, etc.
 - Serial port:
   - find a way to implement using `&mut` and locking without deadlocks from e.g. non-maskable interrupts, holding the lock in the shell while trying to debug print inside kernel code, etc.

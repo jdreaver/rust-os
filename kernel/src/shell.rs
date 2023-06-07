@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
@@ -9,12 +10,12 @@ use crate::sync::SpinLock;
 use crate::vfs::FilePath;
 use crate::{
     acpi, ansiterm, boot_info, fs, pci, sched, serial, serial_print, serial_println, tests, tick,
-    virtio,
+    vfs, virtio,
 };
 
 static NEXT_COMMAND_BUFFER: SpinLock<ShellBuffer> = SpinLock::new(ShellBuffer::new());
 
-static MOUNTED_ROOT_FILE_SYSTEM: SpinLock<Option<ext2::FilesystemReader<fs::VirtioBlockReader>>> =
+static MOUNTED_ROOT_FILE_SYSTEM: SpinLock<Option<Box<dyn vfs::FileSystem + Send>>> =
     SpinLock::new(None);
 
 struct ShellBuffer {
@@ -434,16 +435,18 @@ fn run_command(command: &Command) {
             serial_println!("Got block ID: {id}");
         }
         Command::Mount { device_id } => {
-            let reader = ext2::FilesystemReader::read(fs::VirtioBlockReader::new(*device_id))
-                .expect("failed to read EXT2 filesystem");
-            MOUNTED_ROOT_FILE_SYSTEM.lock().replace(reader);
+            let reader = fs::VirtioBlockReader::new(*device_id);
+            let filesystem = fs::EXT2FileSystem::read(reader);
+            MOUNTED_ROOT_FILE_SYSTEM
+                .lock()
+                .replace(Box::new(filesystem));
             serial_println!("Mounted ext2 filesystem from VirtIO block device {device_id}");
         }
         Command::Ls(path) => {
             // TODO: Abstract this into VFS layer
             serial_println!("ls: {path:?}");
             let mut lock = MOUNTED_ROOT_FILE_SYSTEM.lock();
-            let Some(reader) = lock.as_mut() else {
+            let Some(filesystem) = lock.as_mut() else {
                 serial_println!("No filesystem mounted. Run 'mount <device_id>' first.");
                 return;
             };
@@ -452,28 +455,31 @@ fn run_command(command: &Command) {
                 return;
             }
 
-            let Some(inode) = traverse_path(reader, path) else {
+            let Some(inode) = filesystem.traverse_path(path) else {
                 serial_println!("No such file or directory: {}", path);
                 return;
             };
 
             serial_println!("{path} has inode {inode:?}");
-            if !inode.is_dir() {
+            let vfs::InodeType::Directory(mut dir) = inode.inode_type else {
                 serial_println!("Not a directory");
                 return;
-            }
+            };
 
-            reader.iter_directory(&inode, |entry| {
-                let trailing_slash = if entry.is_dir() { "/" } else { "" };
-                serial_println!("{}{}", entry.name, trailing_slash);
-                true
+            dir.subdirectories().iter().for_each(|entry| {
+                let trailing_slash = if entry.entry_type() == vfs::DirectoryEntryType::Directory {
+                    "/"
+                } else {
+                    ""
+                };
+                serial_println!("{}{}", entry.name(), trailing_slash);
             });
         }
         Command::Cat(path) => {
             // TODO: Abstract this into VFS layer
             serial_println!("cat: {path:?}");
             let mut lock = MOUNTED_ROOT_FILE_SYSTEM.lock();
-            let Some(reader) = lock.as_mut() else {
+            let Some(filesystem) = lock.as_mut() else {
                 serial_println!("No filesystem mounted. Run 'mount <device_id>' first.");
                 return;
             };
@@ -482,21 +488,19 @@ fn run_command(command: &Command) {
                 return;
             }
 
-            let Some(inode) = traverse_path(reader, path) else {
+            let Some(inode) = filesystem.traverse_path(path) else {
                 serial_println!("No such file or directory: {}", path);
                 return;
             };
 
             serial_println!("{path} has inode {inode:?}");
-            if !inode.is_file() {
-                serial_println!("Not a file");
+            let vfs::InodeType::File(mut file) = inode.inode_type else {
+                serial_println!("Not a directory");
                 return;
-            }
+            };
 
-            reader.iter_file_blocks(&inode, |blocks| {
-                serial_print!("{}", String::from_utf8_lossy(&blocks));
-            });
-            serial_println!();
+            let bytes = file.read();
+            serial_println!("{}", String::from_utf8_lossy(&bytes));
         }
         Command::FATBIOS { device_id } => {
             let response = virtio::virtio_block_read(*device_id, 0, 1).wait_sleep();
@@ -608,30 +612,4 @@ fn naive_nth_prime(n: usize) -> usize {
             }
         }
     }
-}
-
-// TODO: This should probably be in a VFS layer
-fn traverse_path<R: ext2::BlockReader>(
-    reader: &mut ext2::FilesystemReader<R>,
-    path: &FilePath,
-) -> Option<ext2::Inode> {
-    let mut inode = reader.read_root();
-    for component in &path.components {
-        let mut found_inode_number = None;
-        reader.iter_directory(&inode, |entry| {
-            if entry.name == component.as_str() {
-                found_inode_number.replace(entry.header.inode);
-                return false;
-            }
-            true
-        });
-        if let Some(found_inode_number) = found_inode_number {
-            inode = reader
-                .read_inode(found_inode_number)
-                .expect("ERROR: found inode {found_inode_number} but failed to read it");
-        } else {
-            return None;
-        }
-    }
-    Some(inode)
 }

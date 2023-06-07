@@ -2,12 +2,12 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::any::Any;
 use core::fmt::Debug;
 
 use crate::sync::SpinLock;
 use crate::{vfs, virtio};
 
+/// VFS interface into an ext2 file system.
 #[derive(Debug)]
 pub(crate) struct EXT2FileSystem<R> {
     reader: Arc<SpinLock<ext2::FilesystemReader<R>>>,
@@ -64,73 +64,56 @@ pub(crate) struct EXT2DirectoryInode<R> {
 }
 
 impl<R: Debug + ext2::BlockReader + 'static> vfs::DirectoryInode for EXT2DirectoryInode<R> {
-    fn subdirectories(&mut self) -> Vec<vfs::DirectoryEntry> {
-        let mut entries: Vec<vfs::DirectoryEntry> = Vec::new();
+    fn subdirectories(&mut self) -> Vec<Box<dyn vfs::DirectoryEntry>> {
+        let mut entries: Vec<Box<dyn vfs::DirectoryEntry>> = Vec::new();
         self.reader
             .lock_disable_interrupts()
             .iter_directory(&self.inode, |entry| {
-                let name = &entry.name;
-                let name = String::from(name);
                 let reader = self.reader.clone();
-                let entry_type: vfs::DirectoryEntryType = if entry.is_file() {
-                    vfs::DirectoryEntryType::File(Box::new(EXT2FileDirectoryEntry {
-                        reader,
-                        entry,
-                    }))
-                } else if entry.is_dir() {
-                    vfs::DirectoryEntryType::Directory(Box::new(EXT2DirectoryDirectoryEntry {
-                        reader,
-                        entry,
-                    }))
-                } else {
-                    panic!("unexpected directory entry type: {:?}", entry);
-                };
-                entries.push(vfs::DirectoryEntry { name, entry_type });
+                entries.push(Box::new(EXT2DirectoryEntry { reader, entry }));
                 true
             });
         entries
-
-        // self.reader
-        //     .lock_disable_interrupts()
-        //     .iter_directory(&self.inode, |entry| { entries.push(entry); true });
-
-        // entries.into_iter().map(|entry| {
-        //         let name = &entry.name;
-        //         let name = String::from(name);
-        //         let entry_type = if entry.is_file() {
-        //             vfs::DirectoryEntryType::File(Box::new(EXT2FileDirectoryEntry {
-        //                 reader: self.reader.clone(),
-        //                 entry,
-        //             }))
-        //         } else if entry.is_dir() {
-        //             vfs::DirectoryEntryType::Directory(Box::new(EXT2DirectoryDirectoryEntry {
-        //                 reader: self.reader.clone(),
-        //                 entry,
-        //             }))
-        //         } else {
-        //             panic!("unexpected directory entry type: {:?}", entry);
-        //         };
-        //         vfs::DirectoryEntry { name, entry_type }
-        //     })
-        //     .collect()
     }
 }
 
 #[derive(Debug)]
-pub(crate) struct EXT2FileDirectoryEntry<R> {
+pub(crate) struct EXT2DirectoryEntry<R> {
     reader: Arc<SpinLock<ext2::FilesystemReader<R>>>,
     entry: ext2::DirectoryEntry,
 }
 
-impl<R: Debug + ext2::BlockReader> vfs::FileDirectoryEntry for EXT2FileDirectoryEntry<R> {}
+impl<R: Debug + ext2::BlockReader + 'static> vfs::DirectoryEntry for EXT2DirectoryEntry<R> {
+    fn name(&self) -> String {
+        String::from(&self.entry.name)
+    }
 
-#[derive(Debug)]
-pub(crate) struct EXT2DirectoryDirectoryEntry<R> {
-    reader: Arc<SpinLock<ext2::FilesystemReader<R>>>,
-    entry: ext2::DirectoryEntry,
+    fn entry_type(&self) -> vfs::DirectoryEntryType {
+        if self.entry.is_file() {
+            vfs::DirectoryEntryType::File
+        } else if self.entry.is_dir() {
+            vfs::DirectoryEntryType::Directory
+        } else {
+            panic!("unexpected directory entry type: {:?}", self.entry);
+        }
+    }
+
+    fn get_inode(&mut self) -> vfs::Inode {
+        let inode_number = self.entry.header.inode;
+        let Some(inode) = self.reader.lock_disable_interrupts().read_inode(inode_number) else {
+            panic!("couldn't read inode {inode_number:?} inside EXT2DiretoryEntry::get_inode");
+        };
+        let reader = self.reader.clone();
+        let inode_type = if inode.is_file() {
+            vfs::InodeType::File(Box::new(EXT2FileInode { reader, inode }))
+        } else if inode.is_dir() {
+            vfs::InodeType::Directory(Box::new(EXT2DirectoryInode { reader, inode }))
+        } else {
+            panic!("unexpected inode type: {:?}", inode);
+        };
+        vfs::Inode { inode_type }
+    }
 }
-
-impl<R: Debug + ext2::BlockReader> vfs::DirectoryDirectoryEntry for EXT2DirectoryDirectoryEntry<R> {}
 
 #[derive(Debug)]
 pub(crate) struct VirtioBlockReader {
