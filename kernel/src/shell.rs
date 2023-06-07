@@ -143,6 +143,7 @@ enum Command {
     Mount {
         device_id: usize,
     },
+    Unmount,
     Ls(FilePath),
     Cat(FilePath),
     FATBIOS {
@@ -233,6 +234,7 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
             let device_id = parse_next_word(&mut words, "device ID", "mount <device_id>")?;
             Some(Command::Mount { device_id })
         }
+        "umount" => Some(Command::Unmount),
         "ls" => {
             let path = parse_next_word(&mut words, "path", "ls <path>")?;
             Some(Command::Ls(path))
@@ -441,6 +443,10 @@ fn run_command(command: &Command) {
                 .lock()
                 .replace(Box::new(filesystem));
             serial_println!("Mounted ext2 filesystem from VirtIO block device {device_id}");
+        }
+        Command::Unmount => {
+            MOUNTED_ROOT_FILE_SYSTEM.lock().take();
+            serial_println!("Unmounted filesystem");
         }
         Command::Ls(path) => {
             // TODO: Abstract this into VFS layer
