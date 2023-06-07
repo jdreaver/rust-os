@@ -449,22 +449,8 @@ fn run_command(command: &Command) {
             serial_println!("Unmounted filesystem");
         }
         Command::Ls(path) => {
-            // TODO: Abstract this into VFS layer
             serial_println!("ls: {path:?}");
-            let mut lock = MOUNTED_ROOT_FILE_SYSTEM.lock();
-            let Some(filesystem) = lock.as_mut() else {
-                serial_println!("No filesystem mounted. Run 'mount <device_id>' first.");
-                return;
-            };
-            if !path.absolute {
-                serial_println!("Path must be absolute. Got {}", path);
-                return;
-            }
-
-            let Some(inode) = filesystem.traverse_path(path) else {
-                serial_println!("No such file or directory: {}", path);
-                return;
-            };
+            let Some(inode) = get_path_inode(path) else { return; };
 
             serial_println!("{path} has inode {inode:?}");
             let vfs::InodeType::Directory(mut dir) = inode.inode_type else {
@@ -482,22 +468,8 @@ fn run_command(command: &Command) {
             });
         }
         Command::Cat(path) => {
-            // TODO: Abstract this into VFS layer
             serial_println!("cat: {path:?}");
-            let mut lock = MOUNTED_ROOT_FILE_SYSTEM.lock();
-            let Some(filesystem) = lock.as_mut() else {
-                serial_println!("No filesystem mounted. Run 'mount <device_id>' first.");
-                return;
-            };
-            if !path.absolute {
-                serial_println!("Path must be absolute. Got {}", path);
-                return;
-            }
-
-            let Some(inode) = filesystem.traverse_path(path) else {
-                serial_println!("No such file or directory: {}", path);
-                return;
-            };
+            let Some(inode) = get_path_inode(path) else { return; };
 
             serial_println!("{path} has inode {inode:?}");
             let vfs::InodeType::File(mut file) = inode.inode_type else {
@@ -618,4 +590,22 @@ fn naive_nth_prime(n: usize) -> usize {
             }
         }
     }
+}
+
+fn get_path_inode(path: &vfs::FilePath) -> Option<vfs::Inode> {
+    let mut lock = MOUNTED_ROOT_FILE_SYSTEM.lock();
+    let Some(filesystem) = lock.as_mut() else {
+        serial_println!("No filesystem mounted. Run 'mount <device_id>' first.");
+        return None;
+    };
+    if !path.absolute {
+        serial_println!("Path must be absolute. Got {}", path);
+        return None;
+    }
+
+    let Some(inode) = filesystem.traverse_path(path) else {
+        serial_println!("No such file or directory: {}", path);
+        return None;
+    };
+    Some(inode)
 }
