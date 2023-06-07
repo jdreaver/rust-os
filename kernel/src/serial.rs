@@ -21,20 +21,21 @@ struct SerialPort {
     line_sts: u16,
 }
 
-impl SerialPort {
-    const COM1_PORT: u16 = 0x3F8;
+const COM1_PORT: u16 = 0x3F8;
+const COM2_PORT: u16 = 0x2F8;
 
+impl SerialPort {
     const LINE_STATUS_DATA_READY: u8 = 1 << 0;
     const LINE_STATUS_TRANSMITTER_EMPTY: u8 = 1 << 5;
 
-    const fn new() -> Self {
+    const fn new(com_port: u16) -> Self {
         Self {
-            data: Self::COM1_PORT,
-            int_en: Self::COM1_PORT + 1,
-            fifo_ctrl: Self::COM1_PORT + 2,
-            line_ctrl: Self::COM1_PORT + 3,
-            modem_ctrl: Self::COM1_PORT + 4,
-            line_sts: Self::COM1_PORT + 5,
+            data: com_port,
+            int_en: com_port + 1,
+            fifo_ctrl: com_port + 2,
+            line_ctrl: com_port + 3,
+            modem_ctrl: com_port + 4,
+            line_sts: com_port + 5,
         }
     }
 
@@ -123,38 +124,44 @@ impl Write for SerialWriter {
     }
 }
 
+fn init_serial_port(com_port: u16) -> SerialPort {
+    let mut serial_port = SerialPort::new(com_port);
+    serial_port.init();
+
+    // When running in UEFI, the OVMF firmware prints a ton of crap
+    // formatting characters to the serial port. This clears the screen
+    // before printing so we don't have to look at that. Here it is for
+    // posterity:
+    //
+    // [2J[01;01H[=3h[2J[01;01H[0m[35m[40m[0m[37m[40mBdsDxe: failed to load Boot0001 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0): Not Found
+    // BdsDxe: loading Boot0002 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+    // BdsDxe: starting Boot0002 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+    // [2J[01;01H[01;01H[2J[01;01H[01;01H
+    //
+    // TODO: Find a way to clear the serial port so qemu doesn't see that
+    // stuff in the first place.
+    //
+    // See https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797 for
+    // escape codes:
+    //
+    // - `[0m` resets all styles and colors
+    // - `[H` moves the cursor to the top left
+    // - `[J` clears the screen from the cursor down
+    write!(
+        serial_port,
+        "{}{}{}",
+        ansiterm::CLEAR_FORMAT,
+        ansiterm::AnsiEscapeSequence::MoveCursorTopLeft,
+        ansiterm::AnsiEscapeSequence::ClearScreenFromCursorToEnd,
+    )
+    .expect("Failed to clear serial port");
+
+    serial_port
+}
+
 lazy_static! {
-    static ref SERIAL1: SerialPort = {
-        let mut serial_port = SerialPort::new();
-        serial_port.init();
-
-        // When running in UEFI, the OVMF firmware prints a ton of crap
-        // formatting characters to the serial port. This clears the screen
-        // before printing so we don't have to look at that. Here it is for
-        // posterity:
-        //
-        // [2J[01;01H[=3h[2J[01;01H[0m[35m[40m[0m[37m[40mBdsDxe: failed to load Boot0001 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0): Not Found
-        // BdsDxe: loading Boot0002 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
-        // BdsDxe: starting Boot0002 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
-        // [2J[01;01H[01;01H[2J[01;01H[01;01H
-        //
-        // TODO: Find a way to clear the serial port so qemu doesn't see that
-        // stuff in the first place.
-        //
-        // See https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797 for
-        // escape codes:
-        //
-        // - `[0m` resets all styles and colors
-        // - `[H` moves the cursor to the top left
-        // - `[J` clears the screen from the cursor down
-        write!(serial_port, "{}{}{}",
-            ansiterm::CLEAR_FORMAT,
-            ansiterm::AnsiEscapeSequence::MoveCursorTopLeft,
-            ansiterm::AnsiEscapeSequence::ClearScreenFromCursorToEnd,
-        ).expect("Failed to clear serial port");
-
-        serial_port
-    };
+    static ref SERIAL1: SerialPort = init_serial_port(COM1_PORT);
+    static ref SERIAL2: SerialPort = init_serial_port(COM2_PORT);
 }
 
 /// Fetch the global serial writer for use in `write!` macros.

@@ -88,6 +88,7 @@
 
           # For emulation
           qemu
+          screen # For serial ports
 
           # Build
           xorriso

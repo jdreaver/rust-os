@@ -50,7 +50,7 @@ GRAPHICS=off
 ifeq ($(GRAPHICS),on)
   $(info QEMU graphics are enabled)
   QEMU_COMMON_ARGS += -vga virtio # More modern, better performance than default -vga std
-  QEMU_COMMON_ARGS += -serial stdio # Add serial output to terminal
+  QEMU_COMMON_ARGS += -serial stdio # Send serial output to terminal
 else
   $(info QEMU graphics are disabled)
   QEMU_COMMON_ARGS += -nographic
