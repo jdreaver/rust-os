@@ -12,7 +12,7 @@ pub struct FilesystemReader<R> {
 }
 
 impl<R: BlockReader> FilesystemReader<R> {
-    pub fn read(mut block_reader: R) -> Option<Self> {
+    pub fn read(block_reader: R) -> Option<Self> {
         let superblock: Superblock = block_reader.read_bytes(Superblock::OFFSET_BYTES);
         if !superblock.magic_valid() {
             return None;
@@ -110,10 +110,13 @@ impl<R: BlockReader> FilesystemReader<R> {
 
 /// Something that knows how to read blocks from the disk backing the
 /// filesystem.
+///
+/// Note: we use `&self` and not `&mut self` on these methods. It is assumed
+/// that the block reader is using some form of locking.
 pub trait BlockReader {
-    fn read_num_bytes(&mut self, addr: OffsetBytes, num_bytes: usize) -> Vec<u8>;
+    fn read_num_bytes(&self, addr: OffsetBytes, num_bytes: usize) -> Vec<u8>;
 
-    fn read_bytes<T>(&mut self, addr: OffsetBytes) -> T {
+    fn read_bytes<T>(&self, addr: OffsetBytes) -> T {
         let buf = self.read_num_bytes(addr, core::mem::size_of::<T>());
         unsafe { buf.as_ptr().cast::<T>().read() }
     }

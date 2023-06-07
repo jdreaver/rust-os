@@ -4,7 +4,7 @@ use std::os::unix::prelude::FileExt;
 pub struct FileBlockReader(File);
 
 impl ext2::BlockReader for FileBlockReader {
-    fn read_num_bytes(&mut self, addr: ext2::OffsetBytes, num_bytes: usize) -> Vec<u8> {
+    fn read_num_bytes(&self, addr: ext2::OffsetBytes, num_bytes: usize) -> Vec<u8> {
         let mut buf = vec![0; num_bytes];
         self.0
             .read_exact_at(&mut buf, addr.0)

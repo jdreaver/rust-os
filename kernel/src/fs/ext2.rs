@@ -127,7 +127,7 @@ impl VirtioBlockReader {
 }
 
 impl ext2::BlockReader for VirtioBlockReader {
-    fn read_num_bytes(&mut self, addr: ext2::OffsetBytes, num_bytes: usize) -> Vec<u8> {
+    fn read_num_bytes(&self, addr: ext2::OffsetBytes, num_bytes: usize) -> Vec<u8> {
         let sector = addr.0 / u64::from(virtio::VIRTIO_BLOCK_SECTOR_SIZE_BYTES);
         let sector_offset = addr.0 as usize % virtio::VIRTIO_BLOCK_SECTOR_SIZE_BYTES as usize;
 
