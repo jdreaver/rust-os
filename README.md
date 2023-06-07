@@ -93,8 +93,11 @@ make test
 
 - Filesystem
   - Features to add before working on abstractions (so we don't accidentally trapdoor into a design that makes them harder)
+    - Nested mountpoints, e.g. mount ext2 at root and then sysfs at `/sys`
+      - Add mountpoint argument to `mount` and ensure parent directory exists (or mountpoint is `/`)
+      - How do we ensure that when we do `ls /` we see `/sys`?
     - Writes! New files, overwriting files, etc.
-    - Sysfs with things like processes, pci devices, virtio devices, memory info, etc.
+  - Sysfs ideas: pci devices, virtio devices, memory info
   - Instead of returning `Vec` for directories, consider returning an `impl Iterator` (except you probably can't do that with traits...)
 - Serial port:
   - find a way to implement using `&mut` and locking without deadlocks from e.g. non-maskable interrupts, holding the lock in the shell while trying to debug print inside kernel code, etc.

@@ -140,9 +140,7 @@ enum Command {
     PrintACPI,
     RNG(u32),
     VirtIOBlock(VirtIOBlockCommand),
-    Mount {
-        device_id: usize,
-    },
+    Mount(MountTarget),
     Unmount,
     Ls(FilePath),
     Cat(FilePath),
@@ -163,6 +161,12 @@ enum VirtIOBlockCommand {
     List,
     Read { device_id: usize, sector: u64 },
     ID { device_id: usize },
+}
+
+#[derive(Debug)]
+enum MountTarget {
+    Device { device_id: usize },
+    Sysfs,
 }
 
 #[derive(Debug)]
@@ -231,8 +235,18 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
             }
         },
         "mount" => {
-            let device_id = parse_next_word(&mut words, "device ID", "mount <device_id>")?;
-            Some(Command::Mount { device_id })
+            let usage = "mount <device_id> | sysfs";
+            match words.next() {
+                Some("sysfs") => Some(Command::Mount(MountTarget::Sysfs)),
+                Some(device_id_str) => {
+                    let device_id = parse_word(device_id_str, "device ID")?;
+                    Some(Command::Mount(MountTarget::Device { device_id }))
+                }
+                None => {
+                    serial_println!("Usage: {usage}");
+                    None
+                }
+            }
         }
         "umount" => Some(Command::Unmount),
         "ls" => {
@@ -335,21 +349,26 @@ where
     T: core::str::FromStr + fmt::Display,
     T::Err: fmt::Display,
 {
-    let val = words.next().and_then(|word| {
-        let parsed = word.parse::<T>();
-        match parsed {
-            Ok(parsed) => Some(parsed),
-            Err(e) => {
-                serial_println!("Invalid {name}: {word}, error: {e}");
-                None
-            }
-        }
-    });
-
+    let val = words.next().and_then(|word| parse_word(word, name));
     if val.is_none() {
         serial_println!("Usage: {usage_msg}");
     }
     val
+}
+
+fn parse_word<T>(word: &str, name: &str) -> Option<T>
+where
+    T: core::str::FromStr + fmt::Display,
+    T::Err: fmt::Display,
+{
+    let parsed = word.parse::<T>();
+    match parsed {
+        Ok(parsed) => Some(parsed),
+        Err(e) => {
+            serial_println!("Invalid {name}: {word}, error: {e}");
+            None
+        }
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -436,13 +455,21 @@ fn run_command(command: &Command) {
             };
             serial_println!("Got block ID: {id}");
         }
-        Command::Mount { device_id } => {
-            let reader = fs::VirtioBlockReader::new(*device_id);
-            let filesystem = fs::EXT2FileSystem::read(reader);
-            MOUNTED_ROOT_FILE_SYSTEM
-                .lock()
-                .replace(Box::new(filesystem));
-            serial_println!("Mounted ext2 filesystem from VirtIO block device {device_id}");
+        Command::Mount(target) => {
+            let filesystem: Box<dyn vfs::FileSystem + Send + 'static> = match target {
+                MountTarget::Device { device_id } => {
+                    serial_println!(
+                        "Mounting ext2 filesystem from VirtIO block device {device_id}"
+                    );
+                    let reader = fs::VirtioBlockReader::new(*device_id);
+                    Box::new(fs::EXT2FileSystem::read(reader))
+                }
+                MountTarget::Sysfs => {
+                    serial_println!("Mounting sysfs filesystem");
+                    Box::new(fs::Sysfs)
+                }
+            };
+            MOUNTED_ROOT_FILE_SYSTEM.lock().replace(filesystem);
         }
         Command::Unmount => {
             MOUNTED_ROOT_FILE_SYSTEM.lock().take();

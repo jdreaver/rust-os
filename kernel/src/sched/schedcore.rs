@@ -116,7 +116,7 @@ impl Scheduler {
         id
     }
 
-    fn get_task(&self, id: TaskId) -> Option<&Task> {
+    pub(crate) fn get_task(&self, id: TaskId) -> Option<&Task> {
         self.tasks.get(&id)
     }
 
@@ -318,6 +318,12 @@ impl Scheduler {
     pub(crate) fn go_to_sleep(&mut self) {
         self.go_to_sleep_no_run_scheduler();
         self.run_scheduler();
+    }
+
+    pub(crate) fn task_ids(&self) -> Vec<TaskId> {
+        let mut ids: Vec<TaskId> = self.tasks.keys().copied().collect();
+        ids.sort();
+        ids
     }
 }
 

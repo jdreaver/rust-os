@@ -24,6 +24,12 @@ pub(crate) struct Task {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct TaskId(pub(super) u32);
 
+impl From<TaskId> for u32 {
+    fn from(task_id: TaskId) -> Self {
+        task_id.0
+    }
+}
+
 /// Function to run when starting a kernel task.
 ///
 /// We use the C calling convention because I don't trust the unspecified Rust
