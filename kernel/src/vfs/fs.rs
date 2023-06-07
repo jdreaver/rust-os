@@ -44,6 +44,8 @@ pub(crate) trait FileInode: Debug {
 }
 
 pub(crate) trait DirectoryInode: Debug {
+    // TODO: Return an iterator instead of a Vec (probably a dyn for some
+    // iterator type to avoid an impl in the return position).
     fn subdirectories(&mut self) -> Vec<Box<dyn DirectoryEntry>>;
 }
 
