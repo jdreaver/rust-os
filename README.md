@@ -97,6 +97,7 @@ make test
       - Add mountpoint argument to `mount` and ensure parent directory exists (or mountpoint is `/`)
       - How do we ensure that when we do `ls /` we see `/sys`?
     - Writes! New files, overwriting files, etc.
+      - See "CHAPTER 18: The Ext2 and Ext3 Filesystems" in "Understanding the Linux Kernel - Bovet (3rd ed, 2005)"
   - Sysfs ideas: pci devices, virtio devices, memory info
   - Instead of returning `Vec` for directories, consider returning an `impl Iterator` (except you probably can't do that with traits...)
 - Serial port:
@@ -433,6 +434,7 @@ ext2:
 - <https://www.nongnu.org/ext2-doc/ext2.html>
 - <https://en.wikipedia.org/wiki/Ext2>
 - <https://git.kernel.org/pub/scm/utils/util-linux/util-linux.git/tree/libblkid/src/superblocks/ext.c>
+- "CHAPTER 18: The Ext2 and Ext3 Filesystems" in "Understanding the Linux Kernel - Bovet (3rd ed, 2005)"
 
 Linux block devices:
 - <https://linux-kernel-labs.github.io/refs/heads/master/labs/block_device_drivers.html>
