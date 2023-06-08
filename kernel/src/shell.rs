@@ -553,7 +553,7 @@ fn run_command(command: &Command) {
                     serial_println!("{:#x?}", inode);
                     serial_println!("Reading inode...");
                     reader.iter_file_blocks(&inode, |blocks| {
-                        serial_print!("{}", String::from_utf8_lossy(&blocks));
+                        serial_print!("{}", String::from_utf8_lossy(blocks));
                     });
                 }
             }

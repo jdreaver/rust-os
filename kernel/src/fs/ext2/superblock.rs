@@ -1,9 +1,10 @@
 use core::fmt;
-use core::ops::{Add, Mul};
+use core::ops::Add;
 
 use bitflags::bitflags;
 
-use super::block_group::InodeTableBlockAddress;
+use crate::vfs::{BlockIndex, BlockSize};
+
 use super::strings::CStringBytes;
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#superblock>
@@ -73,7 +74,8 @@ impl Superblock {
     /// The superblock is always located at byte offset 1024 from the beginning of
     /// the file, block device or partition formatted with Ext2 and later variants
     /// (Ext3, Ext4).
-    pub(crate) const OFFSET_BYTES: OffsetBytes = OffsetBytes(1024);
+    pub(crate) const SUPERBLOCK_BLOCK_SIZE: BlockSize = BlockSize::new(1024);
+    pub(crate) const SUPERBLOCK_BLOCK_INDEX: BlockIndex = BlockIndex::new(1);
 
     /// 16bit value identifying the file system as Ext2. The value is currently
     /// fixed to EXT2_SUPER_MAGIC of value 0xEF53.
@@ -84,7 +86,8 @@ impl Superblock {
         self.magic == Self::MAGIC
     }
 
-    /// The block size is computed using this 32bit value as the number of bits to shift left the value 1024. This value may only be non-negative.
+    /// The block size is computed using this 32bit value as the number of bits
+    /// to shift left the value 1024. This value may only be non-negative.
     ///
     /// ```text
     /// block size = 1024 << s_log_block_size;
@@ -92,21 +95,13 @@ impl Superblock {
     ///
     /// Common block sizes include 1KiB, 2KiB, 4KiB and 8Kib.
     pub(crate) fn block_size(&self) -> BlockSize {
-        BlockSize(1024 << self.log_block_size)
-    }
-
-    pub(crate) fn block_address_bytes(&self, block_address: BlockAddress) -> OffsetBytes {
-        block_address * self.block_size()
+        BlockSize::from(1024 << self.log_block_size)
     }
 
     /// The block descriptor table is usually right after the superblock, but
     /// the location is `first_data_block + 1`.
-    pub(crate) fn block_descriptor_table_offset(&self) -> OffsetBytes {
-        self.block_address_bytes(self.first_data_block + 1)
-    }
-
-    pub(crate) fn block_descriptor_offset(&self, block_group: BlockGroupIndex) -> OffsetBytes {
-        self.block_descriptor_table_offset() + OffsetBytes(u64::from(block_group.0) * 32)
+    pub(crate) fn block_descriptor_table_start_block(&self) -> BlockIndex {
+        BlockIndex::from(u64::from(self.first_data_block.0) + 1)
     }
 
     pub(crate) fn num_block_groups(&self) -> usize {
@@ -127,15 +122,12 @@ impl Superblock {
     }
 
     /// See <https://www.nongnu.org/ext2-doc/ext2.html#inode-table>
-    pub(crate) fn inode_offset(
-        &self,
-        inode_table_address: InodeTableBlockAddress,
-        local_inode_index: LocalInodeIndex,
-    ) -> OffsetBytes {
-        let inode_table_offset = self.block_address_bytes(inode_table_address.0);
-        let relative_offset =
-            OffsetBytes(u64::from(self.inode_size) * u64::from(local_inode_index.0));
-        inode_table_offset + relative_offset
+    pub(crate) fn inode_offset(&self, local_inode_index: LocalInodeIndex) -> OffsetBytes {
+        OffsetBytes(u64::from(self.inode_size) * u64::from(local_inode_index.0))
+    }
+
+    pub(crate) fn inode_table_num_blocks(&self) -> usize {
+        (self.inodes_per_group as usize * self.inode_size as usize) / usize::from(self.block_size())
     }
 }
 
@@ -151,18 +143,6 @@ impl Add<u32> for BlockAddress {
         Self(self.0 + rhs)
     }
 }
-
-impl Mul<BlockSize> for BlockAddress {
-    type Output = OffsetBytes;
-
-    fn mul(self, rhs: BlockSize) -> Self::Output {
-        OffsetBytes(u64::from(self.0) * u64::from(rhs.0))
-    }
-}
-
-/// Size of a block in bytes.
-#[derive(Debug, Copy, Clone)]
-pub(crate) struct BlockSize(pub(crate) u32);
 
 /// Address in bytes from the start of the disk.
 #[derive(Debug, Copy, Clone)]

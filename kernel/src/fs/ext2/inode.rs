@@ -6,7 +6,7 @@ use super::BlockAddress;
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#inode-table>
 #[repr(C, packed)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Inode {
     pub(crate) mode: InodeMode,
     pub(crate) uid: u16,

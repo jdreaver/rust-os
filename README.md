@@ -91,9 +91,12 @@ make test
 
 ## TODO
 
+- Fix physical memory allocator giving out memory at address 0 because limine memory map starts at 0x1000
+  - I think we should explicitly only use memory that limine says is free. We are currently just marking reserved memory, but maybe we should instead mark all memory as reserved and only mark free memory.
 - Filesystem
-  - Rename `BlockReader` to `BlockDevice` and have it explicitly work in sectors. This is especially important for writes; we need the whole sector present to do a write.
-    - Handling per byte offsets can be done in convenience methods, or in the ext2 code.
+  - Don't load entire inode table. Currently it loads 512 blocks! Just load the necessary block.
+  - Rename `BlockReader` to `BlockDevice`
+  - Move `block.rs` to top-level, not in VFS
   - Features to add before working on abstractions (so we don't accidentally trapdoor into a design that makes them harder)
     - Nested mountpoints, e.g. mount ext2 at root and then sysfs at `/sys`
       - Add mountpoint argument to `mount` and ensure parent directory exists (or mountpoint is `/`)
