@@ -65,10 +65,23 @@ pub fn start() -> ! {
     interrupts::init_interrupts();
 
     let boot_info_data = boot_info::boot_info();
+
+    // KLUDGE: Limine just doesn't report on memory below 0x1000, so we
+    // explicitly mark it as reserved. TODO: Perhaps instead of only reserving
+    // reserved regions, we should assume all memory is reserved and instead
+    // explicitly free the regions limine says are free.
+    let make_memory_map = || {
+        core::iter::once(bitmap_alloc::MemoryRegion {
+            start_address: 0,
+            len_bytes: 0x1000,
+            free: false,
+        }).chain(boot_info::limine_memory_regions())
+    };
+
     unsafe {
         memory::init(
             boot_info_data.higher_half_direct_map_offset,
-            boot_info::limine_memory_regions,
+            make_memory_map,
         );
     };
     heap::init().expect("failed to initialize heap");

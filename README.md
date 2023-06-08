@@ -91,8 +91,8 @@ make test
 
 ## TODO
 
-- Fix physical memory allocator giving out memory at address 0 because limine memory map starts at 0x1000
-  - I think we should explicitly only use memory that limine says is free. We are currently just marking reserved memory, but maybe we should instead mark all memory as reserved and only mark free memory.
+- BUG: Fix physical memory allocator giving out memory at address 0. I think we are overwriting the bitmap itself somehow. Are we not properly reserving the bitmap data itself?
+  - I think we are straight up not marking the bitmap memory as used in bootstrap.rs!
 - Filesystem
   - Don't load entire inode table. Currently it loads 512 blocks! Just load the necessary block.
   - Rename `BlockReader` to `BlockDevice`
