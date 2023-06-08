@@ -6,12 +6,14 @@ use super::block_group::{BlockGroupDescriptor, InodeBitmap};
 use super::directory::{DirectoryBlock, DirectoryEntry};
 use super::inode::Inode;
 use super::superblock::{InodeNumber, Superblock, ROOT_DIRECTORY};
+use super::BlockGroupIndex;
 
 /// In-memory representation if ext2 file system, and main point of interaction
 /// with file system.
 #[derive(Debug)]
 pub(crate) struct FileSystem<R> {
     superblock: Superblock,
+    block_group_descriptors: Vec<BlockGroupDescriptor>,
     block_reader: R,
 }
 
@@ -22,8 +24,18 @@ impl<R: vfs::BlockReader> FileSystem<R> {
             return None;
         }
 
+        let num_block_groups = superblock.num_block_groups();
+        let block_group_descriptors = (0..num_block_groups as u32)
+            .map(|i| {
+                let block_group_index = BlockGroupIndex(i);
+                let block_group_offset = superblock.block_descriptor_offset(block_group_index);
+                block_reader.read_bytes(block_group_offset.0)
+            })
+            .collect();
+
         Some(Self {
             superblock,
+            block_group_descriptors,
             block_reader,
         })
     }
@@ -39,9 +51,9 @@ impl<R: vfs::BlockReader> FileSystem<R> {
 
     pub(crate) fn read_inode(&mut self, inode_number: InodeNumber) -> Option<Inode> {
         let (block_group_index, local_inode_index) = self.superblock.inode_location(inode_number);
-        let block_group_offset = self.superblock.block_descriptor_offset(block_group_index);
-        let block_group_descriptor: BlockGroupDescriptor =
-            self.block_reader.read_bytes(block_group_offset.0);
+        let block_group_descriptor = self
+            .block_group_descriptors
+            .get(block_group_index.0 as usize)?;
 
         let inode_bitmap_block_address = block_group_descriptor.inode_bitmap;
         let inode_bitmap_offset = self

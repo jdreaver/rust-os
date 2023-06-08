@@ -92,6 +92,8 @@ make test
 ## TODO
 
 - Filesystem
+  - Rename `BlockReader` to `BlockDevice` and have it explicitly work in sectors. This is especially important for writes; we need the whole sector present to do a write.
+    - Handling per byte offsets can be done in convenience methods, or in the ext2 code.
   - Features to add before working on abstractions (so we don't accidentally trapdoor into a design that makes them harder)
     - Nested mountpoints, e.g. mount ext2 at root and then sysfs at `/sys`
       - Add mountpoint argument to `mount` and ensure parent directory exists (or mountpoint is `/`)
