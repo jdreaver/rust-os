@@ -21,7 +21,7 @@ pub(crate) struct FileSystem<R> {
     block_reader: R,
 }
 
-impl<R: vfs::BlockReader> FileSystem<R> {
+impl<R: vfs::BlockDevice> FileSystem<R> {
     pub(crate) fn read(block_reader: R) -> Option<Self> {
         let superblock_block = block_reader.read_blocks(
             Superblock::SUPERBLOCK_BLOCK_SIZE,

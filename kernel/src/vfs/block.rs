@@ -4,15 +4,14 @@ use alloc::vec::Vec;
 
 use crate::virtio;
 
-/// Something that knows how to read blocks from the disk backing the
-/// filesystem.
+/// Wrapper around a block device driver.
 ///
 /// Note: we use `&self` and not `&mut self` on these methods. It is assumed
-/// that the block reader is using some form of locking.
+/// some form of lock is wrapping this.
 ///
 /// TODO: This should be in a dedicated block layer (maybe with caching), not in
 /// the VFS.
-pub(crate) trait BlockReader {
+pub(crate) trait BlockDevice {
     fn device_block_size(&self) -> BlockSize;
 
     /// Number of _device_ blocks to read, using the device's block size.
@@ -145,7 +144,7 @@ impl VirtioBlockReader {
     }
 }
 
-impl BlockReader for VirtioBlockReader {
+impl BlockDevice for VirtioBlockReader {
     fn device_block_size(&self) -> BlockSize {
         BlockSize::try_from(virtio::VIRTIO_BLOCK_SECTOR_SIZE_BYTES as u16)
             .expect("invalid virtio block size")
