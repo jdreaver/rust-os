@@ -35,7 +35,8 @@ impl<R: vfs::BlockReader> FileSystem<R> {
         let block_size = superblock.block_size();
 
         let num_block_groups = superblock.num_block_groups();
-        let num_descriptor_blocks = num_block_groups.div_ceil(superblock.block_size().into());
+        let num_descriptor_blocks =
+            num_block_groups.div_ceil(usize::from(u16::from(superblock.block_size())));
         let descriptor_block_start = superblock.block_descriptor_table_start_block();
         let block_group_descriptors_blocks =
             block_reader.read_blocks(block_size, descriptor_block_start, num_descriptor_blocks);
@@ -81,16 +82,13 @@ impl<R: vfs::BlockReader> FileSystem<R> {
             return None;
         }
 
-        let inode_table_block_address =
-            vfs::BlockIndex::from(u64::from(block_group_descriptor.inode_table.0 .0));
-        let inode_table_num_blocks = self.superblock().inode_table_num_blocks();
-        let inode_table_blocks = self.block_reader.read_blocks(
-            self.block_size,
-            inode_table_block_address,
-            inode_table_num_blocks,
-        );
-        let inode_offset = self.superblock().inode_offset(local_inode_index);
-        let inode: &Inode = inode_table_blocks.interpret_bytes(inode_offset.0 as usize);
+        let (inode_block_index, inode_offset) = self
+            .superblock()
+            .inode_block_and_offset(block_group_descriptor.inode_table, local_inode_index);
+        let inode_block = self
+            .block_reader
+            .read_blocks(self.block_size, inode_block_index, 1);
+        let inode: &Inode = inode_block.interpret_bytes(inode_offset.0 as usize);
         Some(inode.clone())
     }
 

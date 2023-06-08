@@ -92,7 +92,6 @@ make test
 ## TODO
 
 - Filesystem
-  - Don't load entire inode table. Currently it loads 512 blocks! Just load the necessary block.
   - Rename `BlockReader` to `BlockDevice`
   - Move `block.rs` to top-level, not in VFS
   - Features to add before working on abstractions (so we don't accidentally trapdoor into a design that makes them harder)

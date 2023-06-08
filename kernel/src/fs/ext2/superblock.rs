@@ -5,6 +5,7 @@ use bitflags::bitflags;
 
 use crate::vfs::{BlockIndex, BlockSize};
 
+use super::block_group::InodeTableBlockAddress;
 use super::strings::CStringBytes;
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#superblock>
@@ -122,12 +123,20 @@ impl Superblock {
     }
 
     /// See <https://www.nongnu.org/ext2-doc/ext2.html#inode-table>
-    pub(crate) fn inode_offset(&self, local_inode_index: LocalInodeIndex) -> OffsetBytes {
-        OffsetBytes(u64::from(self.inode_size) * u64::from(local_inode_index.0))
-    }
-
-    pub(crate) fn inode_table_num_blocks(&self) -> usize {
-        (self.inodes_per_group as usize * self.inode_size as usize) / usize::from(self.block_size())
+    ///
+    /// Returns the block containing the inode and the offset of the inode
+    /// within that blocks.
+    pub(crate) fn inode_block_and_offset(
+        &self,
+        table_address: InodeTableBlockAddress,
+        local_inode_index: LocalInodeIndex,
+    ) -> (BlockIndex, OffsetBytes) {
+        let byte_offset = u64::from(self.inode_size) * u64::from(local_inode_index.0);
+        let block_size: u64 = u64::from(u16::from(self.block_size()));
+        let block_offset = BlockIndex::from(byte_offset / block_size);
+        let block_index = BlockIndex::from(u64::from(table_address.0 .0)) + block_offset;
+        let relative_byte_offset = OffsetBytes(byte_offset % block_size);
+        (block_index, relative_byte_offset)
     }
 }
 

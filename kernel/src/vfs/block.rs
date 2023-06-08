@@ -1,3 +1,5 @@
+use core::ops::Add;
+
 use alloc::vec::Vec;
 
 use crate::virtio;
@@ -23,12 +25,12 @@ pub(crate) trait BlockReader {
         start_block: BlockIndex,
         num_blocks: usize,
     ) -> BlockBuffer {
-        let device_start_block = BlockIndex(
-            start_block.0
-                * (usize::from(block_size) / usize::from(self.device_block_size())) as u64,
-        );
-        let device_num_blocks =
-            num_blocks * usize::from(block_size).div_ceil(usize::from(self.device_block_size()));
+        let block_size: u16 = block_size.0;
+        let device_block_size: u16 = self.device_block_size().0;
+
+        let device_start_block =
+            BlockIndex(start_block.0 * u64::from(block_size / device_block_size));
+        let device_num_blocks = num_blocks * block_size.div_ceil(device_block_size) as usize;
         let data = self.read_device_blocks(device_start_block, device_num_blocks);
 
         BlockBuffer {
@@ -39,21 +41,21 @@ pub(crate) trait BlockReader {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct BlockSize(usize);
+pub(crate) struct BlockSize(u16);
 
 impl BlockSize {
-    pub(crate) const fn new(value: usize) -> Self {
+    pub(crate) const fn new(value: u16) -> Self {
         Self(value)
     }
 }
 
-impl From<usize> for BlockSize {
-    fn from(value: usize) -> Self {
+impl From<u16> for BlockSize {
+    fn from(value: u16) -> Self {
         Self(value)
     }
 }
 
-impl From<BlockSize> for usize {
+impl From<BlockSize> for u16 {
     fn from(value: BlockSize) -> Self {
         value.0
     }
@@ -77,6 +79,14 @@ impl From<u64> for BlockIndex {
 impl From<BlockIndex> for u64 {
     fn from(value: BlockIndex) -> Self {
         value.0
+    }
+}
+
+impl Add for BlockIndex {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
     }
 }
 
@@ -137,7 +147,7 @@ impl VirtioBlockReader {
 
 impl BlockReader for VirtioBlockReader {
     fn device_block_size(&self) -> BlockSize {
-        BlockSize::try_from(virtio::VIRTIO_BLOCK_SECTOR_SIZE_BYTES as usize)
+        BlockSize::try_from(virtio::VIRTIO_BLOCK_SECTOR_SIZE_BYTES as u16)
             .expect("invalid virtio block size")
     }
 
