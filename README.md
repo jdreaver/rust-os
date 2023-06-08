@@ -91,8 +91,6 @@ make test
 
 ## TODO
 
-- BUG: Fix physical memory allocator giving out memory at address 0. I think we are overwriting the bitmap itself somehow. Are we not properly reserving the bitmap data itself?
-  - I think we are straight up not marking the bitmap memory as used in bootstrap.rs!
 - Filesystem
   - Don't load entire inode table. Currently it loads 512 blocks! Just load the necessary block.
   - Rename `BlockReader` to `BlockDevice`

@@ -79,7 +79,8 @@ where
         .expect("no memory regions found");
 
     // Find a region where we can place the bitmap
-    let bitmap_bytes = total_memory.div_ceil(page_size);
+    let bitmap_bits = total_memory.div_ceil(page_size);
+    let bitmap_bytes = bitmap_bits.div_ceil(u64::BITS as usize);
     let bitmap_start = iter_regions()
         .filter(|r| r.free)
         .find_map(|region| {
@@ -95,25 +96,36 @@ where
         .expect("couldn't find a free region large enough to store the allocator bitmap");
 
     // Allocate the bitmap
-    let bitmap_len = bitmap_bytes.div_ceil(u64::BITS as usize);
-    let bitmap = allocate_bitmap(bitmap_start, bitmap_len);
+    let bitmap = allocate_bitmap(bitmap_start, bitmap_bytes);
 
     // Mark all used regions as used in the bitmap
     let mut alloc = BitmapAllocator::new(bitmap);
+
+    let bitmap_region = MemoryRegion {
+        start_address: bitmap_start,
+        len_bytes: bitmap_bytes as u64,
+        free: false,
+    };
+    allocate_region(&bitmap_region, page_size, &mut alloc);
+
     for region in iter_regions() {
         if region.free {
             continue;
         }
-
-        let Some((start_addr, end_addr)) = region.page_aligned_start_end_address(page_size) else { continue; };
-        let start = start_addr / page_size;
-        let end = end_addr / page_size;
-        for page in start..end {
-            alloc.mark_used(page);
-        }
+        allocate_region(&region, page_size, &mut alloc);
     }
 
     alloc
+}
+
+fn allocate_region(region: &MemoryRegion, page_size: usize, alloc: &mut BitmapAllocator) {
+    let Some((start_addr, end_addr)) = region.page_aligned_start_end_address(page_size) else { return; };
+    let start = start_addr / page_size;
+    let end = end_addr / page_size;
+
+    for page in start..end {
+        alloc.mark_used(page);
+    }
 }
 
 #[cfg(test)]
@@ -164,26 +176,28 @@ mod tests {
         let _ = bootstrap_allocator(page_size, iter_regions, allocate_bitmap);
 
         // Check that memory regions are properly occupied
-        let bitmap_start_page = 0x1010 / page_size;
-        let bitmap_end_page = (0x1010 + TEST_BITMAP_LEN - 1) / page_size;
+        let bitmap_page = 0x10;
         for region in regions.iter() {
             let start_page = region.start_address / page_size;
             let end_page = (region.start_address + region.len_bytes as usize) / page_size;
 
             for page in start_page..end_page {
                 // Bitmap itself takes up space!
-                let expect_occupied =
-                    !region.free || (page >= bitmap_start_page && page <= bitmap_end_page);
-                let index = page / BitmapAllocator::BITS_PER_CHUNK;
-                let bit = page % BitmapAllocator::BITS_PER_CHUNK;
-                let val = unsafe { TEST_BITMAP[index] & (1 << bit) };
-
-                if expect_occupied {
-                    assert!(val != 0, "page {page} should be occupied");
-                } else {
-                    assert!(val == 0, "page {page} should be free");
-                }
+                let expect_occupied = !region.free || (page == bitmap_page);
+                test_page(page, expect_occupied);
             }
+        }
+    }
+
+    fn test_page(page: usize, expect_occupied: bool) {
+        let index = page / BitmapAllocator::BITS_PER_CHUNK;
+        let bit = page % BitmapAllocator::BITS_PER_CHUNK;
+        let val = unsafe { TEST_BITMAP[index] & (1 << bit) };
+
+        if expect_occupied {
+            assert!(val != 0, "page {page} should be occupied");
+        } else {
+            assert!(val == 0, "page {page} should be free");
         }
     }
 

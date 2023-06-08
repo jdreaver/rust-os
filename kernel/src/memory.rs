@@ -306,6 +306,9 @@ impl PhysicalBuffer {
                 .allocate_contiguous(num_pages)
                 .ok_or(AllocError)
         })?;
+
+        assert!(start_page > 0, "we allocated the zero page, which shouldn't happen since the first page should be reserved");
+
         Ok(Self {
             start_page,
             num_pages,

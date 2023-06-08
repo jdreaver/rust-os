@@ -75,7 +75,8 @@ pub fn start() -> ! {
             start_address: 0,
             len_bytes: 0x1000,
             free: false,
-        }).chain(boot_info::limine_memory_regions())
+        })
+        .chain(boot_info::limine_memory_regions())
     };
 
     unsafe {
