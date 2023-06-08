@@ -5,12 +5,13 @@ use core::fmt;
 
 use uefi::table::{Runtime, SystemTable};
 
+use crate::fs::{ext2, sysfs};
 use crate::hpet::Milliseconds;
 use crate::sync::SpinLock;
 use crate::vfs::FilePath;
 use crate::{
-    acpi, ansiterm, boot_info, fs, pci, sched, serial, serial_print, serial_println, tests, tick,
-    vfs, virtio,
+    acpi, ansiterm, boot_info, pci, sched, serial, serial_print, serial_println, tests, tick, vfs,
+    virtio,
 };
 
 static NEXT_COMMAND_BUFFER: SpinLock<ShellBuffer> = SpinLock::new(ShellBuffer::new());
@@ -458,12 +459,12 @@ fn run_command(command: &Command) {
                     serial_println!(
                         "Mounting ext2 filesystem from VirtIO block device {device_id}"
                     );
-                    let reader = fs::VirtioBlockReader::new(*device_id);
-                    Box::new(fs::EXT2FileSystem::read(reader))
+                    let reader = ext2::VirtioBlockReader::new(*device_id);
+                    Box::new(ext2::EXT2FileSystem::read(reader))
                 }
                 MountTarget::Sysfs => {
                     serial_println!("Mounting sysfs filesystem");
-                    Box::new(fs::Sysfs)
+                    Box::new(sysfs::Sysfs)
                 }
             };
             vfs::mount_root_filesystem(filesystem);
@@ -515,7 +516,7 @@ fn run_command(command: &Command) {
             serial_println!("BIOS Parameter Block: {:#x?}", bios_param_block);
         }
         Command::EXT2 { device_id, command } => {
-            let mut reader = ext2::FilesystemReader::read(fs::VirtioBlockReader::new(*device_id))
+            let mut reader = ext2::FilesystemReader::read(ext2::VirtioBlockReader::new(*device_id))
                 .expect("failed to read EXT2 filesystem");
             match command {
                 EXT2Command::Superblock => {

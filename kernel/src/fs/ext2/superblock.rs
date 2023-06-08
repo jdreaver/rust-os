@@ -3,7 +3,8 @@ use core::ops::{Add, Mul};
 
 use bitflags::bitflags;
 
-use crate::{strings::CStringBytes, InodeTableBlockAddress};
+use super::block_group::InodeTableBlockAddress;
+use super::strings::CStringBytes;
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#superblock>
 #[repr(C, packed)]

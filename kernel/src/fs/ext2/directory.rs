@@ -1,6 +1,6 @@
 use alloc::string::String;
 
-use crate::InodeNumber;
+use super::InodeNumber;
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#linked-directories>
 #[derive(Debug, Clone)]

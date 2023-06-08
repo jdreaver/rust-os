@@ -8,7 +8,6 @@ acpi = "4.1"
 bitfield-struct = "0.3"
 bitflags = "2.3"
 bitmap-alloc = { path = "../crates/bitmap-alloc" }
-ext2 = { path = "../crates/ext2" }
 fat = { path = "../crates/fat" }
 lazy_static = { version = "1", features = ["spin_no_std"] }
 # N.B. Make sure this matches vesa_framebuffer version so tests are consistent.

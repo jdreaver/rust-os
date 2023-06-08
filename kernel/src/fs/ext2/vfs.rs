@@ -7,21 +7,26 @@ use core::fmt::Debug;
 use crate::sync::SpinLock;
 use crate::{vfs, virtio};
 
+use super::directory::DirectoryEntry;
+use super::inode::Inode;
+use super::reader::{BlockReader, FilesystemReader};
+use super::superblock::OffsetBytes;
+
 /// VFS interface into an ext2 file system.
 #[derive(Debug)]
 pub(crate) struct EXT2FileSystem<R> {
-    reader: Arc<SpinLock<ext2::FilesystemReader<R>>>,
+    reader: Arc<SpinLock<FilesystemReader<R>>>,
 }
 
-impl<R: ext2::BlockReader> EXT2FileSystem<R> {
+impl<R: BlockReader> EXT2FileSystem<R> {
     pub(crate) fn read(reader: R) -> Self {
-        let reader = ext2::FilesystemReader::read(reader).expect("couldn't read ext2 filesystem!");
+        let reader = FilesystemReader::read(reader).expect("couldn't read ext2 filesystem!");
         let reader = Arc::new(SpinLock::new(reader));
         Self { reader }
     }
 }
 
-impl<R: Debug + ext2::BlockReader + 'static> vfs::FileSystem for EXT2FileSystem<R> {
+impl<R: Debug + BlockReader + 'static> vfs::FileSystem for EXT2FileSystem<R> {
     fn read_root(&mut self) -> vfs::Inode {
         let inode = self.reader.lock_disable_interrupts().read_root();
         let reader = self.reader.clone();
@@ -41,11 +46,11 @@ impl<R: Debug + ext2::BlockReader + 'static> vfs::FileSystem for EXT2FileSystem<
 // inodes. We can use assertions to ensure we picked the right one if needed.
 // (Same with DirectoryEntry below)
 pub(crate) struct EXT2FileInode<R> {
-    reader: Arc<SpinLock<ext2::FilesystemReader<R>>>,
-    inode: ext2::Inode,
+    reader: Arc<SpinLock<FilesystemReader<R>>>,
+    inode: Inode,
 }
 
-impl<R: Debug + ext2::BlockReader> vfs::FileInode for EXT2FileInode<R> {
+impl<R: Debug + BlockReader> vfs::FileInode for EXT2FileInode<R> {
     fn read(&mut self) -> Vec<u8> {
         let mut data = Vec::new();
         self.reader
@@ -59,11 +64,11 @@ impl<R: Debug + ext2::BlockReader> vfs::FileInode for EXT2FileInode<R> {
 
 #[derive(Debug)]
 pub(crate) struct EXT2DirectoryInode<R> {
-    reader: Arc<SpinLock<ext2::FilesystemReader<R>>>,
-    inode: ext2::Inode,
+    reader: Arc<SpinLock<FilesystemReader<R>>>,
+    inode: Inode,
 }
 
-impl<R: Debug + ext2::BlockReader + 'static> vfs::DirectoryInode for EXT2DirectoryInode<R> {
+impl<R: Debug + BlockReader + 'static> vfs::DirectoryInode for EXT2DirectoryInode<R> {
     fn subdirectories(&mut self) -> Vec<Box<dyn vfs::DirectoryEntry>> {
         let mut entries: Vec<Box<dyn vfs::DirectoryEntry>> = Vec::new();
         self.reader
@@ -79,11 +84,11 @@ impl<R: Debug + ext2::BlockReader + 'static> vfs::DirectoryInode for EXT2Directo
 
 #[derive(Debug)]
 pub(crate) struct EXT2DirectoryEntry<R> {
-    reader: Arc<SpinLock<ext2::FilesystemReader<R>>>,
-    entry: ext2::DirectoryEntry,
+    reader: Arc<SpinLock<FilesystemReader<R>>>,
+    entry: DirectoryEntry,
 }
 
-impl<R: Debug + ext2::BlockReader + 'static> vfs::DirectoryEntry for EXT2DirectoryEntry<R> {
+impl<R: Debug + BlockReader + 'static> vfs::DirectoryEntry for EXT2DirectoryEntry<R> {
     fn name(&self) -> String {
         String::from(&self.entry.name)
     }
@@ -126,8 +131,8 @@ impl VirtioBlockReader {
     }
 }
 
-impl ext2::BlockReader for VirtioBlockReader {
-    fn read_num_bytes(&self, addr: ext2::OffsetBytes, num_bytes: usize) -> Vec<u8> {
+impl BlockReader for VirtioBlockReader {
+    fn read_num_bytes(&self, addr: OffsetBytes, num_bytes: usize) -> Vec<u8> {
         let sector = addr.0 / u64::from(virtio::VIRTIO_BLOCK_SECTOR_SIZE_BYTES);
         let sector_offset = addr.0 as usize % virtio::VIRTIO_BLOCK_SECTOR_SIZE_BYTES as usize;
 

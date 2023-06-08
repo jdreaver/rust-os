@@ -1,9 +1,9 @@
 use alloc::vec::Vec;
 
-use crate::{
-    BlockGroupDescriptor, DirectoryBlock, DirectoryEntry, Inode, InodeBitmap, InodeNumber,
-    OffsetBytes, Superblock, ROOT_DIRECTORY,
-};
+use super::block_group::{BlockGroupDescriptor, InodeBitmap};
+use super::directory::{DirectoryBlock, DirectoryEntry};
+use super::inode::Inode;
+use super::superblock::{InodeNumber, OffsetBytes, Superblock, ROOT_DIRECTORY};
 
 #[derive(Debug)]
 pub struct FilesystemReader<R> {

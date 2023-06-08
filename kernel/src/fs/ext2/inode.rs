@@ -2,7 +2,7 @@ use core::fmt;
 
 use bitflags::bitflags;
 
-use crate::BlockAddress;
+use super::BlockAddress;
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#inode-table>
 #[repr(C, packed)]

@@ -17,7 +17,6 @@ KERNEL = kernel/target/x86_64-rust_os/$(RUST_BUILD_MODE)/rust-os
 
 # Not all crates support `cargo test`
 TEST_CRATES += crates/bitmap-alloc
-TEST_CRATES += crates/ext2
 TEST_CRATES += crates/fat
 TEST_CRATES += crates/ring_buffer
 TEST_CRATES += crates/vesa_framebuffer
@@ -114,7 +113,7 @@ $(TEST_FAT_HDD):
 	./crates/fat/scripts/create-test-image.sh $(TEST_FAT_HDD)
 
 $(TEST_EXT2_HDD):
-	./crates/ext2/scripts/create-test-ext2-image.sh $(TEST_EXT2_HDD)
+	./scripts/create-test-ext2-image.sh $(TEST_EXT2_HDD)
 
 .PHONY: test
 test:
