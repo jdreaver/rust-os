@@ -5,12 +5,11 @@ use alloc::vec::Vec;
 use core::fmt::Debug;
 
 use crate::sync::SpinLock;
-use crate::{vfs, virtio};
+use crate::vfs;
 
 use super::directory::DirectoryEntry;
 use super::inode::Inode;
-use super::reader::{BlockReader, FilesystemReader};
-use super::superblock::OffsetBytes;
+use super::reader::FilesystemReader;
 
 /// VFS interface into an ext2 file system.
 #[derive(Debug)]
@@ -18,7 +17,7 @@ pub(crate) struct EXT2FileSystem<R> {
     reader: Arc<SpinLock<FilesystemReader<R>>>,
 }
 
-impl<R: BlockReader> EXT2FileSystem<R> {
+impl<R: vfs::BlockReader> EXT2FileSystem<R> {
     pub(crate) fn read(reader: R) -> Self {
         let reader = FilesystemReader::read(reader).expect("couldn't read ext2 filesystem!");
         let reader = Arc::new(SpinLock::new(reader));
@@ -26,7 +25,7 @@ impl<R: BlockReader> EXT2FileSystem<R> {
     }
 }
 
-impl<R: Debug + BlockReader + 'static> vfs::FileSystem for EXT2FileSystem<R> {
+impl<R: Debug + vfs::BlockReader + 'static> vfs::FileSystem for EXT2FileSystem<R> {
     fn read_root(&mut self) -> vfs::Inode {
         let inode = self.reader.lock_disable_interrupts().read_root();
         let reader = self.reader.clone();
@@ -50,7 +49,7 @@ pub(crate) struct EXT2FileInode<R> {
     inode: Inode,
 }
 
-impl<R: Debug + BlockReader> vfs::FileInode for EXT2FileInode<R> {
+impl<R: Debug + vfs::BlockReader> vfs::FileInode for EXT2FileInode<R> {
     fn read(&mut self) -> Vec<u8> {
         let mut data = Vec::new();
         self.reader
@@ -68,7 +67,7 @@ pub(crate) struct EXT2DirectoryInode<R> {
     inode: Inode,
 }
 
-impl<R: Debug + BlockReader + 'static> vfs::DirectoryInode for EXT2DirectoryInode<R> {
+impl<R: Debug + vfs::BlockReader + 'static> vfs::DirectoryInode for EXT2DirectoryInode<R> {
     fn subdirectories(&mut self) -> Vec<Box<dyn vfs::DirectoryEntry>> {
         let mut entries: Vec<Box<dyn vfs::DirectoryEntry>> = Vec::new();
         self.reader
@@ -88,7 +87,7 @@ pub(crate) struct EXT2DirectoryEntry<R> {
     entry: DirectoryEntry,
 }
 
-impl<R: Debug + BlockReader + 'static> vfs::DirectoryEntry for EXT2DirectoryEntry<R> {
+impl<R: Debug + vfs::BlockReader + 'static> vfs::DirectoryEntry for EXT2DirectoryEntry<R> {
     fn name(&self) -> String {
         String::from(&self.entry.name)
     }
@@ -117,37 +116,5 @@ impl<R: Debug + BlockReader + 'static> vfs::DirectoryEntry for EXT2DirectoryEntr
             panic!("unexpected inode type: {:?}", inode);
         };
         vfs::Inode { inode_type }
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct VirtioBlockReader {
-    device_id: usize,
-}
-
-impl VirtioBlockReader {
-    pub(crate) fn new(device_id: usize) -> Self {
-        Self { device_id }
-    }
-}
-
-impl BlockReader for VirtioBlockReader {
-    fn read_num_bytes(&self, addr: OffsetBytes, num_bytes: usize) -> Vec<u8> {
-        let sector = addr.0 / u64::from(virtio::VIRTIO_BLOCK_SECTOR_SIZE_BYTES);
-        let sector_offset = addr.0 as usize % virtio::VIRTIO_BLOCK_SECTOR_SIZE_BYTES as usize;
-
-        let total_bytes = sector_offset + num_bytes;
-        let num_sectors = total_bytes.div_ceil(virtio::VIRTIO_BLOCK_SECTOR_SIZE_BYTES as usize);
-
-        let response =
-            virtio::virtio_block_read(self.device_id, sector, num_sectors as u32).wait_sleep();
-        let virtio::VirtIOBlockResponse::Read{ ref data } = response else {
-            panic!("unexpected virtio block response: {:?}", response);
-        };
-
-        let mut data = data.clone();
-        data.drain(0..sector_offset);
-        data.drain(num_bytes..);
-        data
     }
 }

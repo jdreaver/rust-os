@@ -459,7 +459,7 @@ fn run_command(command: &Command) {
                     serial_println!(
                         "Mounting ext2 filesystem from VirtIO block device {device_id}"
                     );
-                    let reader = ext2::VirtioBlockReader::new(*device_id);
+                    let reader = vfs::VirtioBlockReader::new(*device_id);
                     Box::new(ext2::EXT2FileSystem::read(reader))
                 }
                 MountTarget::Sysfs => {
@@ -516,7 +516,7 @@ fn run_command(command: &Command) {
             serial_println!("BIOS Parameter Block: {:#x?}", bios_param_block);
         }
         Command::EXT2 { device_id, command } => {
-            let mut reader = ext2::FilesystemReader::read(ext2::VirtioBlockReader::new(*device_id))
+            let mut reader = ext2::FilesystemReader::read(vfs::VirtioBlockReader::new(*device_id))
                 .expect("failed to read EXT2 filesystem");
             match command {
                 EXT2Command::Superblock => {
