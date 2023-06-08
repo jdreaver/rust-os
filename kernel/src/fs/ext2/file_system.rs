@@ -7,13 +7,15 @@ use super::directory::{DirectoryBlock, DirectoryEntry};
 use super::inode::Inode;
 use super::superblock::{InodeNumber, Superblock, ROOT_DIRECTORY};
 
+/// In-memory representation if ext2 file system, and main point of interaction
+/// with file system.
 #[derive(Debug)]
-pub(crate) struct FilesystemReader<R> {
+pub(crate) struct FileSystem<R> {
     superblock: Superblock,
     block_reader: R,
 }
 
-impl<R: vfs::BlockReader> FilesystemReader<R> {
+impl<R: vfs::BlockReader> FileSystem<R> {
     pub(crate) fn read(block_reader: R) -> Option<Self> {
         let superblock: Superblock = block_reader.read_bytes(Superblock::OFFSET_BYTES.0);
         if !superblock.magic_valid() {

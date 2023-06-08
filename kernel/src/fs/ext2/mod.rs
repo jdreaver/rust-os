@@ -10,12 +10,12 @@
 
 mod block_group;
 mod directory;
+mod file_system;
 mod inode;
-mod reader;
 mod strings;
 mod superblock;
 mod vfs;
 
-pub(crate) use reader::*;
+pub(crate) use file_system::FileSystem; // Used in shell
 pub(crate) use superblock::*;
 pub(crate) use vfs::*;

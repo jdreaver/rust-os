@@ -8,24 +8,24 @@ use crate::sync::SpinLock;
 use crate::vfs;
 
 use super::directory::DirectoryEntry;
+use super::file_system::FileSystem;
 use super::inode::Inode;
-use super::reader::FilesystemReader;
 
 /// VFS interface into an ext2 file system.
 #[derive(Debug)]
-pub(crate) struct EXT2FileSystem<R> {
-    reader: Arc<SpinLock<FilesystemReader<R>>>,
+pub(crate) struct VFSFileSystem<R> {
+    reader: Arc<SpinLock<FileSystem<R>>>,
 }
 
-impl<R: vfs::BlockReader> EXT2FileSystem<R> {
+impl<R: vfs::BlockReader> VFSFileSystem<R> {
     pub(crate) fn read(reader: R) -> Self {
-        let reader = FilesystemReader::read(reader).expect("couldn't read ext2 filesystem!");
+        let reader = FileSystem::read(reader).expect("couldn't read ext2 filesystem!");
         let reader = Arc::new(SpinLock::new(reader));
         Self { reader }
     }
 }
 
-impl<R: Debug + vfs::BlockReader + 'static> vfs::FileSystem for EXT2FileSystem<R> {
+impl<R: Debug + vfs::BlockReader + 'static> vfs::FileSystem for VFSFileSystem<R> {
     fn read_root(&mut self) -> vfs::Inode {
         let inode = self.reader.lock_disable_interrupts().read_root();
         let reader = self.reader.clone();
@@ -45,7 +45,7 @@ impl<R: Debug + vfs::BlockReader + 'static> vfs::FileSystem for EXT2FileSystem<R
 // inodes. We can use assertions to ensure we picked the right one if needed.
 // (Same with DirectoryEntry below)
 pub(crate) struct EXT2FileInode<R> {
-    reader: Arc<SpinLock<FilesystemReader<R>>>,
+    reader: Arc<SpinLock<FileSystem<R>>>,
     inode: Inode,
 }
 
@@ -63,7 +63,7 @@ impl<R: Debug + vfs::BlockReader> vfs::FileInode for EXT2FileInode<R> {
 
 #[derive(Debug)]
 pub(crate) struct EXT2DirectoryInode<R> {
-    reader: Arc<SpinLock<FilesystemReader<R>>>,
+    reader: Arc<SpinLock<FileSystem<R>>>,
     inode: Inode,
 }
 
@@ -83,7 +83,7 @@ impl<R: Debug + vfs::BlockReader + 'static> vfs::DirectoryInode for EXT2Director
 
 #[derive(Debug)]
 pub(crate) struct EXT2DirectoryEntry<R> {
-    reader: Arc<SpinLock<FilesystemReader<R>>>,
+    reader: Arc<SpinLock<FileSystem<R>>>,
     entry: DirectoryEntry,
 }
 
