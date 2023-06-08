@@ -9,78 +9,78 @@ use super::strings::CStringBytes;
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#superblock>
 #[repr(C, packed)]
 #[derive(Debug)]
-pub struct Superblock {
-    pub inodes_count: u32,
-    pub blocks_count: u32,
-    pub reserved_blocks_count: u32,
-    pub free_blocks_count: u32,
-    pub free_inodes_count: u32,
-    pub first_data_block: BlockAddress,
-    pub log_block_size: u32,
-    pub log_frag_size: u32,
-    pub blocks_per_group: u32,
-    pub frags_per_group: u32,
-    pub inodes_per_group: u32,
-    pub mount_time: u32,
-    pub write_time: u32,
-    pub mount_count: u16,
-    pub max_mount_count: u16,
-    pub magic: u16,
-    pub state: u16,
-    pub errors: u16,
-    pub minor_rev_level: u16,
-    pub lastcheck: u32,
-    pub checkinterval: u32,
-    pub creator_os: u32,
-    pub rev_level: u32,
-    pub def_resuid: u16,
-    pub def_resgid: u16,
+pub(crate) struct Superblock {
+    pub(crate) inodes_count: u32,
+    pub(crate) blocks_count: u32,
+    pub(crate) reserved_blocks_count: u32,
+    pub(crate) free_blocks_count: u32,
+    pub(crate) free_inodes_count: u32,
+    pub(crate) first_data_block: BlockAddress,
+    pub(crate) log_block_size: u32,
+    pub(crate) log_frag_size: u32,
+    pub(crate) blocks_per_group: u32,
+    pub(crate) frags_per_group: u32,
+    pub(crate) inodes_per_group: u32,
+    pub(crate) mount_time: u32,
+    pub(crate) write_time: u32,
+    pub(crate) mount_count: u16,
+    pub(crate) max_mount_count: u16,
+    pub(crate) magic: u16,
+    pub(crate) state: u16,
+    pub(crate) errors: u16,
+    pub(crate) minor_rev_level: u16,
+    pub(crate) lastcheck: u32,
+    pub(crate) checkinterval: u32,
+    pub(crate) creator_os: u32,
+    pub(crate) rev_level: u32,
+    pub(crate) def_resuid: u16,
+    pub(crate) def_resgid: u16,
 
     // EXT2_DYNAMIC_REV Specific
-    pub first_ino: u32,
-    pub inode_size: u16,
-    pub block_group_nr: u16,
-    pub feature_compat: FeatureCompatFlags,
-    pub feature_incompat: FeatureIncompatFlags,
-    pub feature_ro_compat: FeatureReadOnlyCompatFlags,
-    pub uuid: UUID,
-    pub volume_name: CStringBytes<16>,
-    pub last_mounted: CStringBytes<64>,
-    pub algo_bitmap: u32,
+    pub(crate) first_ino: u32,
+    pub(crate) inode_size: u16,
+    pub(crate) block_group_nr: u16,
+    pub(crate) feature_compat: FeatureCompatFlags,
+    pub(crate) feature_incompat: FeatureIncompatFlags,
+    pub(crate) feature_ro_compat: FeatureReadOnlyCompatFlags,
+    pub(crate) uuid: UUID,
+    pub(crate) volume_name: CStringBytes<16>,
+    pub(crate) last_mounted: CStringBytes<64>,
+    pub(crate) algo_bitmap: u32,
 
     // Performance Hints
-    pub prealloc_blocks: u8,
-    pub prealloc_dir_blocks: u8,
-    pub padding1: u16,
+    pub(crate) prealloc_blocks: u8,
+    pub(crate) prealloc_dir_blocks: u8,
+    pub(crate) padding1: u16,
 
     // Journaling Support
-    pub journal_uuid: UUID,
-    pub journal_inum: u32,
-    pub journal_dev: u32,
-    pub last_orphan: u32,
+    pub(crate) journal_uuid: UUID,
+    pub(crate) journal_inum: u32,
+    pub(crate) journal_dev: u32,
+    pub(crate) last_orphan: u32,
 
     // Directory Indexing Support
-    pub hash_seed: [u32; 4],
-    pub def_hash_version: u8,
-    pub padding2: [u8; 3],
+    pub(crate) hash_seed: [u32; 4],
+    pub(crate) def_hash_version: u8,
+    pub(crate) padding2: [u8; 3],
 
     // Other options
-    pub default_mount_options: u32,
-    pub first_meta_bg: u32,
+    pub(crate) default_mount_options: u32,
+    pub(crate) first_meta_bg: u32,
 }
 
 impl Superblock {
     /// The superblock is always located at byte offset 1024 from the beginning of
     /// the file, block device or partition formatted with Ext2 and later variants
     /// (Ext3, Ext4).
-    pub const OFFSET_BYTES: OffsetBytes = OffsetBytes(1024);
+    pub(crate) const OFFSET_BYTES: OffsetBytes = OffsetBytes(1024);
 
     /// 16bit value identifying the file system as Ext2. The value is currently
     /// fixed to EXT2_SUPER_MAGIC of value 0xEF53.
     /// <https://www.nongnu.org/ext2-doc/ext2.html#s-magic>
-    pub const MAGIC: u16 = 0xEF53;
+    pub(crate) const MAGIC: u16 = 0xEF53;
 
-    pub fn magic_valid(&self) -> bool {
+    pub(crate) fn magic_valid(&self) -> bool {
         self.magic == Self::MAGIC
     }
 
@@ -91,32 +91,35 @@ impl Superblock {
     /// ```
     ///
     /// Common block sizes include 1KiB, 2KiB, 4KiB and 8Kib.
-    pub fn block_size(&self) -> BlockSize {
+    pub(crate) fn block_size(&self) -> BlockSize {
         BlockSize(1024 << self.log_block_size)
     }
 
-    pub fn block_address_bytes(&self, block_address: BlockAddress) -> OffsetBytes {
+    pub(crate) fn block_address_bytes(&self, block_address: BlockAddress) -> OffsetBytes {
         block_address * self.block_size()
     }
 
     /// The block descriptor table is usually right after the superblock, but
     /// the location is `first_data_block + 1`.
-    pub fn block_descriptor_table_offset(&self) -> OffsetBytes {
+    pub(crate) fn block_descriptor_table_offset(&self) -> OffsetBytes {
         self.block_address_bytes(self.first_data_block + 1)
     }
 
-    pub fn block_descriptor_offset(&self, block_group: BlockGroupIndex) -> OffsetBytes {
+    pub(crate) fn block_descriptor_offset(&self, block_group: BlockGroupIndex) -> OffsetBytes {
         self.block_descriptor_table_offset() + OffsetBytes(u64::from(block_group.0) * 32)
     }
 
-    pub fn num_block_groups(&self) -> usize {
+    pub(crate) fn num_block_groups(&self) -> usize {
         let num_blocks = self.blocks_count as usize;
         let blocks_per_group = self.blocks_per_group as usize;
         num_blocks.div_ceil(blocks_per_group)
     }
 
     /// Index for the block group containing the inode.
-    pub fn inode_location(&self, inode_number: InodeNumber) -> (BlockGroupIndex, LocalInodeIndex) {
+    pub(crate) fn inode_location(
+        &self,
+        inode_number: InodeNumber,
+    ) -> (BlockGroupIndex, LocalInodeIndex) {
         let inode_index = inode_number.0 - 1;
         let block_group_index = BlockGroupIndex(inode_index / self.inodes_per_group);
         let local_inode_index = LocalInodeIndex(inode_index % self.inodes_per_group);
@@ -124,7 +127,7 @@ impl Superblock {
     }
 
     /// See <https://www.nongnu.org/ext2-doc/ext2.html#inode-table>
-    pub fn inode_offset(
+    pub(crate) fn inode_offset(
         &self,
         inode_table_address: InodeTableBlockAddress,
         local_inode_index: LocalInodeIndex,
@@ -139,7 +142,7 @@ impl Superblock {
 /// Address of a block in the filesystem.
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone)]
-pub struct BlockAddress(pub u32);
+pub(crate) struct BlockAddress(pub(crate) u32);
 
 impl Add<u32> for BlockAddress {
     type Output = Self;
@@ -159,11 +162,11 @@ impl Mul<BlockSize> for BlockAddress {
 
 /// Size of a block in bytes.
 #[derive(Debug, Copy, Clone)]
-pub struct BlockSize(pub u32);
+pub(crate) struct BlockSize(pub(crate) u32);
 
 /// Address in bytes from the start of the disk.
 #[derive(Debug, Copy, Clone)]
-pub struct OffsetBytes(pub u64);
+pub(crate) struct OffsetBytes(pub(crate) u64);
 
 impl Add<Self> for OffsetBytes {
     type Output = Self;
@@ -176,28 +179,28 @@ impl Add<Self> for OffsetBytes {
 /// How many inodes are in each block group.
 #[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
-pub struct InodesPerGroup(pub u32);
+pub(crate) struct InodesPerGroup(pub(crate) u32);
 
 /// "Global" inode number within the filesystem.
 #[derive(Debug, Copy, Clone)]
-pub struct InodeNumber(pub u32);
+pub(crate) struct InodeNumber(pub(crate) u32);
 
 /// The root directory of the filesystem is always inode 2.
-pub const ROOT_DIRECTORY: InodeNumber = InodeNumber(2);
+pub(crate) const ROOT_DIRECTORY: InodeNumber = InodeNumber(2);
 
 /// A `LocalInodeIndex` is an inode's index within a block group.
 #[derive(Debug, Copy, Clone)]
-pub struct LocalInodeIndex(pub u32);
+pub(crate) struct LocalInodeIndex(pub(crate) u32);
 
 /// Index for a given block group.
 #[derive(Debug, Copy, Clone)]
-pub struct BlockGroupIndex(pub u32);
+pub(crate) struct BlockGroupIndex(pub(crate) u32);
 
 bitflags! {
     #[derive(Debug, Copy, Clone)]
     #[repr(transparent)]
     /// <https://www.nongnu.org/ext2-doc/ext2.html#s-feature-compat>
-    pub struct FeatureCompatFlags: u32 {
+    pub(crate) struct FeatureCompatFlags: u32 {
         /// Block pre-allocation for new directories
         const DIR_PREALLOC = 0x0001;
 
@@ -221,7 +224,7 @@ bitflags! {
     #[derive(Debug, Copy, Clone)]
     #[repr(transparent)]
     /// <https://www.nongnu.org/ext2-doc/ext2.html#s-feature-incompat>
-    pub struct FeatureIncompatFlags: u32 {
+    pub(crate) struct FeatureIncompatFlags: u32 {
         /// Disk/File compression is used
         const COMPRESSION = 0x0001;
         const FILETYPE = 0x0002;
@@ -235,7 +238,7 @@ bitflags! {
     #[derive(Debug, Copy, Clone)]
     #[repr(transparent)]
     /// <https://www.nongnu.org/ext2-doc/ext2.html#s-feature-ro-compat>
-    pub struct FeatureReadOnlyCompatFlags: u32 {
+    pub(crate) struct FeatureReadOnlyCompatFlags: u32 {
         /// Sparse Superblock
         const SPARSE_SUPER = 0x0001;
 
@@ -249,7 +252,7 @@ bitflags! {
 
 #[derive(Copy, Clone)]
 #[repr(transparent)]
-pub struct UUID(pub [u8; 16]);
+pub(crate) struct UUID(pub(crate) [u8; 16]);
 
 impl fmt::Debug for UUID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

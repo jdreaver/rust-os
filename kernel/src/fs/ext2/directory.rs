@@ -4,10 +4,10 @@ use super::InodeNumber;
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#linked-directories>
 #[derive(Debug, Clone)]
-pub struct DirectoryBlock<'a>(pub &'a [u8]);
+pub(crate) struct DirectoryBlock<'a>(pub(crate) &'a [u8]);
 
 impl DirectoryBlock<'_> {
-    pub fn iter(&self) -> DirectoryBlockIterator<'_> {
+    pub(crate) fn iter(&self) -> DirectoryBlockIterator<'_> {
         DirectoryBlockIterator {
             block: self.clone(),
             offset: 0,
@@ -15,7 +15,7 @@ impl DirectoryBlock<'_> {
     }
 }
 
-pub struct DirectoryBlockIterator<'a> {
+pub(crate) struct DirectoryBlockIterator<'a> {
     block: DirectoryBlock<'a>,
     offset: usize,
 }
@@ -48,25 +48,25 @@ impl Iterator for DirectoryBlockIterator<'_> {
 }
 
 #[derive(Debug)]
-pub struct DirectoryEntry {
-    pub header: DirectoryEntryHeader,
-    pub name: String,
+pub(crate) struct DirectoryEntry {
+    pub(crate) header: DirectoryEntryHeader,
+    pub(crate) name: String,
 }
 
 impl DirectoryEntry {
-    pub fn is_file(&self) -> bool {
+    pub(crate) fn is_file(&self) -> bool {
         self.header.file_type == DirectoryEntryFileType::RegularFile
     }
 
-    pub fn is_dir(&self) -> bool {
+    pub(crate) fn is_dir(&self) -> bool {
         self.header.file_type == DirectoryEntryFileType::Directory
     }
 
-    pub fn is_dot(&self) -> bool {
+    pub(crate) fn is_dot(&self) -> bool {
         self.name == "."
     }
 
-    pub fn is_dotdot(&self) -> bool {
+    pub(crate) fn is_dotdot(&self) -> bool {
         self.name == ".."
     }
 }
@@ -74,16 +74,16 @@ impl DirectoryEntry {
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#linked-directory-entry-structure>
 #[repr(C, packed)]
 #[derive(Debug)]
-pub struct DirectoryEntryHeader {
-    pub inode: InodeNumber,
-    pub rec_len: u16,
-    pub name_len: u8,
-    pub file_type: DirectoryEntryFileType,
+pub(crate) struct DirectoryEntryHeader {
+    pub(crate) inode: InodeNumber,
+    pub(crate) rec_len: u16,
+    pub(crate) name_len: u8,
+    pub(crate) file_type: DirectoryEntryFileType,
 }
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum DirectoryEntryFileType {
+pub(crate) enum DirectoryEntryFileType {
     Unknown = 0,
     RegularFile = 1,
     Directory = 2,

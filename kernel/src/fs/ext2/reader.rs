@@ -6,13 +6,13 @@ use super::inode::Inode;
 use super::superblock::{InodeNumber, OffsetBytes, Superblock, ROOT_DIRECTORY};
 
 #[derive(Debug)]
-pub struct FilesystemReader<R> {
+pub(crate) struct FilesystemReader<R> {
     superblock: Superblock,
     block_reader: R,
 }
 
 impl<R: BlockReader> FilesystemReader<R> {
-    pub fn read(block_reader: R) -> Option<Self> {
+    pub(crate) fn read(block_reader: R) -> Option<Self> {
         let superblock: Superblock = block_reader.read_bytes(Superblock::OFFSET_BYTES);
         if !superblock.magic_valid() {
             return None;
@@ -24,16 +24,16 @@ impl<R: BlockReader> FilesystemReader<R> {
         })
     }
 
-    pub fn superblock(&self) -> &Superblock {
+    pub(crate) fn superblock(&self) -> &Superblock {
         &self.superblock
     }
 
-    pub fn read_root(&mut self) -> Inode {
+    pub(crate) fn read_root(&mut self) -> Inode {
         self.read_inode(ROOT_DIRECTORY)
             .expect("couldn't read root directory inode!")
     }
 
-    pub fn read_inode(&mut self, inode_number: InodeNumber) -> Option<Inode> {
+    pub(crate) fn read_inode(&mut self, inode_number: InodeNumber) -> Option<Inode> {
         let (block_group_index, local_inode_index) = self.superblock.inode_location(inode_number);
         let block_group_offset = self.superblock.block_descriptor_offset(block_group_index);
         let block_group_descriptor: BlockGroupDescriptor =
@@ -59,7 +59,7 @@ impl<R: BlockReader> FilesystemReader<R> {
         Some(self.block_reader.read_bytes(inode_offset))
     }
 
-    pub fn inode_size(&self, inode: &Inode) -> u64 {
+    pub(crate) fn inode_size(&self, inode: &Inode) -> u64 {
         // In revision 0, we only have 32-bit sizes.
         if self.superblock.rev_level == 0 {
             return u64::from(inode.size_low);
@@ -68,7 +68,7 @@ impl<R: BlockReader> FilesystemReader<R> {
         (u64::from(inode.size_high) << 32) | u64::from(inode.size_low)
     }
 
-    pub fn iter_file_blocks<F>(&mut self, inode: &Inode, mut func: F)
+    pub(crate) fn iter_file_blocks<F>(&mut self, inode: &Inode, mut func: F)
     where
         F: FnMut(Vec<u8>),
     {
@@ -91,7 +91,7 @@ impl<R: BlockReader> FilesystemReader<R> {
         }
     }
 
-    pub fn iter_directory<F>(&mut self, inode: &Inode, mut func: F)
+    pub(crate) fn iter_directory<F>(&mut self, inode: &Inode, mut func: F)
     where
         F: FnMut(DirectoryEntry) -> bool,
     {
@@ -113,7 +113,7 @@ impl<R: BlockReader> FilesystemReader<R> {
 ///
 /// Note: we use `&self` and not `&mut self` on these methods. It is assumed
 /// that the block reader is using some form of locking.
-pub trait BlockReader {
+pub(crate) trait BlockReader {
     fn read_num_bytes(&self, addr: OffsetBytes, num_bytes: usize) -> Vec<u8>;
 
     fn read_bytes<T>(&self, addr: OffsetBytes) -> T {

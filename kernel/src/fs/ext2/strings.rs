@@ -3,14 +3,14 @@ use core::fmt;
 /// Wrapper around a byte array that represents a nul-terminated string.
 #[repr(transparent)]
 #[derive(Copy, Clone)]
-pub struct CStringBytes<const N: usize>([u8; N]);
+pub(crate) struct CStringBytes<const N: usize>([u8; N]);
 
 impl<const N: usize> CStringBytes<N> {
-    pub fn bytes(&self) -> &[u8] {
+    pub(crate) fn bytes(&self) -> &[u8] {
         &self.0
     }
 
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         c_str_from_bytes(&self.0)
     }
 }
