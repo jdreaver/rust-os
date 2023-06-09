@@ -601,9 +601,7 @@ fn run_command(command: &Command) {
                     serial_println!("{:#x?}", inode);
                     serial_println!("Listing root directory...");
                     file_system.iter_directory(&inode, |entry| {
-                        let inode = entry.header.inode;
-                        let file_type = entry.header.file_type;
-                        serial_println!("{} (inode: {inode:?}, type: {file_type:?})", entry.name);
+                        serial_println!("{:x?}", entry);
                         true
                     });
                 }

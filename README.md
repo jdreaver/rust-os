@@ -92,6 +92,8 @@ make test
 ## TODO
 
 - Filesystem
+  - Wrap a directory entry block so we can mutate entries
+    - Keep a vec of directory entry start points we can easily index
   - Ensure rec_len for previous directory entry is accurate
   - Investigate improved `BlockBuffer` ergonomics when interpreting bytes. Maybe we can wrap the interpreted "thing" in a struct that implements Deref and DerefMut, and also has a `flush` method. That would allow us to flush the underlying block without needing to carry the block itself around. Would this play well with the borrow checker though?
     - Don't index into these with offsets. Instead, make an abstraction like "spaced array" that can index into bytes and cast to an underlying type with spacing provided at runtime (e.g. the inode size)

@@ -8,7 +8,6 @@ use crate::block::{BlockDevice, BlockDeviceDriver};
 use crate::sync::SpinLock;
 use crate::vfs;
 
-use super::directory::DirectoryEntry;
 use super::file_system::FileSystem;
 use super::inode::Inode;
 use super::superblock::InodeNumber;
@@ -126,7 +125,19 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::DirectoryInode for VFSInode<D>
             .lock_disable_interrupts()
             .iter_directory(&self.inode, |entry| {
                 let reader = self.reader.clone();
-                entries.push(Box::new(EXT2DirectoryEntry { reader, entry }));
+                let entry_type = if entry.is_file() {
+                    vfs::DirectoryEntryType::File
+                } else if entry.is_dir() {
+                    vfs::DirectoryEntryType::Directory
+                } else {
+                    panic!("unexpected directory entry type: {:?}", entry);
+                };
+                entries.push(Box::new(EXT2DirectoryEntry {
+                    reader,
+                    inode_number: entry.header.inode,
+                    name: entry.name,
+                    entry_type,
+                }));
                 true
             });
         entries
@@ -153,26 +164,22 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::DirectoryInode for VFSInode<D>
 #[derive(Debug)]
 pub(crate) struct EXT2DirectoryEntry<D> {
     reader: Arc<SpinLock<FileSystem<D>>>,
-    entry: DirectoryEntry,
+    inode_number: InodeNumber,
+    name: String,
+    entry_type: vfs::DirectoryEntryType,
 }
 
 impl<D: Debug + BlockDeviceDriver + 'static> vfs::DirectoryEntry for EXT2DirectoryEntry<D> {
     fn name(&self) -> String {
-        String::from(&self.entry.name)
+        String::from(&self.name)
     }
 
     fn entry_type(&self) -> vfs::DirectoryEntryType {
-        if self.entry.is_file() {
-            vfs::DirectoryEntryType::File
-        } else if self.entry.is_dir() {
-            vfs::DirectoryEntryType::Directory
-        } else {
-            panic!("unexpected directory entry type: {:?}", self.entry);
-        }
+        self.entry_type
     }
 
     fn get_inode(&mut self) -> vfs::Inode {
-        let inode_number = self.entry.header.inode;
+        let inode_number = self.inode_number;
         let Some(inode) = self.reader.lock_disable_interrupts().read_inode(inode_number) else {
             panic!("couldn't read inode {inode_number:?} inside EXT2DiretoryEntry::get_inode");
         };
