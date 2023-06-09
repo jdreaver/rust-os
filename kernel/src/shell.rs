@@ -143,17 +143,8 @@ enum Command {
     Unmount,
     Ls(FilePath),
     Cat(FilePath),
-    WriteToFile {
-        path: FilePath,
-        content: String,
-    },
-    FATBIOS {
-        device_id: usize,
-    },
-    EXT2 {
-        device_id: usize,
-        command: EXT2Command,
-    },
+    WriteToFile { path: FilePath, content: String },
+    FATBIOS { device_id: usize },
     Timer(Milliseconds),
     Sleep(Milliseconds),
     Prime(PrimeCommand),
@@ -180,14 +171,6 @@ enum VirtIOBlockCommand {
 enum MountTarget {
     Device { device_id: usize },
     Sysfs,
-}
-
-#[derive(Debug)]
-enum EXT2Command {
-    Superblock,
-    ListInode {
-        inode_number: Option<ext2::InodeNumber>,
-    },
 }
 
 #[derive(Debug)]
@@ -293,29 +276,6 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
                 None
             }
         },
-        "ext2" => {
-            let device_id =
-                parse_next_word(&mut words, "device ID", "ext2 <device_id> ... (command)")?;
-
-            let subcommand = match words.next() {
-                Some("superblock") => Some(EXT2Command::Superblock),
-                Some("ls-inode") => {
-                    let inode_number = parse_next_word(
-                        &mut words,
-                        "inode number",
-                        "ext2 <device_id> ls-inode [inode_number] (defaults to root)",
-                    );
-                    let inode_number = inode_number.map(ext2::InodeNumber);
-                    Some(EXT2Command::ListInode { inode_number })
-                }
-                _ => {
-                    serial_println!("Usage: ext2 <device-id> <superblock|ls-inode|cat-inode>");
-                    None
-                }
-            };
-
-            subcommand.map(|command| Command::EXT2 { device_id, command })
-        }
         "timer" => {
             let milliseconds = parse_next_word(&mut words, "milliseconds", "timer <milliseconds>")?;
             Some(Command::Timer(Milliseconds::new(milliseconds)))
@@ -579,33 +539,6 @@ fn run_command(command: &Command) {
             let bios_param_block: fat::BIOSParameterBlock =
                 unsafe { data.as_ptr().cast::<fat::BIOSParameterBlock>().read() };
             serial_println!("BIOS Parameter Block: {:#x?}", bios_param_block);
-        }
-        Command::EXT2 { device_id, command } => {
-            let device = block::virtio_block_device(*device_id);
-            let mut file_system =
-                ext2::FileSystem::read(device).expect("failed to read EXT2 filesystem");
-            match command {
-                EXT2Command::Superblock => {
-                    serial_println!("{:#x?}", file_system.superblock());
-                }
-                EXT2Command::ListInode { inode_number } => {
-                    let inode = if let Some(inode_number) = inode_number {
-                        let Some(inode) = file_system.read_inode(*inode_number) else {
-                            serial_println!("inode {:?} not found", inode_number);
-                            return;
-                        };
-                        inode
-                    } else {
-                        file_system.read_root().0
-                    };
-                    serial_println!("{:#x?}", inode);
-                    serial_println!("Listing root directory...");
-                    file_system.iter_directory(&inode, |entry| {
-                        serial_println!("{:x?}", entry);
-                        true
-                    });
-                }
-            }
         }
         Command::Timer(ms) => {
             let inner_ms = *ms;

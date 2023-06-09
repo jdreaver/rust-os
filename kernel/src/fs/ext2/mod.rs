@@ -16,6 +16,4 @@ mod strings;
 mod superblock;
 mod vfs;
 
-pub(crate) use file_system::FileSystem; // Used in shell
-pub(crate) use superblock::*;
 pub(crate) use vfs::*;

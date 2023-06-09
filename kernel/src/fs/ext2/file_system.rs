@@ -6,17 +6,14 @@ use super::block_group::{BlockGroupDescriptor, InodeBitmap};
 use super::directory::{DirectoryBlock, DirectoryEntry};
 use super::inode::{Inode, InodeDirectBlocks, InodeMode};
 use super::superblock::{
-    BlockAddress, InodeNumber, LocalInodeIndex, OffsetBytes, Superblock, ROOT_DIRECTORY,
+    BlockAddress, BlockGroupIndex, InodeNumber, LocalInodeIndex, OffsetBytes, Superblock,
+    ROOT_DIRECTORY,
 };
-use super::BlockGroupIndex;
 
 /// In-memory representation if ext2 file system, and main point of interaction
 /// with file system.
 #[derive(Debug)]
-pub(crate) struct FileSystem<D> {
-    // N.B. Storing raw blocks so writing them back to the disk device is
-    // trivial, and to ensure we don't leak memory if we e.g. cast only part of
-    // the block to a type and forget the rest of the bytes.
+pub(super) struct FileSystem<D> {
     superblock: BlockBufferView<Superblock>,
     block_group_descriptors: BlockGroupDescriptorBlocks,
     block_size: BlockSize,
@@ -65,7 +62,7 @@ impl BlockGroupDescriptorBlocks {
 }
 
 impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
-    pub(crate) fn read(device: BlockDevice<D>) -> Option<Self> {
+    pub(super) fn read(device: BlockDevice<D>) -> Option<Self> {
         let mut superblock: BlockBufferView<Superblock> = device
             .read_blocks(
                 Superblock::SUPERBLOCK_BLOCK_SIZE,
@@ -99,18 +96,18 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         })
     }
 
-    pub(crate) fn superblock(&self) -> &Superblock {
+    pub(super) fn superblock(&self) -> &Superblock {
         &self.superblock
     }
 
-    pub(crate) fn read_root(&mut self) -> (Inode, InodeNumber) {
+    pub(super) fn read_root(&mut self) -> (Inode, InodeNumber) {
         let inode = self
             .read_inode(ROOT_DIRECTORY)
             .expect("couldn't read root directory inode!");
         (inode, ROOT_DIRECTORY)
     }
 
-    pub(crate) fn read_inode(&mut self, inode_number: InodeNumber) -> Option<Inode> {
+    pub(super) fn read_inode(&mut self, inode_number: InodeNumber) -> Option<Inode> {
         let (block_group_index, local_inode_index) = self.superblock.inode_location(inode_number);
         let block_group_descriptor = self.block_group_descriptors.get(block_group_index)?;
 
@@ -148,7 +145,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         (buf, inode_offset)
     }
 
-    pub(crate) fn inode_size(&self, inode: &Inode) -> u64 {
+    pub(super) fn inode_size(&self, inode: &Inode) -> u64 {
         // In revision 0, we only have 32-bit sizes.
         if self.superblock.rev_level == 0 {
             return u64::from(inode.size_low);
@@ -157,7 +154,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         (u64::from(inode.size_high) << 32) | u64::from(inode.size_low)
     }
 
-    pub(crate) fn append_to_inode_data(&mut self, inode: &Inode, data: &[u8]) {
+    pub(super) fn append_to_inode_data(&mut self, inode: &Inode, data: &[u8]) {
         let direct_blocks = inode.direct_blocks;
         let Some(last_block) = direct_blocks.iter().last() else {
             log::error!("append_to_file: no blocks in inode. TODO: Support adding new blocks");
@@ -181,7 +178,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         block_buf.flush();
     }
 
-    pub(crate) fn iter_file_blocks<F>(&mut self, inode: &Inode, mut func: F)
+    pub(super) fn iter_file_blocks<F>(&mut self, inode: &Inode, mut func: F)
     where
         F: FnMut(usize, BlockBuffer),
     {
@@ -194,7 +191,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         }
     }
 
-    pub(crate) fn iter_directory<F>(&mut self, inode: &Inode, mut func: F)
+    pub(super) fn iter_directory<F>(&mut self, inode: &Inode, mut func: F)
     where
         F: FnMut(DirectoryEntry) -> bool,
     {
@@ -217,7 +214,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         });
     }
 
-    pub(crate) fn create_file(
+    pub(super) fn create_file(
         &mut self,
         parent: &Inode,
         parent_number: InodeNumber,

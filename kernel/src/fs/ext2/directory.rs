@@ -6,7 +6,7 @@ use super::superblock::InodeNumber;
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#linked-directories>
 #[derive(Debug)]
-pub(crate) struct DirectoryBlock {
+pub(super) struct DirectoryBlock {
     block: BlockBuffer,
 
     /// Start point for each directory entry.
@@ -14,7 +14,7 @@ pub(crate) struct DirectoryBlock {
 }
 
 impl DirectoryBlock {
-    pub(crate) fn from_block(mut block: BlockBuffer) -> Self {
+    pub(super) fn from_block(mut block: BlockBuffer) -> Self {
         let bytes = block.data_mut();
 
         let mut entry_locations = Vec::new();
@@ -31,7 +31,7 @@ impl DirectoryBlock {
         }
     }
 
-    // pub(crate) fn get_entry(&self, index: usize) -> Option<DirectoryEntry> {
+    // pub(super) fn get_entry(&self, index: usize) -> Option<DirectoryEntry> {
     //     let entry_location = self.entry_locations.get(index)?;
     //     Some(self.load_entry_from_location(*entry_location))
     // }
@@ -41,7 +41,7 @@ impl DirectoryBlock {
         unsafe { DirectoryEntry::from_bytes(&bytes[location..]) }
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = DirectoryEntry> {
+    pub(super) fn iter(&self) -> impl Iterator<Item = DirectoryEntry> {
         self.entry_locations
             .iter()
             .map(|&location| self.load_entry_from_location(location))
@@ -49,7 +49,7 @@ impl DirectoryBlock {
 }
 
 #[derive(Debug)]
-pub(crate) struct DirectoryEntry<'a> {
+pub(super) struct DirectoryEntry<'a> {
     bytes: &'a [u8],
 }
 
@@ -69,22 +69,22 @@ impl<'a> DirectoryEntry<'a> {
         }
     }
 
-    pub(crate) fn name(&self) -> &str {
+    pub(super) fn name(&self) -> &str {
         let name_start = core::mem::size_of::<DirectoryEntryHeader>();
         let name_end = name_start + self.header().name_len as usize;
         let name_slice = &self.bytes[name_start..name_end];
         core::str::from_utf8(name_slice).unwrap_or("<invalid utf8>")
     }
 
-    pub(crate) fn inode_number(&self) -> InodeNumber {
+    pub(super) fn inode_number(&self) -> InodeNumber {
         self.header().inode
     }
 
-    pub(crate) fn is_file(&self) -> bool {
+    pub(super) fn is_file(&self) -> bool {
         self.header().file_type == DirectoryEntryFileType::RegularFile
     }
 
-    pub(crate) fn is_dir(&self) -> bool {
+    pub(super) fn is_dir(&self) -> bool {
         self.header().file_type == DirectoryEntryFileType::Directory
     }
 }
@@ -92,17 +92,17 @@ impl<'a> DirectoryEntry<'a> {
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#linked-directory-entry-structure>
 #[repr(C, packed)]
 #[derive(Debug)]
-pub(crate) struct DirectoryEntryHeader {
-    pub(crate) inode: InodeNumber,
-    pub(crate) rec_len: u16,
-    pub(crate) name_len: u8,
-    pub(crate) file_type: DirectoryEntryFileType,
+struct DirectoryEntryHeader {
+    inode: InodeNumber,
+    rec_len: u16,
+    name_len: u8,
+    file_type: DirectoryEntryFileType,
 }
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
-pub(crate) enum DirectoryEntryFileType {
+enum DirectoryEntryFileType {
     Unknown = 0,
     RegularFile = 1,
     Directory = 2,

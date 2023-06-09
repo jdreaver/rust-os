@@ -7,38 +7,38 @@ use super::superblock::BlockAddress;
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#inode-table>
 #[repr(C, packed)]
 #[derive(Debug, Clone)]
-pub(crate) struct Inode {
-    pub(crate) mode: InodeMode,
-    pub(crate) uid: u16,
-    pub(crate) size_low: u32,
-    pub(crate) atime: u32,
-    pub(crate) ctime: u32,
-    pub(crate) mtime: u32,
-    pub(crate) dtime: u32,
-    pub(crate) gid: u16,
-    pub(crate) links_count: u16,
-    pub(crate) blocks: u32,
-    pub(crate) flags: u32,
-    pub(crate) osd1: u32,
-    pub(crate) direct_blocks: InodeDirectBlocks,
-    pub(crate) singly_indirect_block: BlockAddress,
-    pub(crate) doubly_indirect_block: BlockAddress,
-    pub(crate) triply_indirect_block: BlockAddress,
-    pub(crate) generation: u32,
-    pub(crate) file_acl: u32,
+pub(super) struct Inode {
+    pub(super) mode: InodeMode,
+    pub(super) uid: u16,
+    pub(super) size_low: u32,
+    pub(super) atime: u32,
+    pub(super) ctime: u32,
+    pub(super) mtime: u32,
+    pub(super) dtime: u32,
+    pub(super) gid: u16,
+    pub(super) links_count: u16,
+    pub(super) blocks: u32,
+    pub(super) flags: u32,
+    pub(super) osd1: u32,
+    pub(super) direct_blocks: InodeDirectBlocks,
+    pub(super) singly_indirect_block: BlockAddress,
+    pub(super) doubly_indirect_block: BlockAddress,
+    pub(super) triply_indirect_block: BlockAddress,
+    pub(super) generation: u32,
+    pub(super) file_acl: u32,
     /// High 32 bits of file size. This is dir_acl in revision 0.
-    pub(crate) size_high: u32,
-    pub(crate) faddr: u32,
-    pub(crate) osd2: [u8; 12],
+    pub(super) size_high: u32,
+    pub(super) faddr: u32,
+    pub(super) osd2: [u8; 12],
 }
 
 impl Inode {
-    pub(crate) fn is_dir(&self) -> bool {
+    pub(super) fn is_dir(&self) -> bool {
         let mode = self.mode;
         mode.contains(InodeMode::IFDIR)
     }
 
-    pub(crate) fn is_file(&self) -> bool {
+    pub(super) fn is_file(&self) -> bool {
         let mode = self.mode;
         mode.contains(InodeMode::IFREG)
     }
@@ -48,7 +48,7 @@ bitflags! {
     #[derive(Debug, Copy, Clone)]
     #[repr(transparent)]
     /// <https://www.nongnu.org/ext2-doc/ext2.html#i-mode>
-    pub(crate) struct InodeMode: u16 {
+    pub(super) struct InodeMode: u16 {
         // Access rights
 
         /// Others execute
@@ -115,14 +115,14 @@ bitflags! {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct InodeDirectBlocks(pub(crate) [BlockAddress; 12]);
+pub(super) struct InodeDirectBlocks(pub(super) [BlockAddress; 12]);
 
 impl InodeDirectBlocks {
-    pub(crate) fn empty() -> Self {
+    pub(super) fn empty() -> Self {
         Self([BlockAddress(0); 12])
     }
 
-    pub(crate) fn iter(&self) -> InodeDirectBlockIterator {
+    pub(super) fn iter(&self) -> InodeDirectBlockIterator {
         InodeDirectBlockIterator {
             direct_blocks: *self,
             index: 0,
@@ -136,7 +136,7 @@ impl fmt::Debug for InodeDirectBlocks {
     }
 }
 
-pub(crate) struct InodeDirectBlockIterator {
+pub(super) struct InodeDirectBlockIterator {
     direct_blocks: InodeDirectBlocks,
     index: usize,
 }
