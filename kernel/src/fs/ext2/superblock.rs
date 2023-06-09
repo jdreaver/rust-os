@@ -3,7 +3,7 @@ use core::ops::Add;
 
 use bitflags::bitflags;
 
-use crate::vfs::{BlockIndex, BlockSize};
+use crate::block::{BlockIndex, BlockSize};
 
 use super::block_group::InodeTableBlockAddress;
 use super::strings::CStringBytes;

@@ -92,7 +92,6 @@ make test
 ## TODO
 
 - Filesystem
-  - Move `block.rs` to top-level, not in VFS
   - Features to add before working on abstractions (so we don't accidentally trapdoor into a design that makes them harder)
     - Nested mountpoints, e.g. mount ext2 at root and then sysfs at `/sys`
       - Add mountpoint argument to `mount` and ensure parent directory exists (or mountpoint is `/`)

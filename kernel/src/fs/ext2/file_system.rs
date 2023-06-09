@@ -1,4 +1,4 @@
-use crate::vfs;
+use crate::block::{BlockBuffer, BlockDevice, BlockIndex, BlockSize};
 
 use super::block_group::{BlockGroupDescriptor, InodeBitmap};
 use super::directory::{DirectoryBlock, DirectoryEntry};
@@ -13,15 +13,15 @@ pub(crate) struct FileSystem<R> {
     // N.B. Storing raw blocks so writing them back to the disk device is
     // trivial, and to ensure we don't leak memory if we e.g. cast only part of
     // the block to a type and forget the rest of the bytes.
-    superblock_block: vfs::BlockBuffer,
-    block_group_descriptors_blocks: vfs::BlockBuffer,
+    superblock_block: BlockBuffer,
+    block_group_descriptors_blocks: BlockBuffer,
     num_block_groups: usize,
-    block_size: vfs::BlockSize,
+    block_size: BlockSize,
 
     block_reader: R,
 }
 
-impl<R: vfs::BlockDevice> FileSystem<R> {
+impl<R: BlockDevice> FileSystem<R> {
     pub(crate) fn read(block_reader: R) -> Option<Self> {
         let superblock_block = block_reader.read_blocks(
             Superblock::SUPERBLOCK_BLOCK_SIZE,
@@ -72,7 +72,7 @@ impl<R: vfs::BlockDevice> FileSystem<R> {
         let block_group_descriptor = self.block_group_descriptor(block_group_index)?;
 
         let inode_bitmap_block_address =
-            vfs::BlockIndex::from(u64::from(block_group_descriptor.inode_bitmap.0));
+            BlockIndex::from(u64::from(block_group_descriptor.inode_bitmap.0));
         let inode_bitmap_block =
             self.block_reader
                 .read_blocks(self.block_size, inode_bitmap_block_address, 1);
@@ -110,7 +110,7 @@ impl<R: vfs::BlockDevice> FileSystem<R> {
 
         let direct_blocks = inode.direct_blocks;
         for block_addr in direct_blocks.iter() {
-            let addr = vfs::BlockIndex::from(u64::from(block_addr.0));
+            let addr = BlockIndex::from(u64::from(block_addr.0));
             let block_buf = self.block_reader.read_blocks(self.block_size, addr, 1);
 
             let data = block_buf.data();

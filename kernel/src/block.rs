@@ -4,13 +4,6 @@ use alloc::vec::Vec;
 
 use crate::virtio;
 
-/// Wrapper around a block device driver.
-///
-/// Note: we use `&self` and not `&mut self` on these methods. It is assumed
-/// some form of lock is wrapping this.
-///
-/// TODO: This should be in a dedicated block layer (maybe with caching), not in
-/// the VFS.
 pub(crate) trait BlockDevice {
     fn device_block_size(&self) -> BlockSize;
 

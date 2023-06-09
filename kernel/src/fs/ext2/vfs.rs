@@ -4,6 +4,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
+use crate::block::BlockDevice;
 use crate::sync::SpinLock;
 use crate::vfs;
 
@@ -17,7 +18,7 @@ pub(crate) struct VFSFileSystem<R> {
     reader: Arc<SpinLock<FileSystem<R>>>,
 }
 
-impl<R: vfs::BlockDevice> VFSFileSystem<R> {
+impl<R: BlockDevice> VFSFileSystem<R> {
     pub(crate) fn read(reader: R) -> Self {
         let reader = FileSystem::read(reader).expect("couldn't read ext2 filesystem!");
         let reader = Arc::new(SpinLock::new(reader));
@@ -25,7 +26,7 @@ impl<R: vfs::BlockDevice> VFSFileSystem<R> {
     }
 }
 
-impl<R: Debug + vfs::BlockDevice + 'static> vfs::FileSystem for VFSFileSystem<R> {
+impl<R: Debug + BlockDevice + 'static> vfs::FileSystem for VFSFileSystem<R> {
     fn read_root(&mut self) -> vfs::Inode {
         let inode = self.reader.lock_disable_interrupts().read_root();
         let reader = self.reader.clone();
@@ -49,7 +50,7 @@ pub(crate) struct EXT2FileInode<R> {
     inode: Inode,
 }
 
-impl<R: Debug + vfs::BlockDevice> vfs::FileInode for EXT2FileInode<R> {
+impl<R: Debug + BlockDevice> vfs::FileInode for EXT2FileInode<R> {
     fn read(&mut self) -> Vec<u8> {
         let mut data = Vec::new();
         self.reader
@@ -67,7 +68,7 @@ pub(crate) struct EXT2DirectoryInode<R> {
     inode: Inode,
 }
 
-impl<R: Debug + vfs::BlockDevice + 'static> vfs::DirectoryInode for EXT2DirectoryInode<R> {
+impl<R: Debug + BlockDevice + 'static> vfs::DirectoryInode for EXT2DirectoryInode<R> {
     fn subdirectories(&mut self) -> Vec<Box<dyn vfs::DirectoryEntry>> {
         let mut entries: Vec<Box<dyn vfs::DirectoryEntry>> = Vec::new();
         self.reader
@@ -87,7 +88,7 @@ pub(crate) struct EXT2DirectoryEntry<R> {
     entry: DirectoryEntry,
 }
 
-impl<R: Debug + vfs::BlockDevice + 'static> vfs::DirectoryEntry for EXT2DirectoryEntry<R> {
+impl<R: Debug + BlockDevice + 'static> vfs::DirectoryEntry for EXT2DirectoryEntry<R> {
     fn name(&self) -> String {
         String::from(&self.entry.name)
     }
