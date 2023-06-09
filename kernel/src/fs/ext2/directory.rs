@@ -36,8 +36,7 @@ impl Iterator for DirectoryBlockIterator<'_> {
         let name_start = self.offset + core::mem::size_of::<DirectoryEntryHeader>();
         let name_end = name_start + header.name_len as usize;
         let name_slice = &self.block.0[name_start..name_end];
-        let name = core::str::from_utf8(name_slice).unwrap_or("<invalid UTF-8>");
-        let name = String::from(name);
+        let name = String::from_utf8_lossy(name_slice).into_owned();
 
         self.offset += header.rec_len as usize;
 

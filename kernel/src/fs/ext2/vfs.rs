@@ -64,12 +64,16 @@ pub(crate) struct EXT2FileInode<D> {
 
 impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for EXT2FileInode<D> {
     fn read(&mut self) -> Vec<u8> {
+        let mut reader = self.reader.lock_disable_interrupts();
+
         let mut data = Vec::new();
-        self.reader
-            .lock_disable_interrupts()
-            .iter_file_data(&self.inode, |block_data| {
-                data.extend(block_data);
-            });
+        let block_size = usize::from(u16::from(reader.superblock().block_size()));
+        let file_size = reader.inode_size(&self.inode) as usize;
+        reader.iter_file_blocks(&self.inode, |i, block_buf| {
+            let slice_end = file_size - (i * block_size);
+            let block_data = block_buf.data();
+            data.extend(&block_data[..slice_end]);
+        });
         data
     }
 
@@ -77,7 +81,7 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for EXT2FileInode<D>
         let mut lock = self.reader.lock_disable_interrupts();
 
         let mut written_bytes = 0;
-        lock.iter_file_blocks(&self.inode, |block_buf| {
+        lock.iter_file_blocks(&self.inode, |_, block_buf| {
             if written_bytes >= data.len() {
                 return; // TODO: Allow early termination
             }

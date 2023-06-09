@@ -175,36 +175,15 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
 
     pub(crate) fn iter_file_blocks<F>(&mut self, inode: &Inode, mut func: F)
     where
-        F: FnMut(&mut BlockBuffer),
+        F: FnMut(usize, &mut BlockBuffer),
     {
         let direct_blocks = inode.direct_blocks;
-        for block_addr in direct_blocks.iter() {
+        for (i, block_addr) in direct_blocks.iter().enumerate() {
             let addr = BlockIndex::from(u64::from(block_addr.0));
             let mut block_buf = self.device.read_blocks(self.block_size, addr, 1);
 
-            func(&mut block_buf);
+            func(i, &mut block_buf);
         }
-    }
-
-    pub(crate) fn iter_file_data<F>(&mut self, inode: &Inode, mut func: F)
-    where
-        F: FnMut(&[u8]),
-    {
-        let mut seen_size = 0;
-        let total_size = self.inode_size(inode) as usize;
-
-        self.iter_file_blocks(inode, |block_buf| {
-            let data = block_buf.data();
-            let data: &[u8] = if seen_size + data.len() > total_size {
-                let slice_end = total_size - seen_size;
-                &data[..slice_end]
-            } else {
-                data
-            };
-            seen_size += data.len();
-
-            func(data);
-        });
     }
 
     pub(crate) fn iter_directory<F>(&mut self, inode: &Inode, mut func: F)
@@ -213,8 +192,15 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
     {
         assert!(inode.is_dir());
 
-        self.iter_file_data(inode, |data| {
-            let dir_block = DirectoryBlock(data);
+        // Invariant: the directory data length is always a multiple of the
+        // block size. Extra space manifests as directory entries with rec_len
+        // longer than necessary.
+        let inode_size = self.inode_size(inode);
+        let block_size = u64::from(u16::from(self.superblock().block_size()));
+        assert!(inode_size % block_size == 0, "invariant violated: directory size {inode_size} not a multiple of block size {block_size}");
+
+        self.iter_file_blocks(inode, |_, data| {
+            let dir_block = DirectoryBlock(data.data());
             for dir_entry in dir_block.iter() {
                 log::warn!("dir_entry: {:?}", dir_entry);
                 if !func(dir_entry) {

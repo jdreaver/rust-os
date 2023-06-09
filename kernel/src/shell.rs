@@ -188,9 +188,6 @@ enum EXT2Command {
     ListInode {
         inode_number: Option<ext2::InodeNumber>,
     },
-    CatInode {
-        inode_number: ext2::InodeNumber,
-    },
 }
 
 #[derive(Debug)]
@@ -310,15 +307,6 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
                     );
                     let inode_number = inode_number.map(ext2::InodeNumber);
                     Some(EXT2Command::ListInode { inode_number })
-                }
-                Some("cat-inode") => {
-                    let inode_number = parse_next_word(
-                        &mut words,
-                        "inode number",
-                        "ext2 <device_id> cat-inode <inode_number>",
-                    )?;
-                    let inode_number = ext2::InodeNumber(inode_number);
-                    Some(EXT2Command::CatInode { inode_number })
                 }
                 _ => {
                     serial_println!("Usage: ext2 <device-id> <superblock|ls-inode|cat-inode>");
@@ -617,21 +605,6 @@ fn run_command(command: &Command) {
                         let file_type = entry.header.file_type;
                         serial_println!("{} (inode: {inode:?}, type: {file_type:?})", entry.name);
                         true
-                    });
-                }
-                EXT2Command::CatInode { inode_number } => {
-                    let Some(inode) = file_system.read_inode(*inode_number) else {
-                        serial_println!("inode {:?} not found", inode_number);
-                        return;
-                    };
-                    if !inode.is_file() {
-                        serial_println!("inode {:?} is not a file", inode_number);
-                        return;
-                    }
-                    serial_println!("{:#x?}", inode);
-                    serial_println!("Reading inode...");
-                    file_system.iter_file_data(&inode, |blocks| {
-                        serial_print!("{}", String::from_utf8_lossy(blocks));
                     });
                 }
             }
