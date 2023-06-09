@@ -58,7 +58,7 @@ pub(crate) fn virtio_block_get_id(device_index: usize) -> OnceReceiver<VirtIOBlo
         .get(device_index)
         .expect("invalid device index")
         .lock_disable_interrupts();
-    device.add_request(&BlockRequest::GetID)
+    device.add_request(&BlockRequest::GetID, None)
 }
 
 pub(crate) fn virtio_block_read(
@@ -71,10 +71,35 @@ pub(crate) fn virtio_block_read(
         .get(device_index)
         .expect("invalid device index")
         .lock_disable_interrupts();
-    device.add_request(&BlockRequest::Read {
-        sector,
-        num_sectors,
-    })
+    device.add_request(
+        &BlockRequest::Read {
+            sector,
+            num_sectors,
+        },
+        None,
+    )
+}
+
+pub(crate) fn virtio_block_write(
+    device_index: usize,
+    sector: u64,
+    data: &[u8],
+) -> OnceReceiver<VirtIOBlockResponse> {
+    let devices_lock = VIRTIO_BLOCK.read();
+    let mut device = devices_lock
+        .get(device_index)
+        .expect("invalid device index")
+        .lock_disable_interrupts();
+
+    let data_len = data.len() as u32;
+    let data_len = data_len.next_multiple_of(VIRTIO_BLOCK_SECTOR_SIZE_BYTES);
+    device.add_request(
+        &BlockRequest::Write {
+            sector,
+            data_len,
+        },
+        Some(data),
+    )
 }
 
 fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
@@ -97,15 +122,18 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
         let request = BlockRequest::from_raw(&raw_request);
 
         match request {
-            BlockRequest::Read { sector: _, num_sectors } => {
-                let data_len = num_sectors * VIRTIO_BLOCK_SECTOR_SIZE_BYTES;
+            BlockRequest::Read { .. } => {
                 let bytes = unsafe {
                     core::slice::from_raw_parts(
                         buffer.address().as_u64() as *const u8,
-                        data_len as usize,
+                        raw_request.data_len as usize,
                     )
                 };
                 data.sender.send(VirtIOBlockResponse::Read { data: bytes.to_vec() });
+            }
+            BlockRequest::Write { .. } => {
+                log::warn!("got request: {:#x?}", request);
+                data.sender.send(VirtIOBlockResponse::Write);
             }
             BlockRequest::GetID => {
                 let s = unsafe {
@@ -114,7 +142,7 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
                     // is no null terminator)
                     strings::c_str_from_pointer(
                         buffer.address().as_u64() as *const u8,
-                        BlockRequest::GET_ID_DATA_LEN as usize,
+                        raw_request.data_len as usize,
                     )
                 };
                 data.sender.send(VirtIOBlockResponse::GetID { id: String::from(s) });
@@ -149,6 +177,10 @@ impl VirtIOBlockDevice {
             |features: &mut BlockDeviceFeatureBits| {
                 // Don't use multi queue for now
                 features.remove(BlockDeviceFeatureBits::MQ);
+
+                // Don't do flushes or caching either for now
+                features.remove(BlockDeviceFeatureBits::CONFIG_WCE);
+                features.remove(BlockDeviceFeatureBits::FLUSH);
             },
             1,
         );
@@ -172,9 +204,13 @@ impl VirtIOBlockDevice {
         }
     }
 
-    fn add_request(&mut self, request: &BlockRequest) -> OnceReceiver<VirtIOBlockResponse> {
+    fn add_request(
+        &mut self,
+        request: &BlockRequest,
+        request_data: Option<&[u8]>,
+    ) -> OnceReceiver<VirtIOBlockResponse> {
         let raw_request = request.to_raw();
-        let (desc_chain, buffer) = raw_request.to_descriptor_chain();
+        let (desc_chain, buffer) = raw_request.to_descriptor_chain(request_data);
 
         let (sender, receiver) = once_channel();
         let data = BlockDeviceDescData { buffer, sender };
@@ -262,6 +298,7 @@ struct BlockConfigTopology {
 #[derive(Debug)]
 enum BlockRequest {
     Read { sector: u64, num_sectors: u32 },
+    Write { sector: u64, data_len: u32 },
     GetID,
 }
 
@@ -278,6 +315,12 @@ impl BlockRequest {
                 let data_len = num_sectors * VIRTIO_BLOCK_SECTOR_SIZE_BYTES;
                 RawBlockRequest::new(BlockRequestType::In, *sector, data_len)
             }
+            Self::Write {
+                sector,
+                data_len,
+            } => {
+                RawBlockRequest::new(BlockRequestType::Out, *sector, *data_len)
+            }
             Self::GetID => RawBlockRequest::new(BlockRequestType::GetID, 0, Self::GET_ID_DATA_LEN),
         }
     }
@@ -290,6 +333,13 @@ impl BlockRequest {
                 Self::Read {
                     sector: raw.sector,
                     num_sectors,
+                }
+            }
+            BlockRequestType::Out => {
+                assert!(raw.data_len % VIRTIO_BLOCK_SECTOR_SIZE_BYTES == 0);
+                Self::Write {
+                    sector: raw.sector,
+                    data_len: raw.data_len,
                 }
             }
             BlockRequestType::GetID => Self::GetID,
@@ -349,7 +399,10 @@ impl RawBlockRequest {
     /// Creates a descriptor (that is chained) for the block request. The
     /// returned buffer holds the underlying data for the descriptor chain. It
     /// is important that the buffer is not dropped before the descriptor chain.
-    fn to_descriptor_chain(&self) -> ([ChainedVirtQueueDescriptorElem; 3], PhysicalBuffer) {
+    fn to_descriptor_chain(
+        &self,
+        request_data: Option<&[u8]>,
+    ) -> ([ChainedVirtQueueDescriptorElem; 3], PhysicalBuffer) {
         // Compute how much data we need
         let header_align = core::mem::align_of::<RawBlockRequestHeader>();
         let header_offset = self.data_len + (self.data_len % header_align as u32);
@@ -363,6 +416,15 @@ impl RawBlockRequest {
         let total_size = status_offset + core::mem::size_of::<BlockRequestStatus>() as u32;
         let mut buffer = PhysicalBuffer::allocate_zeroed(total_size as usize)
             .expect("failed to allocate block request buffer");
+
+        // Copy data, if present
+        if let Some(request_data) = request_data {
+            assert!(request_data.len() <= self.data_len as usize);
+            let buffer_slice = buffer.as_slice_mut();
+            for (i, byte) in request_data.iter().enumerate() {
+                buffer_slice[i] = *byte;
+            }
+        }
 
         // Put header right after data
         unsafe {
@@ -451,14 +513,14 @@ enum BlockRequestType {
 impl BlockRequestType {
     fn from_u32(value: u32) -> Option<Self> {
         match value {
-            0 => Some(Self::In),
-            1 => Some(Self::Out),
-            4 => Some(Self::Flush),
-            8 => Some(Self::GetID),
-            10 => Some(Self::GetLifetime),
-            11 => Some(Self::Discard),
-            13 => Some(Self::WriteZeroes),
-            14 => Some(Self::SecureErase),
+            x if x == Self::In as u32 => Some(Self::In),
+            x if x == Self::Out as u32 => Some(Self::Out),
+            x if x == Self::Flush as u32 => Some(Self::Flush),
+            x if x == Self::GetID as u32 => Some(Self::GetID),
+            x if x == Self::GetLifetime as u32 => Some(Self::GetLifetime),
+            x if x == Self::Discard as u32 => Some(Self::Discard),
+            x if x == Self::WriteZeroes as u32 => Some(Self::WriteZeroes),
+            x if x == Self::SecureErase as u32 => Some(Self::SecureErase),
             _ => None,
         }
     }
@@ -499,5 +561,6 @@ struct BlockDeviceDescData {
 #[derive(Debug)]
 pub(crate) enum VirtIOBlockResponse {
     Read { data: Vec<u8> },
+    Write, // No data, just ACK that it completed
     GetID { id: String },
 }

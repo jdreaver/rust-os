@@ -159,6 +159,7 @@ enum Command {
 enum VirtIOBlockCommand {
     List,
     Read { device_id: usize, sector: u64 },
+    Write { device_id: usize, sector: u64, data: u64 },
     ID { device_id: usize },
 }
 
@@ -222,6 +223,17 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
                 Some(Command::VirtIOBlock(VirtIOBlockCommand::Read {
                     device_id,
                     sector,
+                }))
+            }
+            Some("write") => {
+                let usage = "block write <device_id> <sector> <number>";
+                let device_id = parse_next_word(&mut words, "device ID", usage)?;
+                let sector = parse_next_word(&mut words, "sector number", usage)?;
+                let data = parse_next_word(&mut words, "number", usage)?;
+                Some(Command::VirtIOBlock(VirtIOBlockCommand::Write {
+                    device_id,
+                    sector,
+                    data,
                 }))
             }
             Some("id") => {
@@ -436,13 +448,24 @@ fn run_command(command: &Command) {
         }
         Command::VirtIOBlock(VirtIOBlockCommand::Read { device_id, sector }) => {
             serial_println!("Reading VirtIO block sector {sector}...");
-            let cell = virtio::virtio_block_read(*device_id, *sector, 2);
+            let cell = virtio::virtio_block_read(*device_id, *sector, 1);
             let response = cell.wait_sleep();
             let virtio::VirtIOBlockResponse::Read{ ref data } = response else {
                 log::error!("Unexpected response from block request: {response:x?}");
                 return;
             };
             serial_println!("Got block data: {data:x?}");
+        }
+        Command::VirtIOBlock(VirtIOBlockCommand::Write { device_id, sector, data }) => {
+            serial_println!("Reading VirtIO block sector {sector}...");
+            let data = data.to_le_bytes();
+            let cell = virtio::virtio_block_write(*device_id, *sector, &data);
+            let response = cell.wait_sleep();
+            let virtio::VirtIOBlockResponse::Write = response else {
+                log::error!("Unexpected response from block request: {response:x?}");
+                return;
+            };
+            serial_println!("Write success");
         }
         Command::VirtIOBlock(VirtIOBlockCommand::ID { device_id }) => {
             serial_println!("Reading VirtIO block device ID...");

@@ -315,11 +315,15 @@ impl PhysicalBuffer {
         })
     }
 
+    pub(crate) fn as_slice_mut(&mut self) -> &mut [u8] {
+        let ptr = self.address().as_u64() as *mut u8;
+        unsafe { core::slice::from_raw_parts_mut(ptr, self.len_bytes()) }
+    }
+
     pub(crate) fn allocate_zeroed(min_bytes: usize) -> Result<Self, AllocError> {
-        let buffer = Self::allocate(min_bytes)?;
-        let ptr = buffer.address().as_u64() as *mut u8;
-        unsafe {
-            ptr::write_bytes(ptr, 0, buffer.len_bytes());
+        let mut buffer = Self::allocate(min_bytes)?;
+        for x in buffer.as_slice_mut() {
+            *x = 0;
         }
         Ok(buffer)
     }
