@@ -2,7 +2,7 @@ use crate::block::{
     BlockBuffer, BlockBufferView, BlockDevice, BlockDeviceDriver, BlockIndex, BlockSize,
 };
 
-use super::block_group::{BlockGroupDescriptor, InodeBitmap};
+use super::block_group::{BlockBitmap, BlockGroupDescriptor, InodeBitmap};
 use super::directory::{DirectoryBlock, DirectoryEntryFileType};
 use super::inode::{Inode, InodeDirectBlocks, InodeMode};
 use super::superblock::{
@@ -112,7 +112,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         let block_group_descriptor = self.block_group_descriptors.get(block_group_index)?;
 
         let mut inode_bitmap_block = self.inode_bitmap_block(block_group_descriptor);
-        let inode_bitmap = InodeBitmap(inode_bitmap_block.data_mut());
+        let inode_bitmap = InodeBitmap::new(inode_bitmap_block.data_mut());
         let inode_used = inode_bitmap.is_used(local_inode_index)?;
         if !inode_used {
             return None;
@@ -145,6 +145,13 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         (buf, inode_offset)
     }
 
+    fn block_bitmap_block(&self, block_group_descriptor: &BlockGroupDescriptor) -> BlockBuffer {
+        let block_bitmap_block_address =
+            BlockIndex::from(u64::from(block_group_descriptor.block_bitmap.0));
+        self.device
+            .read_blocks(self.block_size, block_bitmap_block_address, 1)
+    }
+
     pub(super) fn inode_size(&self, inode: &Inode) -> u64 {
         // In revision 0, we only have 32-bit sizes.
         if self.superblock.rev_level == 0 {
@@ -152,30 +159,6 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         }
 
         (u64::from(inode.size_high) << 32) | u64::from(inode.size_low)
-    }
-
-    pub(super) fn append_to_inode_data(&mut self, inode: &Inode, data: &[u8]) {
-        let direct_blocks = inode.direct_blocks;
-        let Some(last_block) = direct_blocks.iter().last() else {
-            log::error!("append_to_file: no blocks in inode. TODO: Support adding new blocks");
-            return;
-        };
-        let last_block = BlockIndex::from(u64::from(last_block.0));
-
-        let mut index_in_block = self.inode_size(inode) % u64::from(u16::from(self.block_size)) + 1;
-        let mut block_buf = self.device.read_blocks(self.block_size, last_block, 1);
-        let block_data = block_buf.data_mut();
-        for byte in data.iter() {
-            if index_in_block >= block_data.len() as u64 {
-                log::error!("append_to_file: ran out of space in the block. TODO: Support adding new blocks");
-                return;
-            }
-
-            block_data[index_in_block as usize] = *byte;
-            index_in_block += 1;
-        }
-
-        block_buf.flush();
     }
 
     pub(super) fn iter_file_blocks<F>(&mut self, inode: &Inode, mut func: F)
@@ -228,16 +211,25 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         let block_group_descriptor = self.block_group_descriptors.get(block_group_index)?;
 
         let mut inode_bitmap_block = self.inode_bitmap_block(block_group_descriptor);
-        let mut inode_bitmap = InodeBitmap(inode_bitmap_block.data_mut());
+        let mut inode_bitmap = InodeBitmap::new(inode_bitmap_block.data_mut());
         let Some(local_inode_index) = inode_bitmap.reserve_next_free() else {
             log::error!("no free inode found in block group {block_group_descriptor:?}");
             return None;
         };
         inode_bitmap_block.flush();
 
-        // TODO: Reserve some blocks for file content?
+        // Reserve one blocks for file content
+        let mut block_bitmap_block = self.block_bitmap_block(block_group_descriptor);
+        let mut block_bitmap = BlockBitmap::new(block_bitmap_block.data_mut());
+        let Some(block_address) = block_bitmap.reserve_next_free() else {
+            log::error!("no free block found in block group {block_group_descriptor:?}");
+            return None;
+        };
+        block_bitmap_block.flush();
 
         // Add inode entry to block group's inode table
+        let mut direct_blocks = InodeDirectBlocks::empty();
+        direct_blocks.insert(0, block_address);
         let inode = Inode {
             mode: InodeMode::IROTH
                 | InodeMode::IRGRP
@@ -252,10 +244,10 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
             dtime: 0,
             gid: parent.gid,
             links_count: 1,
-            blocks: 0,
+            blocks: 1, // Reserved a block above
             flags: 0,
             osd1: 0,
-            direct_blocks: InodeDirectBlocks::empty(),
+            direct_blocks,
             singly_indirect_block: BlockAddress(0),
             doubly_indirect_block: BlockAddress(0),
             triply_indirect_block: BlockAddress(0),

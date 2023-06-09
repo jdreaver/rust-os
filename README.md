@@ -95,6 +95,8 @@ make test
   - Writes
     - Adding blocks to a file (maybe use some lorem ipsum generator or something to make up text of a given length, or embed some out-of-copyright literature in the binary)
       - Also ensure we add a block to directory inodes if we are trying to add a new directory entry and there isn't enough space. Might need a special constructor on `DirectoryEntry` for this case.
+    - Appending: make sure we use the file length module block size to index into blocks. Don't just iterate over blocks.
+    - Inode stats: ensure `blocks` and `size_low`/`size_high` fields are kept up to date
     - Creating a new file
   - Deletes (delete an entire file, unmark all inodes and blocks, etc)
   - Nested mountpoints, e.g. mount ext2 at root and then sysfs at `/sys`

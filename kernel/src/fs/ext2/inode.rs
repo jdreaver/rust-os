@@ -122,6 +122,11 @@ impl InodeDirectBlocks {
         Self([BlockAddress(0); 12])
     }
 
+    pub(super) fn insert(&mut self, index: usize, block: BlockAddress) {
+        assert!(index < self.0.len(), "index {index} out of bounds");
+        self.0[index] = block;
+    }
+
     pub(super) fn iter(&self) -> InodeDirectBlockIterator {
         InodeDirectBlockIterator {
             direct_blocks: *self,
