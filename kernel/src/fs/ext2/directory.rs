@@ -14,7 +14,9 @@ pub(super) struct DirectoryBlock {
 }
 
 impl DirectoryBlock {
-    pub(super) fn from_block(mut block: BlockBuffer) -> Self {
+    /// Create from a directory block that is known to have entries in it. For
+    /// example, a block that was just loaded from a known good ext2 disk.
+    pub(super) fn from_existing_block(mut block: BlockBuffer) -> Self {
         let bytes = block.data_mut();
 
         let mut entry_locations = Vec::new();
@@ -31,11 +33,6 @@ impl DirectoryBlock {
         }
     }
 
-    // pub(super) fn get_entry(&self, index: usize) -> Option<DirectoryEntry> {
-    //     let entry_location = self.entry_locations.get(index)?;
-    //     Some(self.load_entry_from_location(*entry_location))
-    // }
-
     fn load_entry_from_location(&self, location: usize) -> DirectoryEntry {
         let bytes = self.block.data();
         unsafe { DirectoryEntry::from_bytes(&bytes[location..]) }
@@ -45,6 +42,56 @@ impl DirectoryBlock {
         self.entry_locations
             .iter()
             .map(|&location| self.load_entry_from_location(location))
+    }
+
+    pub(super) fn insert_entry(
+        &mut self,
+        name: &str,
+        inode_number: InodeNumber,
+        entry_type: DirectoryEntryFileType,
+    ) -> Option<DirectoryEntry> {
+        let mut new_header = DirectoryEntryHeader::new(inode_number, name, entry_type);
+
+        let (found_index, found_location) = self.iter().enumerate().find_map(|(i, entry)| {
+            let header = entry.header();
+
+            // Check if there is enough space
+            if header.rec_len as usize - header.required_space() >= new_header.required_space() {
+                Some((i, self.entry_locations[i]))
+            } else {
+                None
+            }
+        })?;
+
+        // Do some surgery. Truncate the previous record, and insert the new one.
+        let found_header = unsafe {
+            let ptr = self.block.data_mut()[found_location..]
+                .as_mut_ptr()
+                .cast::<DirectoryEntryHeader>();
+            ptr.as_mut().expect("DirectoryEntryHeader pointer is null")
+        };
+        let prev_rec_len = found_header.rec_len;
+        found_header.rec_len = found_header.required_space() as u16;
+
+        // Write the header and string
+        let new_location = found_location + found_header.rec_len as usize;
+        new_header.rec_len = prev_rec_len - found_header.rec_len;
+        unsafe {
+            let ptr = self.block.data_mut()[new_location..]
+                .as_mut_ptr()
+                .cast::<DirectoryEntryHeader>();
+            ptr.write(new_header);
+            let ptr = ptr.add(1).cast::<u8>();
+            ptr.copy_from_nonoverlapping(name.as_ptr(), name.len());
+        };
+
+        // Insert the new header location and return the new entry
+        self.entry_locations.insert(found_index, new_location);
+        Some(self.load_entry_from_location(new_location))
+    }
+
+    pub(super) fn flush(&self) {
+        self.block.flush();
     }
 }
 
@@ -99,10 +146,33 @@ struct DirectoryEntryHeader {
     file_type: DirectoryEntryFileType,
 }
 
+impl DirectoryEntryHeader {
+    fn new(inode: InodeNumber, name: &str, file_type: DirectoryEntryFileType) -> Self {
+        let name_len = name.len() as u8;
+        Self {
+            inode,
+            rec_len: 0,
+            name_len,
+            file_type,
+        }
+    }
+
+    /// From: https://www.nongnu.org/ext2-doc/ext2.html#ifdir-rec-len
+    ///
+    /// The directory entries must be aligned on 4 bytes boundaries and there
+    /// cannot be any directory entry spanning multiple data blocks. If an entry
+    /// cannot completely fit in one block, it must be pushed to the next data
+    /// block and the rec_len of the previous entry properly adjusted.
+    fn required_space(&self) -> usize {
+        let space = core::mem::size_of::<Self>() + self.name_len as usize;
+        space.next_multiple_of(4)
+    }
+}
+
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
-enum DirectoryEntryFileType {
+pub(super) enum DirectoryEntryFileType {
     Unknown = 0,
     RegularFile = 1,
     Directory = 2,

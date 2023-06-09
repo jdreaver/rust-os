@@ -3,7 +3,7 @@ use crate::block::{
 };
 
 use super::block_group::{BlockGroupDescriptor, InodeBitmap};
-use super::directory::{DirectoryBlock, DirectoryEntry};
+use super::directory::{DirectoryBlock, DirectoryEntryFileType};
 use super::inode::{Inode, InodeDirectBlocks, InodeMode};
 use super::superblock::{
     BlockAddress, BlockGroupIndex, InodeNumber, LocalInodeIndex, OffsetBytes, Superblock,
@@ -180,20 +180,22 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
 
     pub(super) fn iter_file_blocks<F>(&mut self, inode: &Inode, mut func: F)
     where
-        F: FnMut(usize, BlockBuffer),
+        F: FnMut(usize, BlockBuffer) -> bool,
     {
         let direct_blocks = inode.direct_blocks;
         for (i, block_addr) in direct_blocks.iter().enumerate() {
             let addr = BlockIndex::from(u64::from(block_addr.0));
             let block_buf = self.device.read_blocks(self.block_size, addr, 1);
 
-            func(i, block_buf);
+            if !func(i, block_buf) {
+                return;
+            }
         }
     }
 
-    pub(super) fn iter_directory<F>(&mut self, inode: &Inode, mut func: F)
+    pub(super) fn iter_directory_blocks<F>(&mut self, inode: &Inode, mut func: F)
     where
-        F: FnMut(DirectoryEntry) -> bool,
+        F: FnMut(DirectoryBlock) -> bool,
     {
         assert!(inode.is_dir());
 
@@ -205,12 +207,8 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         assert!(inode_size % block_size == 0, "invariant violated: directory size {inode_size} not a multiple of block size {block_size}");
 
         self.iter_file_blocks(inode, |_, buf| {
-            let dir_block = DirectoryBlock::from_block(buf);
-            for dir_entry in dir_block.iter() {
-                if !func(dir_entry) {
-                    break;
-                }
-            }
+            let dir_block = DirectoryBlock::from_existing_block(buf);
+            func(dir_block)
         });
     }
 
@@ -267,6 +265,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
             faddr: 0,
             osd2: [0; 12],
         };
+        let cloned_inode = inode.clone();
         let (mut inode_block, inode_offset) =
             self.inode_block(block_group_descriptor, local_inode_index);
         *inode_block.interpret_bytes_mut(inode_offset.0 as usize) = inode;
@@ -276,36 +275,24 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         let inode_number = self
             .superblock()
             .inode_number(block_group_index, local_inode_index);
-        // let entry = DirectoryEntry {
-        //     header: DirectoryEntryHeader {
-        //         inode: inode_number,
-        //         rec_len: 0,
-        //         name_len: name.len() as u8,
-        //         file_type: DirectoryEntryFileType::RegularFile,
-        //     },
-        //     name: String::from(name),
-        // };
 
-        // TODO: Iterate through the existing directory entries, and find a spot
-        // where we can fit the new entry. We need to adjust the previous entry
-        // to point to the new entry, and the new entry to point to the next
-        // entry (or the end of the block).
+        let mut found_free_entry = false;
+        self.iter_directory_blocks(parent, |mut dir_block| {
+            if dir_block
+                .insert_entry(name, inode_number, DirectoryEntryFileType::RegularFile)
+                .is_some()
+            {
+                dir_block.flush();
+                found_free_entry = true;
+                return false;
+            }
+            true
+        });
 
-        // TODO: We need to adjust the previous record, maybe:
-        //
-        // https://www.nongnu.org/ext2-doc/ext2.html#ifdir-rec-len
-        //
-        // rec_len
-        //
-        // 16bit unsigned displacement to the next directory entry from the
-        // start of the current directory entry. This field must have a value at
-        // least to the length of the current record.
-        //
-        // The directory entries must be aligned on 4 bytes boundaries and there
-        // cannot be any directory entry spanning multiple data blocks. If an
-        // entry cannot completely fit in one block, it must be pushed to the
-        // next data block and the rec_len of the previous entry properly
-        // adjusted.
+        if !found_free_entry {
+            log::error!("no free entry found in parent directory {parent:?}");
+            return None;
+        }
 
         // Adjust block group statistics
         let block_group_descriptor = self.block_group_descriptors.get_mut(block_group_index)?;
@@ -316,6 +303,6 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         self.superblock.free_inodes_count -= 1;
         self.superblock.flush();
 
-        None
+        Some((cloned_inode, inode_number))
     }
 }

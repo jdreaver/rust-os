@@ -72,6 +72,7 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for VFSInode<D> {
             let slice_end = file_size - (i * block_size);
             let block_data = block_buf.data();
             data.extend(&block_data[..slice_end]);
+            true
         });
         data
     }
@@ -88,7 +89,7 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for VFSInode<D> {
         let mut written_bytes = 0;
         lock.iter_file_blocks(&self.inode, |_, mut block_buf| {
             if written_bytes >= data.len() {
-                return; // TODO: Allow early termination
+                return false;
             }
 
             let block_data = block_buf.data_mut();
@@ -101,6 +102,7 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for VFSInode<D> {
                 };
             }
             block_buf.flush();
+            true
         });
 
         assert!(
@@ -123,21 +125,23 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::DirectoryInode for VFSInode<D>
         let mut entries: Vec<Box<dyn vfs::DirectoryEntry>> = Vec::new();
         self.reader
             .lock_disable_interrupts()
-            .iter_directory(&self.inode, |entry| {
-                let reader = self.reader.clone();
-                let entry_type = if entry.is_file() {
-                    vfs::DirectoryEntryType::File
-                } else if entry.is_dir() {
-                    vfs::DirectoryEntryType::Directory
-                } else {
-                    panic!("unexpected directory entry type: {:?}", entry);
-                };
-                entries.push(Box::new(EXT2DirectoryEntry {
-                    reader,
-                    inode_number: entry.inode_number(),
-                    name: String::from(entry.name()),
-                    entry_type,
-                }));
+            .iter_directory_blocks(&self.inode, |block| {
+                for entry in block.iter() {
+                    let reader = self.reader.clone();
+                    let entry_type = if entry.is_file() {
+                        vfs::DirectoryEntryType::File
+                    } else if entry.is_dir() {
+                        vfs::DirectoryEntryType::Directory
+                    } else {
+                        panic!("unexpected directory entry type: {:?}", entry);
+                    };
+                    entries.push(Box::new(EXT2DirectoryEntry {
+                        reader,
+                        inode_number: entry.inode_number(),
+                        name: String::from(entry.name()),
+                        entry_type,
+                    }));
+                }
                 true
             });
         entries
