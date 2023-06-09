@@ -107,16 +107,25 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
 
     pub(crate) fn iter_file_blocks<F>(&mut self, inode: &Inode, mut func: F)
     where
+        F: FnMut(&mut BlockBuffer),
+    {
+        let direct_blocks = inode.direct_blocks;
+        for block_addr in direct_blocks.iter() {
+            let addr = BlockIndex::from(u64::from(block_addr.0));
+            let mut block_buf = self.device.read_blocks(self.block_size, addr, 1);
+
+            func(&mut block_buf);
+        }
+    }
+
+    pub(crate) fn iter_file_data<F>(&mut self, inode: &Inode, mut func: F)
+    where
         F: FnMut(&[u8]),
     {
         let mut seen_size = 0;
         let total_size = self.inode_size(inode) as usize;
 
-        let direct_blocks = inode.direct_blocks;
-        for block_addr in direct_blocks.iter() {
-            let addr = BlockIndex::from(u64::from(block_addr.0));
-            let block_buf = self.device.read_blocks(self.block_size, addr, 1);
-
+        self.iter_file_blocks(inode, |block_buf| {
             let data = block_buf.data();
             let data: &[u8] = if seen_size + data.len() > total_size {
                 let slice_end = total_size - seen_size;
@@ -127,7 +136,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
             seen_size += data.len();
 
             func(data);
-        }
+        });
     }
 
     pub(crate) fn iter_directory<F>(&mut self, inode: &Inode, mut func: F)
@@ -136,7 +145,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
     {
         assert!(inode.is_dir());
 
-        self.iter_file_blocks(inode, |data| {
+        self.iter_file_data(inode, |data| {
             let dir_block = DirectoryBlock(data);
             for dir_entry in dir_block.iter() {
                 if !func(dir_entry) {

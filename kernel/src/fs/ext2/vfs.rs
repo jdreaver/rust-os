@@ -57,10 +57,39 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for EXT2FileInode<D>
         let mut data = Vec::new();
         self.reader
             .lock_disable_interrupts()
-            .iter_file_blocks(&self.inode, |block| {
-                data.extend(block);
+            .iter_file_data(&self.inode, |block_data| {
+                data.extend(block_data);
             });
         data
+    }
+
+    fn write(&mut self, data: &[u8]) -> bool {
+        let mut lock = self.reader.lock_disable_interrupts();
+
+        let mut written_bytes = 0;
+        lock.iter_file_blocks(&self.inode, |block_buf| {
+            if written_bytes >= data.len() {
+                return; // TODO: Allow early termination
+            }
+
+            let block_data = block_buf.data_mut();
+            for byte in block_data.iter_mut() {
+                *byte = if written_bytes < data.len() {
+                    written_bytes += 1;
+                    data[written_bytes - 1]
+                } else {
+                    0
+                };
+            }
+            block_buf.flush();
+        });
+
+        assert!(
+            written_bytes == data.len(),
+            "couldn't write all bytes to file! implement adding new blocks"
+        );
+
+        true
     }
 }
 

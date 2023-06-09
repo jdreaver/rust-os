@@ -143,6 +143,10 @@ enum Command {
     Unmount,
     Ls(FilePath),
     Cat(FilePath),
+    WriteToFile {
+        path: FilePath,
+        content: String,
+    },
     FATBIOS {
         device_id: usize,
     },
@@ -276,6 +280,11 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
         "cat" => {
             let path = parse_next_word(&mut words, "path", "cat <path>")?;
             Some(Command::Cat(path))
+        }
+        "write-to-file" => {
+            let path = parse_next_word(&mut words, "path", "write-to-file <path> <content>")?;
+            let content = parse_next_word(&mut words, "content", "write-to-file <path> <content>")?;
+            Some(Command::WriteToFile { path, content })
         }
         "fat" => match words.next() {
             Some("bios") => {
@@ -514,7 +523,6 @@ fn run_command(command: &Command) {
             serial_println!("ls: {path:?}");
             let Some(inode) = get_path_inode(path) else { return; };
 
-            serial_println!("{path} has inode {inode:?}");
             let vfs::InodeType::Directory(mut dir) = inode.inode_type else {
                 serial_println!("Not a directory");
                 return;
@@ -533,7 +541,6 @@ fn run_command(command: &Command) {
             serial_println!("cat: {path:?}");
             let Some(inode) = get_path_inode(path) else { return; };
 
-            serial_println!("{path} has inode {inode:?}");
             let vfs::InodeType::File(mut file) = inode.inode_type else {
                 serial_println!("Not a directory");
                 return;
@@ -541,6 +548,17 @@ fn run_command(command: &Command) {
 
             let bytes = file.read();
             serial_println!("{}", String::from_utf8_lossy(&bytes));
+        }
+        Command::WriteToFile { path, content } => {
+            // TODO: Support creating new files
+            let Some(inode) = get_path_inode(path) else { return; };
+
+            let vfs::InodeType::File(mut file) = inode.inode_type else {
+                serial_println!("Not a directory");
+                return;
+            };
+
+            file.write(content.as_bytes());
         }
         Command::FATBIOS { device_id } => {
             let response = virtio::virtio_block_read(*device_id, 0, 1).wait_sleep();
@@ -590,7 +608,7 @@ fn run_command(command: &Command) {
                     }
                     serial_println!("{:#x?}", inode);
                     serial_println!("Reading inode...");
-                    file_system.iter_file_blocks(&inode, |blocks| {
+                    file_system.iter_file_data(&inode, |blocks| {
                         serial_print!("{}", String::from_utf8_lossy(blocks));
                     });
                 }

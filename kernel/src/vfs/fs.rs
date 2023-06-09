@@ -58,6 +58,9 @@ pub(crate) enum InodeType {
 
 pub(crate) trait FileInode: Debug {
     fn read(&mut self) -> Vec<u8>;
+    fn write(&mut self, _data: &[u8]) -> bool {
+        false
+    }
 }
 
 pub(crate) trait DirectoryInode: Debug {

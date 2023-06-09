@@ -92,12 +92,14 @@ make test
 ## TODO
 
 - Filesystem
-  - Features to add before working on abstractions (so we don't accidentally trapdoor into a design that makes them harder)
-    - Nested mountpoints, e.g. mount ext2 at root and then sysfs at `/sys`
-      - Add mountpoint argument to `mount` and ensure parent directory exists (or mountpoint is `/`)
-      - How do we ensure that when we do `ls /` we see `/sys`?
-    - Writes! New files, overwriting files, etc.
-      - See "CHAPTER 18: The Ext2 and Ext3 Filesystems" in "Understanding the Linux Kernel - Bovet (3rd ed, 2005)"
+  - Writes
+    - Adding blocks to a file (maybe use some lorem ipsum generator or something to make up text of a given length, or embed some out-of-copyright literature in the binary)
+    - Creating a new file
+  - Deletes (delete an entire file, unmark all inodes and blocks, etc)
+  - Nested mountpoints, e.g. mount ext2 at root and then sysfs at `/sys`
+    - Add mountpoint argument to `mount` and ensure parent directory exists (or mountpoint is `/`)
+    - How do we ensure that when we do `ls /` we see `/sys`?
+  - Ensure overwriting file properly truncates all blocks first by marking them as free and removing them from inode block pointers
   - Sysfs ideas: pci devices, virtio devices, memory info
   - Instead of returning `Vec` for directories, consider returning an `impl Iterator` (except you probably can't do that with traits...)
 - Serial port:
