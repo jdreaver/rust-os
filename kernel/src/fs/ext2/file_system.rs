@@ -1,9 +1,15 @@
+use alloc::string::String;
+
 use crate::block::{BlockBuffer, BlockDevice, BlockDeviceDriver, BlockIndex, BlockSize};
 
 use super::block_group::{BlockGroupDescriptor, InodeBitmap};
-use super::directory::{DirectoryBlock, DirectoryEntry};
-use super::inode::Inode;
-use super::superblock::{InodeNumber, Superblock, ROOT_DIRECTORY};
+use super::directory::{
+    DirectoryBlock, DirectoryEntry, DirectoryEntryFileType, DirectoryEntryHeader,
+};
+use super::inode::{Inode, InodeDirectBlocks, InodeMode};
+use super::superblock::{
+    BlockAddress, InodeNumber, LocalInodeIndex, OffsetBytes, Superblock, ROOT_DIRECTORY,
+};
 use super::BlockGroupIndex;
 
 /// In-memory representation if ext2 file system, and main point of interaction
@@ -107,12 +113,8 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
             return None;
         }
 
-        let (inode_block_index, inode_offset) = self
-            .superblock()
-            .inode_block_and_offset(block_group_descriptor.inode_table, local_inode_index);
-        let inode_block = self
-            .device
-            .read_blocks(self.block_size, inode_block_index, 1);
+        let (inode_block, inode_offset) =
+            self.inode_block(block_group_descriptor, local_inode_index);
         let inode: &Inode = inode_block.interpret_bytes(inode_offset.0 as usize);
         Some(inode.clone())
     }
@@ -124,6 +126,20 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
             .read_blocks(self.block_size, inode_bitmap_block_address, 1)
     }
 
+    fn inode_block(
+        &self,
+        block_group_descriptor: &BlockGroupDescriptor,
+        local_inode_index: LocalInodeIndex,
+    ) -> (BlockBuffer, OffsetBytes) {
+        let (inode_block_index, inode_offset) = self
+            .superblock()
+            .inode_block_and_offset(block_group_descriptor.inode_table, local_inode_index);
+        let buf = self
+            .device
+            .read_blocks(self.block_size, inode_block_index, 1);
+        (buf, inode_offset)
+    }
+
     pub(crate) fn inode_size(&self, inode: &Inode) -> u64 {
         // In revision 0, we only have 32-bit sizes.
         if self.superblock().rev_level == 0 {
@@ -131,6 +147,30 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         }
 
         (u64::from(inode.size_high) << 32) | u64::from(inode.size_low)
+    }
+
+    pub(crate) fn append_to_inode_data(&mut self, inode: &Inode, data: &[u8]) {
+        let direct_blocks = inode.direct_blocks;
+        let Some(last_block) = direct_blocks.iter().last() else {
+            log::error!("append_to_file: no blocks in inode. TODO: Support adding new blocks");
+            return;
+        };
+        let last_block = BlockIndex::from(u64::from(last_block.0));
+
+        let mut index_in_block = self.inode_size(inode) % u64::from(u16::from(self.block_size)) + 1;
+        let mut block_buf = self.device.read_blocks(self.block_size, last_block, 1);
+        let block_data = block_buf.data_mut();
+        for byte in data.iter() {
+            if index_in_block >= block_data.len() as u64 {
+                log::error!("append_to_file: ran out of space in the block. TODO: Support adding new blocks");
+                return;
+            }
+
+            block_data[index_in_block as usize] = *byte;
+            index_in_block += 1;
+        }
+
+        block_buf.flush();
     }
 
     pub(crate) fn iter_file_blocks<F>(&mut self, inode: &Inode, mut func: F)
@@ -176,6 +216,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         self.iter_file_data(inode, |data| {
             let dir_block = DirectoryBlock(data);
             for dir_entry in dir_block.iter() {
+                log::warn!("dir_entry: {:?}", dir_entry);
                 if !func(dir_entry) {
                     break;
                 }
@@ -200,20 +241,81 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
 
         let mut inode_bitmap_block = self.inode_bitmap_block(block_group_descriptor);
         let mut inode_bitmap = InodeBitmap(inode_bitmap_block.data_mut());
-        let Some(inode_index) = inode_bitmap.reserve_next_free() else {
+        let Some(local_inode_index) = inode_bitmap.reserve_next_free() else {
             log::error!("no free inode found in block group {block_group_descriptor:?}");
             return None;
         };
         inode_bitmap_block.flush();
-        log::warn!(
-            "reserved inode {inode_index:?} for {name} in block group {block_group_descriptor:?}"
-        );
 
-        // Reserve some blocks for file content
+        // TODO: Reserve some blocks for file content?
 
         // Add inode entry to block group's inode table
+        let inode = Inode {
+            mode: InodeMode::IROTH
+                | InodeMode::IRGRP
+                | InodeMode::IWUSR
+                | InodeMode::IRUSR
+                | InodeMode::IFREG,
+            uid: parent.uid,
+            size_low: 0,
+            atime: 0,
+            ctime: 0,
+            mtime: 0,
+            dtime: 0,
+            gid: parent.gid,
+            links_count: 1,
+            blocks: 0,
+            flags: 0,
+            osd1: 0,
+            direct_blocks: InodeDirectBlocks::empty(),
+            singly_indirect_block: BlockAddress(0),
+            doubly_indirect_block: BlockAddress(0),
+            triply_indirect_block: BlockAddress(0),
+            generation: 0,
+            file_acl: 0,
+            size_high: 0,
+            faddr: 0,
+            osd2: [0; 12],
+        };
+        let (mut inode_block, inode_offset) =
+            self.inode_block(block_group_descriptor, local_inode_index);
+        *inode_block.interpret_bytes_mut(inode_offset.0 as usize) = inode;
+        inode_block.flush();
 
         // Add inode to parent directory's list of directories
+        let inode_number = self
+            .superblock()
+            .inode_number(block_group_index, local_inode_index);
+        let entry = DirectoryEntry {
+            header: DirectoryEntryHeader {
+                inode: inode_number,
+                rec_len: 0,
+                name_len: name.len() as u8,
+                file_type: DirectoryEntryFileType::RegularFile,
+            },
+            name: String::from(name),
+        };
+
+        // TODO: Iterate through the existing directory entries, and find a spot
+        // where we can fit the new entry. We need to adjust the previous entry
+        // to point to the new entry, and the new entry to point to the next
+        // entry (or the end of the block).
+
+        // TODO: We need to adjust the previous record, maybe:
+        //
+        // https://www.nongnu.org/ext2-doc/ext2.html#ifdir-rec-len
+        //
+        // rec_len
+        //
+        // 16bit unsigned displacement to the next directory entry from the
+        // start of the current directory entry. This field must have a value at
+        // least equal to the length of the current record.
+        //
+        // The directory entries must be aligned on 4 bytes boundaries and there
+        // cannot be any directory entry spanning multiple data blocks. If an
+        // entry cannot completely fit in one block, it must be pushed to the
+        // next data block and the rec_len of the previous entry properly
+        // adjusted.
 
         // Adjust block group statistics
         let block_group_descriptor = self.block_group_descriptor_mut(block_group_index)?;

@@ -122,6 +122,16 @@ impl Superblock {
         (block_group_index, local_inode_index)
     }
 
+    /// Convert from local inode index to global inode number.
+    pub(crate) fn inode_number(
+        &self,
+        block_group_index: BlockGroupIndex,
+        local_inode_index: LocalInodeIndex,
+    ) -> InodeNumber {
+        let inode_index = block_group_index.0 * self.inodes_per_group + local_inode_index.0;
+        InodeNumber(inode_index + 1)
+    }
+
     /// See <https://www.nongnu.org/ext2-doc/ext2.html#inode-table>
     ///
     /// Returns the block containing the inode and the offset of the inode

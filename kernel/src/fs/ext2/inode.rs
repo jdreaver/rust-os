@@ -2,7 +2,7 @@ use core::fmt;
 
 use bitflags::bitflags;
 
-use super::BlockAddress;
+use super::superblock::BlockAddress;
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#inode-table>
 #[repr(C, packed)]
@@ -118,6 +118,10 @@ bitflags! {
 pub(crate) struct InodeDirectBlocks(pub(crate) [BlockAddress; 12]);
 
 impl InodeDirectBlocks {
+    pub(crate) fn empty() -> Self {
+        Self([BlockAddress(0); 12])
+    }
+
     pub(crate) fn iter(&self) -> InodeDirectBlockIterator {
         InodeDirectBlockIterator {
             direct_blocks: *self,

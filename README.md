@@ -93,6 +93,7 @@ make test
 
 - Filesystem
   - Combine EXT2FileInode and EXT2DirectoryInode structs
+  - Ensure rec_len for previous directory entry is accurate
   - Investigate improved `BlockBuffer` ergonomics when interpreting bytes. Maybe we can wrap the interpreted "thing" in a struct that implements Deref and DerefMut, and also has a `flush` method. That would allow us to flush the underlying block without needing to carry the block itself around. Would this play well with the borrow checker though?
   - Writes
     - Adding blocks to a file (maybe use some lorem ipsum generator or something to make up text of a given length, or embed some out-of-copyright literature in the binary)

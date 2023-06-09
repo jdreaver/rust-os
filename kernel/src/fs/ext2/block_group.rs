@@ -1,4 +1,4 @@
-use super::{BlockAddress, LocalInodeIndex};
+use super::superblock::{BlockAddress, LocalInodeIndex};
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#block-group-descriptor-structure>
 #[repr(C, packed)]
