@@ -13,7 +13,7 @@ use crate::sync::SpinLock;
 /// N.B. This is quite large because apparently Rust programs compiled with
 /// debug mode use a ton of the stack. We don't need this much stack in release
 /// mode.
-const KERNEL_STACK_SIZE_PAGES: usize = 8;
+const KERNEL_STACK_SIZE_PAGES: usize = 16;
 const KERNEL_STACK_SIZE_BYTES: usize = KERNEL_STACK_SIZE_PAGES * memory::PAGE_SIZE;
 const KERNEL_STACK_START_VIRT_ADDR: usize = 0x_5555_0000_0000;
 
