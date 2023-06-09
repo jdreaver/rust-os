@@ -23,8 +23,8 @@ pub(crate) fn barrier() {
 /// This is a read memory barrier, and on x86_64 is implemented using the
 /// `lfence` instruction.
 #[inline]
-// Starts with underscore to avoid dead code warning.
-pub(crate) fn _read_barrier() {
+#[allow(dead_code)]
+pub(crate) fn read_barrier() {
     unsafe { x86_64::_mm_lfence() }
 }
 
@@ -33,7 +33,7 @@ pub(crate) fn _read_barrier() {
 /// This is a write memory barrier, and on x86_64 is implemented using the
 /// `sfence` instruction.
 #[inline]
-// Starts with underscore to avoid dead code warning.
-pub(crate) fn _write_barrier() {
+#[allow(dead_code)]
+pub(crate) fn write_barrier() {
     unsafe { x86_64::_mm_sfence() }
 }

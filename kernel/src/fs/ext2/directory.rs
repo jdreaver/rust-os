@@ -61,14 +61,6 @@ impl DirectoryEntry {
     pub(crate) fn is_dir(&self) -> bool {
         self.header.file_type == DirectoryEntryFileType::Directory
     }
-
-    pub(crate) fn is_dot(&self) -> bool {
-        self.name == "."
-    }
-
-    pub(crate) fn is_dotdot(&self) -> bool {
-        self.name == ".."
-    }
 }
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#linked-directory-entry-structure>
@@ -83,6 +75,7 @@ pub(crate) struct DirectoryEntryHeader {
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub(crate) enum DirectoryEntryFileType {
     Unknown = 0,
     RegularFile = 1,

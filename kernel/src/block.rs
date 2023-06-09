@@ -118,7 +118,8 @@ impl BlockBuffer {
         &self.data
     }
 
-    pub(crate) fn _data_mut(&mut self) -> &mut [u8] {
+    #[allow(dead_code)]
+    pub(crate) fn data_mut(&mut self) -> &mut [u8] {
         &mut self.data
     }
 

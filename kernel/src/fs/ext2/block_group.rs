@@ -29,6 +29,7 @@ impl<'a> BlockBitmap<'a> {
     /// byte 0. The 8th block is represented by bit 7 (most significant bit) of
     /// byte 0 while the 9th block is represented by bit 0 (least significant
     /// bit) of byte 1.
+    #[allow(dead_code)]
     pub(crate) fn is_used(&self, block: BlockAddress) -> Option<bool> {
         let index = block.0 / 8;
         let byte = self.0.get(index as usize)?;

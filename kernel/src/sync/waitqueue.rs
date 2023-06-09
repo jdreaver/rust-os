@@ -21,7 +21,8 @@ impl<T> WaitQueue<T> {
 
     /// Sends value to just the first waiting task and wakes it up. Use
     /// `put_value` to send to all sleeping tasks.
-    pub(crate) fn _send_single_consumer(&self, val: T) {
+    #[allow(dead_code)]
+    pub(crate) fn send_single_consumer(&self, val: T) {
         let mut senders = self.channel_senders.lock_disable_interrupts();
         if let Some(sender) = senders.pop() {
             sender.send(val);

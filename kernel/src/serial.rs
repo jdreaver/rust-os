@@ -175,6 +175,8 @@ pub(crate) fn serial1_writer() -> SerialWriter {
     SerialWriter()
 }
 
+// Starts with underscore so no one tries to use it. It needs to be exported
+// though.
 #[doc(hidden)]
 pub(crate) fn _print(args: ::core::fmt::Arguments) {
     serial1_writer()
@@ -214,12 +216,6 @@ macro_rules! serial_println {
 
 pub(crate) fn serial1_write_byte(byte: u8) {
     SERIAL1.write(byte);
-}
-
-pub(crate) fn _serial1_write_bytes(bytes: &[u8]) {
-    for byte in bytes {
-        serial1_write_byte(*byte);
-    }
 }
 
 /// Read the next byte from the serial port.

@@ -6,10 +6,6 @@ use core::fmt;
 pub(crate) struct CStringBytes<const N: usize>([u8; N]);
 
 impl<const N: usize> CStringBytes<N> {
-    pub(crate) fn bytes(&self) -> &[u8] {
-        &self.0
-    }
-
     pub(crate) fn as_str(&self) -> &str {
         c_str_from_bytes(&self.0)
     }

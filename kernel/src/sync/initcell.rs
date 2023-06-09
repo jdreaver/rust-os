@@ -32,17 +32,6 @@ impl<T> InitCell<T> {
         // lifetime of the value does indeed match the lifetime of the InitCell.
         unsafe { self.ptr.load(Ordering::Acquire).as_ref() }
     }
-
-    /// Wait (via a spin loop) until the value is initialized, then return a
-    /// reference to it.
-    pub(crate) fn _wait_spin(&self) -> &T {
-        loop {
-            if let Some(value) = self.get() {
-                return value;
-            }
-            core::hint::spin_loop();
-        }
-    }
 }
 
 impl<T> Drop for InitCell<T> {
