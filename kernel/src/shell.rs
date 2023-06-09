@@ -158,9 +158,18 @@ enum Command {
 #[derive(Debug)]
 enum VirtIOBlockCommand {
     List,
-    Read { device_id: usize, sector: u64 },
-    Write { device_id: usize, sector: u64, data: u64 },
-    ID { device_id: usize },
+    Read {
+        device_id: usize,
+        sector: u64,
+    },
+    Write {
+        device_id: usize,
+        sector: u64,
+        data: u64,
+    },
+    ID {
+        device_id: usize,
+    },
 }
 
 #[derive(Debug)]
@@ -456,7 +465,11 @@ fn run_command(command: &Command) {
             };
             serial_println!("Got block data: {data:x?}");
         }
-        Command::VirtIOBlock(VirtIOBlockCommand::Write { device_id, sector, data }) => {
+        Command::VirtIOBlock(VirtIOBlockCommand::Write {
+            device_id,
+            sector,
+            data,
+        }) => {
             serial_println!("Reading VirtIO block sector {sector}...");
             let data = data.to_le_bytes();
             let cell = virtio::virtio_block_write(*device_id, *sector, &data);

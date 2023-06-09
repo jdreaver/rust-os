@@ -93,13 +93,7 @@ pub(crate) fn virtio_block_write(
 
     let data_len = data.len() as u32;
     let data_len = data_len.next_multiple_of(VIRTIO_BLOCK_SECTOR_SIZE_BYTES);
-    device.add_request(
-        &BlockRequest::Write {
-            sector,
-            data_len,
-        },
-        Some(data),
-    )
+    device.add_request(&BlockRequest::Write { sector, data_len }, Some(data))
 }
 
 fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
@@ -315,10 +309,7 @@ impl BlockRequest {
                 let data_len = num_sectors * VIRTIO_BLOCK_SECTOR_SIZE_BYTES;
                 RawBlockRequest::new(BlockRequestType::In, *sector, data_len)
             }
-            Self::Write {
-                sector,
-                data_len,
-            } => {
+            Self::Write { sector, data_len } => {
                 RawBlockRequest::new(BlockRequestType::Out, *sector, *data_len)
             }
             Self::GetID => RawBlockRequest::new(BlockRequestType::GetID, 0, Self::GET_ID_DATA_LEN),
