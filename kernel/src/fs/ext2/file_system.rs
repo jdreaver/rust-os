@@ -1,4 +1,4 @@
-use crate::block::{BlockBuffer, BlockDevice, BlockIndex, BlockSize};
+use crate::block::{BlockBuffer, BlockDevice, BlockDeviceDriver, BlockIndex, BlockSize};
 
 use super::block_group::{BlockGroupDescriptor, InodeBitmap};
 use super::directory::{DirectoryBlock, DirectoryEntry};
@@ -9,7 +9,7 @@ use super::BlockGroupIndex;
 /// In-memory representation if ext2 file system, and main point of interaction
 /// with file system.
 #[derive(Debug)]
-pub(crate) struct FileSystem<R> {
+pub(crate) struct FileSystem<D> {
     // N.B. Storing raw blocks so writing them back to the disk device is
     // trivial, and to ensure we don't leak memory if we e.g. cast only part of
     // the block to a type and forget the rest of the bytes.
@@ -18,12 +18,12 @@ pub(crate) struct FileSystem<R> {
     num_block_groups: usize,
     block_size: BlockSize,
 
-    block_reader: R,
+    device: BlockDevice<D>,
 }
 
-impl<R: BlockDevice> FileSystem<R> {
-    pub(crate) fn read(block_reader: R) -> Option<Self> {
-        let superblock_block = block_reader.read_blocks(
+impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
+    pub(crate) fn read(device: BlockDevice<D>) -> Option<Self> {
+        let superblock_block = device.read_blocks(
             Superblock::SUPERBLOCK_BLOCK_SIZE,
             Superblock::SUPERBLOCK_BLOCK_INDEX,
             1,
@@ -39,14 +39,14 @@ impl<R: BlockDevice> FileSystem<R> {
             num_block_groups.div_ceil(usize::from(u16::from(superblock.block_size())));
         let descriptor_block_start = superblock.block_descriptor_table_start_block();
         let block_group_descriptors_blocks =
-            block_reader.read_blocks(block_size, descriptor_block_start, num_descriptor_blocks);
+            device.read_blocks(block_size, descriptor_block_start, num_descriptor_blocks);
 
         Some(Self {
             superblock_block,
             block_group_descriptors_blocks,
             num_block_groups,
             block_size,
-            block_reader,
+            device,
         })
     }
 
@@ -74,7 +74,7 @@ impl<R: BlockDevice> FileSystem<R> {
         let inode_bitmap_block_address =
             BlockIndex::from(u64::from(block_group_descriptor.inode_bitmap.0));
         let inode_bitmap_block =
-            self.block_reader
+            self.device
                 .read_blocks(self.block_size, inode_bitmap_block_address, 1);
         let inode_bitmap = InodeBitmap(inode_bitmap_block.data());
         let inode_used = inode_bitmap.is_used(local_inode_index)?;
@@ -86,7 +86,7 @@ impl<R: BlockDevice> FileSystem<R> {
             .superblock()
             .inode_block_and_offset(block_group_descriptor.inode_table, local_inode_index);
         let inode_block = self
-            .block_reader
+            .device
             .read_blocks(self.block_size, inode_block_index, 1);
         let inode: &Inode = inode_block.interpret_bytes(inode_offset.0 as usize);
         Some(inode.clone())
@@ -111,7 +111,7 @@ impl<R: BlockDevice> FileSystem<R> {
         let direct_blocks = inode.direct_blocks;
         for block_addr in direct_blocks.iter() {
             let addr = BlockIndex::from(u64::from(block_addr.0));
-            let block_buf = self.block_reader.read_blocks(self.block_size, addr, 1);
+            let block_buf = self.device.read_blocks(self.block_size, addr, 1);
 
             let data = block_buf.data();
             let data: &[u8] = if seen_size + data.len() > total_size {

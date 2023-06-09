@@ -1,35 +1,55 @@
+use core::fmt::Debug;
 use core::ops::Add;
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use crate::virtio;
 
-pub(crate) trait BlockDevice {
-    fn device_block_size(&self) -> BlockSize;
+/// Wrapper around a `BlockDeviceDriver` implementation.
+#[derive(Debug)]
+pub(crate) struct BlockDevice<D> {
+    driver: Arc<D>,
+}
 
-    /// Number of _device_ blocks to read, using the device's block size.
-    fn read_device_blocks(&self, start_block: BlockIndex, num_blocks: usize) -> Vec<u8>;
+impl<D: BlockDeviceDriver + 'static> BlockDevice<D> {
+    pub(crate) fn new(driver: D) -> Self {
+        Self {
+            driver: Arc::new(driver),
+        }
+    }
 
     /// Number of blocks to read using the given block size.
-    fn read_blocks(
+    pub(crate) fn read_blocks(
         &self,
         block_size: BlockSize,
         start_block: BlockIndex,
         num_blocks: usize,
     ) -> BlockBuffer {
         let block_size: u16 = block_size.0;
-        let device_block_size: u16 = self.device_block_size().0;
+        let device_block_size: u16 = self.driver.device_block_size().0;
 
         let device_start_block =
             BlockIndex(start_block.0 * u64::from(block_size / device_block_size));
         let device_num_blocks = num_blocks * block_size.div_ceil(device_block_size) as usize;
-        let data = self.read_device_blocks(device_start_block, device_num_blocks);
+        let data = self
+            .driver
+            .read_device_blocks(device_start_block, device_num_blocks);
 
         BlockBuffer {
-            _index: start_block,
+            _device_start_block: device_start_block,
+            _device_num_blocks: device_num_blocks,
             data,
+            _driver: self.driver.clone(),
         }
     }
+}
+
+pub(crate) trait BlockDeviceDriver: Debug {
+    fn device_block_size(&self) -> BlockSize;
+
+    /// Number of _device_ blocks to read, using the device's block size.
+    fn read_device_blocks(&self, start_block: BlockIndex, num_blocks: usize) -> Vec<u8>;
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -85,9 +105,10 @@ impl Add for BlockIndex {
 /// In-memory buffer for a disk block.
 #[derive(Debug)]
 pub(crate) struct BlockBuffer {
-    /// Index into the block device this buffer is for.
-    _index: BlockIndex,
+    _device_start_block: BlockIndex,
+    _device_num_blocks: usize,
     data: Vec<u8>,
+    _driver: Arc<dyn BlockDeviceDriver>,
 }
 
 impl BlockBuffer {
@@ -126,18 +147,22 @@ impl BlockBuffer {
     }
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct VirtioBlockReader {
+pub(crate) fn virtio_block_device(device_id: usize) -> BlockDevice<VirtioBlockDevice> {
+    BlockDevice::new(VirtioBlockDevice::new(device_id))
+}
+
+#[derive(Debug)]
+pub(crate) struct VirtioBlockDevice {
     device_id: usize,
 }
 
-impl VirtioBlockReader {
-    pub(crate) fn new(device_id: usize) -> Self {
+impl VirtioBlockDevice {
+    fn new(device_id: usize) -> Self {
         Self { device_id }
     }
 }
 
-impl BlockDevice for VirtioBlockReader {
+impl BlockDeviceDriver for VirtioBlockDevice {
     fn device_block_size(&self) -> BlockSize {
         BlockSize::try_from(virtio::VIRTIO_BLOCK_SECTOR_SIZE_BYTES as u16)
             .expect("invalid virtio block size")

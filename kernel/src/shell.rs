@@ -5,7 +5,7 @@ use core::fmt;
 
 use uefi::table::{Runtime, SystemTable};
 
-use crate::block::VirtioBlockReader;
+use crate::block;
 use crate::fs::{ext2, sysfs};
 use crate::hpet::Milliseconds;
 use crate::sync::SpinLock;
@@ -460,8 +460,8 @@ fn run_command(command: &Command) {
                     serial_println!(
                         "Mounting ext2 filesystem from VirtIO block device {device_id}"
                     );
-                    let reader = VirtioBlockReader::new(*device_id);
-                    Box::new(ext2::VFSFileSystem::read(reader))
+                    let device = block::virtio_block_device(*device_id);
+                    Box::new(ext2::VFSFileSystem::read(device))
                 }
                 MountTarget::Sysfs => {
                     serial_println!("Mounting sysfs filesystem");
@@ -517,25 +517,26 @@ fn run_command(command: &Command) {
             serial_println!("BIOS Parameter Block: {:#x?}", bios_param_block);
         }
         Command::EXT2 { device_id, command } => {
-            let mut reader = ext2::FileSystem::read(VirtioBlockReader::new(*device_id))
-                .expect("failed to read EXT2 filesystem");
+            let device = block::virtio_block_device(*device_id);
+            let mut file_system =
+                ext2::FileSystem::read(device).expect("failed to read EXT2 filesystem");
             match command {
                 EXT2Command::Superblock => {
-                    serial_println!("{:#x?}", reader.superblock());
+                    serial_println!("{:#x?}", file_system.superblock());
                 }
                 EXT2Command::ListInode { inode_number } => {
                     let inode = if let Some(inode_number) = inode_number {
-                        let Some(inode) = reader.read_inode(*inode_number) else {
+                        let Some(inode) = file_system.read_inode(*inode_number) else {
                             serial_println!("inode {:?} not found", inode_number);
                             return;
                         };
                         inode
                     } else {
-                        reader.read_root()
+                        file_system.read_root()
                     };
                     serial_println!("{:#x?}", inode);
                     serial_println!("Listing root directory...");
-                    reader.iter_directory(&inode, |entry| {
+                    file_system.iter_directory(&inode, |entry| {
                         let inode = entry.header.inode;
                         let file_type = entry.header.file_type;
                         serial_println!("{} (inode: {inode:?}, type: {file_type:?})", entry.name);
@@ -543,7 +544,7 @@ fn run_command(command: &Command) {
                     });
                 }
                 EXT2Command::CatInode { inode_number } => {
-                    let Some(inode) = reader.read_inode(*inode_number) else {
+                    let Some(inode) = file_system.read_inode(*inode_number) else {
                         serial_println!("inode {:?} not found", inode_number);
                         return;
                     };
@@ -553,7 +554,7 @@ fn run_command(command: &Command) {
                     }
                     serial_println!("{:#x?}", inode);
                     serial_println!("Reading inode...");
-                    reader.iter_file_blocks(&inode, |blocks| {
+                    file_system.iter_file_blocks(&inode, |blocks| {
                         serial_print!("{}", String::from_utf8_lossy(blocks));
                     });
                 }
