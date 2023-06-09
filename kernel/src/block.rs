@@ -172,6 +172,8 @@ impl BlockBuffer {
     }
 }
 
+/// Wrapper around a `BlockBuffer` that interprets the underlying bytes as a
+/// given type.
 #[derive(Debug)]
 pub(crate) struct BlockBufferView<T> {
     buffer: BlockBuffer,

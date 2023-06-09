@@ -22,11 +22,50 @@ pub(crate) struct FileSystem<D> {
     // trivial, and to ensure we don't leak memory if we e.g. cast only part of
     // the block to a type and forget the rest of the bytes.
     superblock: BlockBufferView<Superblock>,
-    block_group_descriptors_blocks: BlockBuffer,
-    num_block_groups: usize,
+    block_group_descriptors: BlockGroupDescriptorBlocks,
     block_size: BlockSize,
 
     device: BlockDevice<D>,
+}
+
+#[derive(Debug)]
+struct BlockGroupDescriptorBlocks {
+    blocks: BlockBuffer,
+    num_block_groups: usize,
+}
+
+impl BlockGroupDescriptorBlocks {
+    fn new(blocks: BlockBuffer, num_block_groups: usize) -> Self {
+        assert!(
+            blocks.data().len() >= num_block_groups * core::mem::size_of::<BlockGroupDescriptor>(),
+            "block buffer not large enough to hold all block group descriptors"
+        );
+        Self {
+            blocks,
+            num_block_groups,
+        }
+    }
+
+    fn get(&self, index: BlockGroupIndex) -> Option<&BlockGroupDescriptor> {
+        let offset = self.offset(index)?;
+        Some(self.blocks.interpret_bytes(offset))
+    }
+
+    fn get_mut(&mut self, index: BlockGroupIndex) -> Option<&mut BlockGroupDescriptor> {
+        let offset = self.offset(index)?;
+        Some(self.blocks.interpret_bytes_mut(offset))
+    }
+
+    fn offset(&self, index: BlockGroupIndex) -> Option<usize> {
+        if index.0 as usize >= self.num_block_groups {
+            return None;
+        }
+        Some(index.0 as usize * core::mem::size_of::<BlockGroupDescriptor>())
+    }
+
+    fn flush(&self) {
+        self.blocks.flush();
+    }
 }
 
 impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
@@ -49,6 +88,8 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         let descriptor_block_start = superblock.block_descriptor_table_start_block();
         let block_group_descriptors_blocks =
             device.read_blocks(block_size, descriptor_block_start, num_descriptor_blocks);
+        let block_group_descriptors =
+            BlockGroupDescriptorBlocks::new(block_group_descriptors_blocks, num_block_groups);
 
         // Increase the mount count and write the superblock back
         superblock.mount_count += 1;
@@ -56,8 +97,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
 
         Some(Self {
             superblock,
-            block_group_descriptors_blocks,
-            num_block_groups,
+            block_group_descriptors,
             block_size,
             device,
         })
@@ -65,33 +105,6 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
 
     pub(crate) fn superblock(&self) -> &Superblock {
         &self.superblock
-    }
-
-    fn block_group_descriptor(&self, index: BlockGroupIndex) -> Option<&BlockGroupDescriptor> {
-        let offset = self.block_group_descriptor_ofsset(index)?;
-        Some(self.block_group_descriptors_blocks.interpret_bytes(offset))
-    }
-
-    fn block_group_descriptor_mut(
-        &mut self,
-        index: BlockGroupIndex,
-    ) -> Option<&mut BlockGroupDescriptor> {
-        let offset = self.block_group_descriptor_ofsset(index)?;
-        Some(
-            self.block_group_descriptors_blocks
-                .interpret_bytes_mut(offset),
-        )
-    }
-
-    fn block_group_descriptor_ofsset(&self, index: BlockGroupIndex) -> Option<usize> {
-        if index.0 as usize >= self.num_block_groups {
-            return None;
-        }
-        Some(index.0 as usize * core::mem::size_of::<BlockGroupDescriptor>())
-    }
-
-    fn flush_block_group_descriptors(&mut self) {
-        self.block_group_descriptors_blocks.flush();
     }
 
     pub(crate) fn read_root(&mut self) -> (Inode, InodeNumber) {
@@ -103,7 +116,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
 
     pub(crate) fn read_inode(&mut self, inode_number: InodeNumber) -> Option<Inode> {
         let (block_group_index, local_inode_index) = self.superblock.inode_location(inode_number);
-        let block_group_descriptor = self.block_group_descriptor(block_group_index)?;
+        let block_group_descriptor = self.block_group_descriptors.get(block_group_index)?;
 
         let mut inode_bitmap_block = self.inode_bitmap_block(block_group_descriptor);
         let inode_bitmap = InodeBitmap(inode_bitmap_block.data_mut());
@@ -201,7 +214,6 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         self.iter_file_blocks(inode, |_, data| {
             let dir_block = DirectoryBlock(data.data());
             for dir_entry in dir_block.iter() {
-                log::warn!("dir_entry: {:?}", dir_entry);
                 if !func(dir_entry) {
                     break;
                 }
@@ -222,7 +234,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
 
         // Reserve inode number in parent's block group by finding free entry in bitmap
         let (block_group_index, _) = self.superblock.inode_location(parent_number);
-        let block_group_descriptor = self.block_group_descriptor(block_group_index)?;
+        let block_group_descriptor = self.block_group_descriptors.get(block_group_index)?;
 
         let mut inode_bitmap_block = self.inode_bitmap_block(block_group_descriptor);
         let mut inode_bitmap = InodeBitmap(inode_bitmap_block.data_mut());
@@ -303,9 +315,9 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         // adjusted.
 
         // Adjust block group statistics
-        let block_group_descriptor = self.block_group_descriptor_mut(block_group_index)?;
+        let block_group_descriptor = self.block_group_descriptors.get_mut(block_group_index)?;
         block_group_descriptor.free_inodes_count -= 1;
-        self.flush_block_group_descriptors();
+        self.block_group_descriptors.flush();
 
         // Adjust superblock statistics
         self.superblock.free_inodes_count -= 1;
