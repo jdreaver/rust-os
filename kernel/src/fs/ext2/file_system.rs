@@ -1,13 +1,9 @@
-use alloc::string::String;
-
 use crate::block::{
     BlockBuffer, BlockBufferView, BlockDevice, BlockDeviceDriver, BlockIndex, BlockSize,
 };
 
 use super::block_group::{BlockGroupDescriptor, InodeBitmap};
-use super::directory::{
-    DirectoryBlock, DirectoryEntry, DirectoryEntryFileType, DirectoryEntryHeader,
-};
+use super::directory::{DirectoryBlock, DirectoryEntry};
 use super::inode::{Inode, InodeDirectBlocks, InodeMode};
 use super::superblock::{
     BlockAddress, InodeNumber, LocalInodeIndex, OffsetBytes, Superblock, ROOT_DIRECTORY,
@@ -187,14 +183,14 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
 
     pub(crate) fn iter_file_blocks<F>(&mut self, inode: &Inode, mut func: F)
     where
-        F: FnMut(usize, &mut BlockBuffer),
+        F: FnMut(usize, BlockBuffer),
     {
         let direct_blocks = inode.direct_blocks;
         for (i, block_addr) in direct_blocks.iter().enumerate() {
             let addr = BlockIndex::from(u64::from(block_addr.0));
-            let mut block_buf = self.device.read_blocks(self.block_size, addr, 1);
+            let block_buf = self.device.read_blocks(self.block_size, addr, 1);
 
-            func(i, &mut block_buf);
+            func(i, block_buf);
         }
     }
 
@@ -211,8 +207,8 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         let block_size = u64::from(u16::from(self.superblock.block_size()));
         assert!(inode_size % block_size == 0, "invariant violated: directory size {inode_size} not a multiple of block size {block_size}");
 
-        self.iter_file_blocks(inode, |_, data| {
-            let dir_block = DirectoryBlock(data.data());
+        self.iter_file_blocks(inode, |_, buf| {
+            let dir_block = DirectoryBlock::from_block(buf);
             for dir_entry in dir_block.iter() {
                 if !func(dir_entry) {
                     break;
@@ -283,15 +279,15 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         let inode_number = self
             .superblock()
             .inode_number(block_group_index, local_inode_index);
-        let entry = DirectoryEntry {
-            header: DirectoryEntryHeader {
-                inode: inode_number,
-                rec_len: 0,
-                name_len: name.len() as u8,
-                file_type: DirectoryEntryFileType::RegularFile,
-            },
-            name: String::from(name),
-        };
+        // let entry = DirectoryEntry {
+        //     header: DirectoryEntryHeader {
+        //         inode: inode_number,
+        //         rec_len: 0,
+        //         name_len: name.len() as u8,
+        //         file_type: DirectoryEntryFileType::RegularFile,
+        //     },
+        //     name: String::from(name),
+        // };
 
         // TODO: Iterate through the existing directory entries, and find a spot
         // where we can fit the new entry. We need to adjust the previous entry

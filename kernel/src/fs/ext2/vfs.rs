@@ -86,7 +86,7 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for VFSInode<D> {
         let mut lock = self.reader.lock_disable_interrupts();
 
         let mut written_bytes = 0;
-        lock.iter_file_blocks(&self.inode, |_, block_buf| {
+        lock.iter_file_blocks(&self.inode, |_, mut block_buf| {
             if written_bytes >= data.len() {
                 return; // TODO: Allow early termination
             }
@@ -134,8 +134,8 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::DirectoryInode for VFSInode<D>
                 };
                 entries.push(Box::new(EXT2DirectoryEntry {
                     reader,
-                    inode_number: entry.header.inode,
-                    name: entry.name,
+                    inode_number: entry.inode_number(),
+                    name: String::from(entry.name()),
                     entry_type,
                 }));
                 true
