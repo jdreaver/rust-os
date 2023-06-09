@@ -92,6 +92,8 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
         let buffer = data.buffer;
 
         let raw_request = RawBlockRequest::from_descriptor_chain(&mut descriptor_chain);
+        assert!(raw_request.status == BlockRequestStatus::Ok, "expected an OK status, got {:#x?}", raw_request.status);
+
         let request = BlockRequest::from_raw(&raw_request);
 
         match request {
