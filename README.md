@@ -95,6 +95,7 @@ make test
   - Combine EXT2FileInode and EXT2DirectoryInode structs
   - Ensure rec_len for previous directory entry is accurate
   - Investigate improved `BlockBuffer` ergonomics when interpreting bytes. Maybe we can wrap the interpreted "thing" in a struct that implements Deref and DerefMut, and also has a `flush` method. That would allow us to flush the underlying block without needing to carry the block itself around. Would this play well with the borrow checker though?
+    - Don't index into these with offsets. Instead, make an abstraction like "spaced array" that can index into bytes and cast to an underlying type with spacing provided at runtime (e.g. the inode size)
   - Writes
     - Adding blocks to a file (maybe use some lorem ipsum generator or something to make up text of a given length, or embed some out-of-copyright literature in the binary)
     - Creating a new file

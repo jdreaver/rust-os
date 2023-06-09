@@ -1,6 +1,8 @@
 use alloc::string::String;
 
-use crate::block::{BlockBuffer, BlockDevice, BlockDeviceDriver, BlockIndex, BlockSize};
+use crate::block::{
+    BlockBuffer, BlockBufferView, BlockDevice, BlockDeviceDriver, BlockIndex, BlockSize,
+};
 
 use super::block_group::{BlockGroupDescriptor, InodeBitmap};
 use super::directory::{
@@ -19,7 +21,7 @@ pub(crate) struct FileSystem<D> {
     // N.B. Storing raw blocks so writing them back to the disk device is
     // trivial, and to ensure we don't leak memory if we e.g. cast only part of
     // the block to a type and forget the rest of the bytes.
-    superblock_block: BlockBuffer,
+    superblock: BlockBufferView<Superblock>,
     block_group_descriptors_blocks: BlockBuffer,
     num_block_groups: usize,
     block_size: BlockSize,
@@ -29,12 +31,13 @@ pub(crate) struct FileSystem<D> {
 
 impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
     pub(crate) fn read(device: BlockDevice<D>) -> Option<Self> {
-        let mut superblock_block = device.read_blocks(
-            Superblock::SUPERBLOCK_BLOCK_SIZE,
-            Superblock::SUPERBLOCK_BLOCK_INDEX,
-            1,
-        );
-        let superblock: &mut Superblock = superblock_block.interpret_bytes_mut(0);
+        let mut superblock: BlockBufferView<Superblock> = device
+            .read_blocks(
+                Superblock::SUPERBLOCK_BLOCK_SIZE,
+                Superblock::SUPERBLOCK_BLOCK_INDEX,
+                1,
+            )
+            .into_view();
         if !superblock.magic_valid() {
             return None;
         }
@@ -49,10 +52,10 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
 
         // Increase the mount count and write the superblock back
         superblock.mount_count += 1;
-        superblock_block.flush();
+        superblock.flush();
 
         Some(Self {
-            superblock_block,
+            superblock,
             block_group_descriptors_blocks,
             num_block_groups,
             block_size,
@@ -61,11 +64,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
     }
 
     pub(crate) fn superblock(&self) -> &Superblock {
-        self.superblock_block.interpret_bytes(0)
-    }
-
-    pub(crate) fn superblock_mut(&mut self) -> &mut Superblock {
-        self.superblock_block.interpret_bytes_mut(0)
+        &self.superblock
     }
 
     fn block_group_descriptor(&self, index: BlockGroupIndex) -> Option<&BlockGroupDescriptor> {
@@ -103,7 +102,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
     }
 
     pub(crate) fn read_inode(&mut self, inode_number: InodeNumber) -> Option<Inode> {
-        let (block_group_index, local_inode_index) = self.superblock().inode_location(inode_number);
+        let (block_group_index, local_inode_index) = self.superblock.inode_location(inode_number);
         let block_group_descriptor = self.block_group_descriptor(block_group_index)?;
 
         let mut inode_bitmap_block = self.inode_bitmap_block(block_group_descriptor);
@@ -142,7 +141,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
 
     pub(crate) fn inode_size(&self, inode: &Inode) -> u64 {
         // In revision 0, we only have 32-bit sizes.
-        if self.superblock().rev_level == 0 {
+        if self.superblock.rev_level == 0 {
             return u64::from(inode.size_low);
         }
 
@@ -196,7 +195,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         // block size. Extra space manifests as directory entries with rec_len
         // longer than necessary.
         let inode_size = self.inode_size(inode);
-        let block_size = u64::from(u16::from(self.superblock().block_size()));
+        let block_size = u64::from(u16::from(self.superblock.block_size()));
         assert!(inode_size % block_size == 0, "invariant violated: directory size {inode_size} not a multiple of block size {block_size}");
 
         self.iter_file_blocks(inode, |_, data| {
@@ -222,7 +221,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         );
 
         // Reserve inode number in parent's block group by finding free entry in bitmap
-        let (block_group_index, _) = self.superblock().inode_location(parent_number);
+        let (block_group_index, _) = self.superblock.inode_location(parent_number);
         let block_group_descriptor = self.block_group_descriptor(block_group_index)?;
 
         let mut inode_bitmap_block = self.inode_bitmap_block(block_group_descriptor);
@@ -295,7 +294,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         //
         // 16bit unsigned displacement to the next directory entry from the
         // start of the current directory entry. This field must have a value at
-        // least equal to the length of the current record.
+        // least to the length of the current record.
         //
         // The directory entries must be aligned on 4 bytes boundaries and there
         // cannot be any directory entry spanning multiple data blocks. If an
@@ -309,8 +308,8 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         self.flush_block_group_descriptors();
 
         // Adjust superblock statistics
-        self.superblock_mut().free_inodes_count -= 1;
-        self.superblock_block.flush();
+        self.superblock.free_inodes_count -= 1;
+        self.superblock.flush();
 
         None
     }

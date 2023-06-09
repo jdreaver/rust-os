@@ -1,5 +1,6 @@
 use core::fmt::Debug;
-use core::ops::Add;
+use core::marker::PhantomData;
+use core::ops::{Add, Deref, DerefMut};
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -135,6 +136,18 @@ impl BlockBuffer {
         unsafe { ptr.as_mut().expect("pointer is null") }
     }
 
+    pub(crate) fn into_view_offset<T>(self, offset: usize) -> BlockBufferView<T> {
+        BlockBufferView {
+            buffer: self,
+            offset,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub(crate) fn into_view<T>(self) -> BlockBufferView<T> {
+        self.into_view_offset(0)
+    }
+
     /// Index into the data block for this buffer, representing the bytes as a
     /// reference to a type.
     pub(crate) fn interpret_bytes<T>(&self, offset: usize) -> &T {
@@ -156,6 +169,37 @@ impl BlockBuffer {
         );
         self.driver
             .write_device_blocks(self.device_start_block, &self.data);
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct BlockBufferView<T> {
+    buffer: BlockBuffer,
+    offset: usize,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> BlockBufferView<T> {
+    pub(crate) fn into_buffer(self) -> BlockBuffer {
+        self.buffer
+    }
+
+    pub(crate) fn flush(&self) {
+        self.buffer.flush();
+    }
+}
+
+impl<T> Deref for BlockBufferView<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        self.buffer.interpret_bytes(self.offset)
+    }
+}
+
+impl<T> DerefMut for BlockBufferView<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        self.buffer.interpret_bytes_mut(self.offset)
     }
 }
 
