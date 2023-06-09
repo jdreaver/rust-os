@@ -67,6 +67,11 @@ pub(crate) trait DirectoryInode: Debug {
     // TODO: Return an iterator instead of a Vec (probably a dyn for some
     // iterator type to avoid an impl in the return position).
     fn subdirectories(&mut self) -> Vec<Box<dyn DirectoryEntry>>;
+
+    fn create_file(&mut self, _name: &str) -> Option<Box<dyn FileInode>> {
+        log::warn!("create_file: not implemented for {:?}", self);
+        None
+    }
 }
 
 pub(crate) trait DirectoryEntry: Debug {

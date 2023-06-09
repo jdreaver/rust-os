@@ -11,6 +11,7 @@ use crate::vfs;
 use super::directory::DirectoryEntry;
 use super::file_system::FileSystem;
 use super::inode::Inode;
+use super::superblock::InodeNumber;
 
 /// VFS interface into an ext2 file system.
 #[derive(Debug)]
@@ -30,12 +31,20 @@ impl<D: BlockDeviceDriver + 'static> VFSFileSystem<D> {
 
 impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileSystem for VFSFileSystem<D> {
     fn read_root(&mut self) -> vfs::Inode {
-        let inode = self.reader.lock_disable_interrupts().read_root();
+        let (inode, inode_number) = self.reader.lock_disable_interrupts().read_root();
         let reader = self.reader.clone();
         let inode_type = if inode.is_file() {
-            vfs::InodeType::File(Box::new(EXT2FileInode { reader, inode }))
+            vfs::InodeType::File(Box::new(EXT2FileInode {
+                reader,
+                inode_number,
+                inode,
+            }))
         } else if inode.is_dir() {
-            vfs::InodeType::Directory(Box::new(EXT2DirectoryInode { reader, inode }))
+            vfs::InodeType::Directory(Box::new(EXT2DirectoryInode {
+                reader,
+                inode_number,
+                inode,
+            }))
         } else {
             panic!("unexpected inode type: {:?}", inode);
         };
@@ -49,6 +58,7 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileSystem for VFSFileSystem<D
 // (Same with DirectoryEntry below)
 pub(crate) struct EXT2FileInode<D> {
     reader: Arc<SpinLock<FileSystem<D>>>,
+    inode_number: InodeNumber,
     inode: Inode,
 }
 
@@ -96,6 +106,7 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for EXT2FileInode<D>
 #[derive(Debug)]
 pub(crate) struct EXT2DirectoryInode<D> {
     reader: Arc<SpinLock<FileSystem<D>>>,
+    inode_number: InodeNumber,
     inode: Inode,
 }
 
@@ -110,6 +121,17 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::DirectoryInode for EXT2Directo
                 true
             });
         entries
+    }
+
+    fn create_file(&mut self, name: &str) -> Option<Box<dyn vfs::FileInode>> {
+        let mut lock = self.reader.lock_disable_interrupts();
+        let (inode, inode_number) = lock.create_file(&self.inode, self.inode_number, name)?;
+        let reader = self.reader.clone();
+        Some(Box::new(EXT2FileInode {
+            reader,
+            inode_number,
+            inode,
+        }))
     }
 }
 
@@ -141,9 +163,17 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::DirectoryEntry for EXT2Directo
         };
         let reader = self.reader.clone();
         let inode_type = if inode.is_file() {
-            vfs::InodeType::File(Box::new(EXT2FileInode { reader, inode }))
+            vfs::InodeType::File(Box::new(EXT2FileInode {
+                reader,
+                inode_number,
+                inode,
+            }))
         } else if inode.is_dir() {
-            vfs::InodeType::Directory(Box::new(EXT2DirectoryInode { reader, inode }))
+            vfs::InodeType::Directory(Box::new(EXT2DirectoryInode {
+                reader,
+                inode_number,
+                inode,
+            }))
         } else {
             panic!("unexpected inode type: {:?}", inode);
         };

@@ -58,29 +58,50 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         self.superblock_block.interpret_bytes(0)
     }
 
+    pub(crate) fn superblock_mut(&mut self) -> &mut Superblock {
+        self.superblock_block.interpret_bytes_mut(0)
+    }
+
     fn block_group_descriptor(&self, index: BlockGroupIndex) -> Option<&BlockGroupDescriptor> {
-        if index.0 as usize >= self.num_block_groups {
-            return None;
-        }
-        let offset = index.0 as usize * core::mem::size_of::<BlockGroupDescriptor>();
+        let offset = self.block_group_descriptor_ofsset(index)?;
         Some(self.block_group_descriptors_blocks.interpret_bytes(offset))
     }
 
-    pub(crate) fn read_root(&mut self) -> Inode {
-        self.read_inode(ROOT_DIRECTORY)
-            .expect("couldn't read root directory inode!")
+    fn block_group_descriptor_mut(
+        &mut self,
+        index: BlockGroupIndex,
+    ) -> Option<&mut BlockGroupDescriptor> {
+        let offset = self.block_group_descriptor_ofsset(index)?;
+        Some(
+            self.block_group_descriptors_blocks
+                .interpret_bytes_mut(offset),
+        )
+    }
+
+    fn block_group_descriptor_ofsset(&self, index: BlockGroupIndex) -> Option<usize> {
+        if index.0 as usize >= self.num_block_groups {
+            return None;
+        }
+        Some(index.0 as usize * core::mem::size_of::<BlockGroupDescriptor>())
+    }
+
+    fn flush_block_group_descriptors(&mut self) {
+        self.block_group_descriptors_blocks.flush();
+    }
+
+    pub(crate) fn read_root(&mut self) -> (Inode, InodeNumber) {
+        let inode = self
+            .read_inode(ROOT_DIRECTORY)
+            .expect("couldn't read root directory inode!");
+        (inode, ROOT_DIRECTORY)
     }
 
     pub(crate) fn read_inode(&mut self, inode_number: InodeNumber) -> Option<Inode> {
         let (block_group_index, local_inode_index) = self.superblock().inode_location(inode_number);
         let block_group_descriptor = self.block_group_descriptor(block_group_index)?;
 
-        let inode_bitmap_block_address =
-            BlockIndex::from(u64::from(block_group_descriptor.inode_bitmap.0));
-        let inode_bitmap_block =
-            self.device
-                .read_blocks(self.block_size, inode_bitmap_block_address, 1);
-        let inode_bitmap = InodeBitmap(inode_bitmap_block.data());
+        let mut inode_bitmap_block = self.inode_bitmap_block(block_group_descriptor);
+        let inode_bitmap = InodeBitmap(inode_bitmap_block.data_mut());
         let inode_used = inode_bitmap.is_used(local_inode_index)?;
         if !inode_used {
             return None;
@@ -94,6 +115,13 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
             .read_blocks(self.block_size, inode_block_index, 1);
         let inode: &Inode = inode_block.interpret_bytes(inode_offset.0 as usize);
         Some(inode.clone())
+    }
+
+    fn inode_bitmap_block(&self, block_group_descriptor: &BlockGroupDescriptor) -> BlockBuffer {
+        let inode_bitmap_block_address =
+            BlockIndex::from(u64::from(block_group_descriptor.inode_bitmap.0));
+        self.device
+            .read_blocks(self.block_size, inode_bitmap_block_address, 1)
     }
 
     pub(crate) fn inode_size(&self, inode: &Inode) -> u64 {
@@ -153,5 +181,49 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
                 }
             }
         });
+    }
+
+    pub(crate) fn create_file(
+        &mut self,
+        parent: &Inode,
+        parent_number: InodeNumber,
+        name: &str,
+    ) -> Option<(Inode, InodeNumber)> {
+        assert!(
+            parent.is_dir(),
+            "tried to create file in non-directory inode {parent:?}"
+        );
+
+        // Reserve inode number in parent's block group by finding free entry in bitmap
+        let (block_group_index, _) = self.superblock().inode_location(parent_number);
+        let block_group_descriptor = self.block_group_descriptor(block_group_index)?;
+
+        let mut inode_bitmap_block = self.inode_bitmap_block(block_group_descriptor);
+        let mut inode_bitmap = InodeBitmap(inode_bitmap_block.data_mut());
+        let Some(inode_index) = inode_bitmap.reserve_next_free() else {
+            log::error!("no free inode found in block group {block_group_descriptor:?}");
+            return None;
+        };
+        inode_bitmap_block.flush();
+        log::warn!(
+            "reserved inode {inode_index:?} for {name} in block group {block_group_descriptor:?}"
+        );
+
+        // Reserve some blocks for file content
+
+        // Add inode entry to block group's inode table
+
+        // Add inode to parent directory's list of directories
+
+        // Adjust block group statistics
+        let block_group_descriptor = self.block_group_descriptor_mut(block_group_index)?;
+        block_group_descriptor.free_inodes_count -= 1;
+        self.flush_block_group_descriptors();
+
+        // Adjust superblock statistics
+        self.superblock_mut().free_inodes_count -= 1;
+        self.superblock_block.flush();
+
+        None
     }
 }

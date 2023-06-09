@@ -14,6 +14,17 @@ pub(crate) struct FilePath {
     pub(crate) components: Vec<FilePathComponent>,
 }
 
+impl FilePath {
+    pub(crate) fn split_dirname_filename(&self) -> Option<(Self, FilePathComponent)> {
+        let (filename, parent) = self.components.split_last()?;
+        let parent_path = Self {
+            absolute: self.absolute,
+            components: parent.to_vec(),
+        };
+        Some((parent_path, filename.clone()))
+    }
+}
+
 /// A component of a file path. Notably, this cannot include the `/` character,
 /// and is non-empty.
 #[derive(Debug, Clone)]

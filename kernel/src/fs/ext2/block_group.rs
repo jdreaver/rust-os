@@ -41,7 +41,7 @@ impl<'a> BlockBitmap<'a> {
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#inode-bitmap>
 #[derive(Debug)]
-pub(crate) struct InodeBitmap<'a>(pub(crate) &'a [u8]);
+pub(crate) struct InodeBitmap<'a>(pub(crate) &'a mut [u8]);
 
 impl<'a> InodeBitmap<'a> {
     ///  The "Inode Bitmap" works in a similar way as the "Block Bitmap",
@@ -55,5 +55,23 @@ impl<'a> InodeBitmap<'a> {
         let bit = local_index.0 % 8;
         let mask = 1 << bit;
         Some(byte & mask != 0)
+    }
+
+    /// Finds the next open inode in the bitmap, and returns its index. Returns
+    /// `None` if there are no more remaining inodes.
+    pub(crate) fn reserve_next_free(&mut self) -> Option<LocalInodeIndex> {
+        for (index, byte) in self.0.iter_mut().enumerate() {
+            if *byte == 0xFF {
+                continue;
+            }
+            for bit in 0..8 {
+                let mask = 1 << bit;
+                if *byte & mask == 0 {
+                    *byte |= mask;
+                    return Some(LocalInodeIndex((index * 8 + bit) as u32));
+                }
+            }
+        }
+        None
     }
 }

@@ -542,7 +542,7 @@ fn run_command(command: &Command) {
             let Some(inode) = get_path_inode(path) else { return; };
 
             let vfs::InodeType::File(mut file) = inode.inode_type else {
-                serial_println!("Not a directory");
+                serial_println!("Not a file");
                 return;
             };
 
@@ -550,12 +550,34 @@ fn run_command(command: &Command) {
             serial_println!("{}", String::from_utf8_lossy(&bytes));
         }
         Command::WriteToFile { path, content } => {
-            // TODO: Support creating new files
-            let Some(inode) = get_path_inode(path) else { return; };
+            let mut file = if let Some(inode) = get_path_inode(path) {
+                let vfs::InodeType::File(file) = inode.inode_type else {
+                    serial_println!("Not a file");
+                    return;
+                };
+                file
+            } else {
+                // File not found. Need to create an inode.
+                let Some((parent_path, filename)) = path.split_dirname_filename() else {
+                    serial_println!("Parent directory path doesn't exist. Did you try to write to the root directory?");
+                    return;
+                };
 
-            let vfs::InodeType::File(mut file) = inode.inode_type else {
-                serial_println!("Not a directory");
-                return;
+                let Some(parent_inode) = get_path_inode(&parent_path)  else {
+                    serial_println!("Parent directory '{parent_path}' not found");
+                    return;
+                };
+
+                let vfs::InodeType::Directory(mut parent_dir) = parent_inode.inode_type else {
+                    serial_println!("Parent path '{parent_path}' is not a directory");
+                    return;
+                };
+
+                let Some(file) = parent_dir.create_file(filename.as_str()) else {
+                    serial_println!("Failed to create inode");
+                    return;
+                };
+                file
             };
 
             file.write(content.as_bytes());
@@ -586,7 +608,7 @@ fn run_command(command: &Command) {
                         };
                         inode
                     } else {
-                        file_system.read_root()
+                        file_system.read_root().0
                     };
                     serial_println!("{:#x?}", inode);
                     serial_println!("Listing root directory...");
