@@ -161,6 +161,28 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         (u64::from(inode.size_high) << 32) | u64::from(inode.size_low)
     }
 
+    pub(super) fn write_inode(&mut self, inode: Inode, inode_number: InodeNumber) {
+        let (block_group_index, local_inode_index) = self.superblock.inode_location(inode_number);
+        let block_group_descriptor = self
+            .block_group_descriptors
+            .get(block_group_index)
+            .expect("failed to write inode, block group descriptor not found!");
+
+        // Assert inode is marked as used
+        let mut inode_bitmap_block = self.inode_bitmap_block(block_group_descriptor);
+        let inode_bitmap = InodeBitmap::new(inode_bitmap_block.data_mut());
+        let inode_used = inode_bitmap
+            .is_used(local_inode_index)
+            .expect("failed to read inode bitmap is_used!");
+        assert!(inode_used, "inode {inode_number:?} is not marked as used!");
+
+        // Write and flush inode block
+        let (mut inode_block, inode_offset) =
+            self.inode_block(block_group_descriptor, local_inode_index);
+        *inode_block.interpret_bytes_mut(inode_offset.0 as usize) = inode;
+        inode_block.flush();
+    }
+
     pub(super) fn iter_file_blocks<F>(&mut self, inode: &Inode, mut func: F)
     where
         F: FnMut(usize, BlockBuffer) -> bool,
@@ -230,6 +252,8 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         // Add inode entry to block group's inode table
         let mut direct_blocks = InodeDirectBlocks::empty();
         direct_blocks.insert(0, block_address);
+        let block_size = u32::from(u16::from(self.superblock.block_size()));
+        let blocks = block_size / 512; // Remember, blocks are in units if 512 bytes!
         let inode = Inode {
             mode: InodeMode::IROTH
                 | InodeMode::IRGRP
@@ -244,7 +268,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
             dtime: 0,
             gid: parent.gid,
             links_count: 1,
-            blocks: 1, // Reserved a block above
+            blocks, // Reserved above
             flags: 0,
             osd1: 0,
             direct_blocks,
@@ -257,17 +281,13 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
             faddr: 0,
             osd2: [0; 12],
         };
-        let cloned_inode = inode.clone();
-        let (mut inode_block, inode_offset) =
-            self.inode_block(block_group_descriptor, local_inode_index);
-        *inode_block.interpret_bytes_mut(inode_offset.0 as usize) = inode;
-        inode_block.flush();
-
-        // Add inode to parent directory's list of directories
         let inode_number = self
             .superblock()
             .inode_number(block_group_index, local_inode_index);
+        let cloned_inode = inode.clone();
+        self.write_inode(inode, inode_number);
 
+        // Add inode to parent directory's list of directories
         let mut found_free_entry = false;
         self.iter_directory_blocks(parent, |mut dir_block| {
             if dir_block

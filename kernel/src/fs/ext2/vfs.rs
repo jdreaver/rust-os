@@ -110,6 +110,10 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for VFSInode<D> {
             "couldn't write all bytes to file! implement adding new blocks"
         );
 
+        // Write inode back
+        self.inode.size_low = data.len() as u32;
+        lock.write_inode(self.inode.clone(), self.inode_number);
+
         true
     }
 }
