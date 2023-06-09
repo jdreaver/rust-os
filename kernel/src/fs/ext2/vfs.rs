@@ -33,37 +33,37 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileSystem for VFSFileSystem<D
     fn read_root(&mut self) -> vfs::Inode {
         let (inode, inode_number) = self.reader.lock_disable_interrupts().read_root();
         let reader = self.reader.clone();
-        let inode_type = if inode.is_file() {
-            vfs::InodeType::File(Box::new(EXT2FileInode {
-                reader,
-                inode_number,
-                inode,
-            }))
-        } else if inode.is_dir() {
-            vfs::InodeType::Directory(Box::new(EXT2DirectoryInode {
-                reader,
-                inode_number,
-                inode,
-            }))
+        let vfs_inode = Box::new(VFSInode {
+            reader,
+            inode_number,
+            inode,
+        });
+        let inode_type = if vfs_inode.inode.is_file() {
+            vfs::InodeType::File(vfs_inode)
+        } else if vfs_inode.inode.is_dir() {
+            vfs::InodeType::Directory(vfs_inode)
         } else {
-            panic!("unexpected inode type: {:?}", inode);
+            panic!("unexpected inode type: {:?}", vfs_inode.inode);
         };
         vfs::Inode { inode_type }
     }
 }
 
 #[derive(Debug)]
-// TODO: Perhaps combine EXT2FileNode with EXT2DirectoryNode? They are both just
-// inodes. We can use assertions to ensure we picked the right one if needed.
-// (Same with DirectoryEntry below)
-pub(crate) struct EXT2FileInode<D> {
+pub(crate) struct VFSInode<D> {
     reader: Arc<SpinLock<FileSystem<D>>>,
     inode_number: InodeNumber,
     inode: Inode,
 }
 
-impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for EXT2FileInode<D> {
+impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for VFSInode<D> {
     fn read(&mut self) -> Vec<u8> {
+        assert!(
+            self.inode.is_file(),
+            "expected file inode but found {:?}",
+            self.inode
+        );
+
         let mut reader = self.reader.lock_disable_interrupts();
 
         let mut data = Vec::new();
@@ -78,6 +78,12 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for EXT2FileInode<D>
     }
 
     fn write(&mut self, data: &[u8]) -> bool {
+        assert!(
+            self.inode.is_file(),
+            "expected file inode but found {:?}",
+            self.inode
+        );
+
         let mut lock = self.reader.lock_disable_interrupts();
 
         let mut written_bytes = 0;
@@ -107,15 +113,14 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for EXT2FileInode<D>
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct EXT2DirectoryInode<D> {
-    reader: Arc<SpinLock<FileSystem<D>>>,
-    inode_number: InodeNumber,
-    inode: Inode,
-}
-
-impl<D: Debug + BlockDeviceDriver + 'static> vfs::DirectoryInode for EXT2DirectoryInode<D> {
+impl<D: Debug + BlockDeviceDriver + 'static> vfs::DirectoryInode for VFSInode<D> {
     fn subdirectories(&mut self) -> Vec<Box<dyn vfs::DirectoryEntry>> {
+        assert!(
+            self.inode.is_dir(),
+            "expected directory inode but found {:?}",
+            self.inode
+        );
+
         let mut entries: Vec<Box<dyn vfs::DirectoryEntry>> = Vec::new();
         self.reader
             .lock_disable_interrupts()
@@ -128,10 +133,16 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::DirectoryInode for EXT2Directo
     }
 
     fn create_file(&mut self, name: &str) -> Option<Box<dyn vfs::FileInode>> {
+        assert!(
+            self.inode.is_dir(),
+            "expected directory inode but found {:?}",
+            self.inode
+        );
+
         let mut lock = self.reader.lock_disable_interrupts();
         let (inode, inode_number) = lock.create_file(&self.inode, self.inode_number, name)?;
         let reader = self.reader.clone();
-        Some(Box::new(EXT2FileInode {
+        Some(Box::new(Self {
             reader,
             inode_number,
             inode,
@@ -166,20 +177,17 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::DirectoryEntry for EXT2Directo
             panic!("couldn't read inode {inode_number:?} inside EXT2DiretoryEntry::get_inode");
         };
         let reader = self.reader.clone();
-        let inode_type = if inode.is_file() {
-            vfs::InodeType::File(Box::new(EXT2FileInode {
-                reader,
-                inode_number,
-                inode,
-            }))
-        } else if inode.is_dir() {
-            vfs::InodeType::Directory(Box::new(EXT2DirectoryInode {
-                reader,
-                inode_number,
-                inode,
-            }))
+        let vfs_inode = Box::new(VFSInode {
+            reader,
+            inode_number,
+            inode,
+        });
+        let inode_type = if vfs_inode.inode.is_file() {
+            vfs::InodeType::File(vfs_inode)
+        } else if vfs_inode.inode.is_dir() {
+            vfs::InodeType::Directory(vfs_inode)
         } else {
-            panic!("unexpected inode type: {:?}", inode);
+            panic!("unexpected inode type: {:?}", vfs_inode.inode);
         };
         vfs::Inode { inode_type }
     }
