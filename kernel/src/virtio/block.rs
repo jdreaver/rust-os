@@ -446,10 +446,11 @@ impl RawBlockRequest {
 
         // Buffer descriptor. Data is located right at the beginning of the
         // buffer.
+        let writeable = self.request_type != BlockRequestType::Out;
         let buffer_desc = ChainedVirtQueueDescriptorElem {
             addr: buffer.address(),
             len: self.data_len,
-            flags: VirtQueueDescriptorFlags::new().with_device_write(true),
+            flags: VirtQueueDescriptorFlags::new().with_device_write(writeable),
         };
 
         // Put status right after header
