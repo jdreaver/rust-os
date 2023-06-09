@@ -126,7 +126,6 @@ fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
                 data.sender.send(VirtIOBlockResponse::Read { data: bytes.to_vec() });
             }
             BlockRequest::Write { .. } => {
-                log::warn!("got request: {:#x?}", request);
                 data.sender.send(VirtIOBlockResponse::Write);
             }
             BlockRequest::GetID => {

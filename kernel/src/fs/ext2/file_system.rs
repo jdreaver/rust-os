@@ -23,12 +23,12 @@ pub(crate) struct FileSystem<D> {
 
 impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
     pub(crate) fn read(device: BlockDevice<D>) -> Option<Self> {
-        let superblock_block = device.read_blocks(
+        let mut superblock_block = device.read_blocks(
             Superblock::SUPERBLOCK_BLOCK_SIZE,
             Superblock::SUPERBLOCK_BLOCK_INDEX,
             1,
         );
-        let superblock: &Superblock = superblock_block.interpret_bytes(0);
+        let superblock: &mut Superblock = superblock_block.interpret_bytes_mut(0);
         if !superblock.magic_valid() {
             return None;
         }
@@ -40,6 +40,10 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         let descriptor_block_start = superblock.block_descriptor_table_start_block();
         let block_group_descriptors_blocks =
             device.read_blocks(block_size, descriptor_block_start, num_descriptor_blocks);
+
+        // Increase the mount count and write the superblock back
+        superblock.mount_count += 1;
+        superblock_block.flush();
 
         Some(Self {
             superblock_block,
