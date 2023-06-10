@@ -1,5 +1,3 @@
-use core::fmt;
-
 use bitflags::bitflags;
 
 use super::superblock::BlockAddress;
@@ -114,7 +112,7 @@ bitflags! {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub(super) struct InodeDirectBlocks(pub(super) [BlockAddress; 12]);
 
 impl InodeDirectBlocks {
@@ -125,38 +123,5 @@ impl InodeDirectBlocks {
     pub(super) fn insert(&mut self, index: usize, block: BlockAddress) {
         assert!(index < self.0.len(), "index {index} out of bounds");
         self.0[index] = block;
-    }
-
-    pub(super) fn iter(&self) -> InodeDirectBlockIterator {
-        InodeDirectBlockIterator {
-            direct_blocks: *self,
-            index: 0,
-        }
-    }
-}
-
-impl fmt::Debug for InodeDirectBlocks {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_list().entries(self.iter()).finish()
-    }
-}
-
-pub(super) struct InodeDirectBlockIterator {
-    direct_blocks: InodeDirectBlocks,
-    index: usize,
-}
-
-impl Iterator for InodeDirectBlockIterator {
-    type Item = BlockAddress;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let block = self.direct_blocks.0.get(self.index)?;
-        self.index += 1;
-
-        if block.0 == 0 {
-            None
-        } else {
-            Some(*block)
-        }
     }
 }

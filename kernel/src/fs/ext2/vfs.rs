@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
+use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
@@ -10,7 +11,7 @@ use crate::vfs;
 
 use super::file_system::FileSystem;
 use super::inode::Inode;
-use super::superblock::InodeNumber;
+use super::superblock::{InodeNumber, OffsetBytes};
 
 /// VFS interface into an ext2 file system.
 #[derive(Debug)]
@@ -63,16 +64,22 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for VFSInode<D> {
             self.inode
         );
 
+        log::warn!("{:#x?}", self.inode);
+
         let mut reader = self.reader.lock_disable_interrupts();
 
-        let mut data = Vec::new();
         let block_size = usize::from(u16::from(reader.superblock().block_size()));
-        let file_size = reader.inode_size(&self.inode) as usize;
-        reader.iter_file_blocks(&self.inode, |i, block_buf| {
-            let slice_end = file_size - (i * block_size);
+        let file_size = reader.superblock().inode_size(&self.inode) as usize;
+        let mut data = vec![0; file_size];
+        reader.iter_file_blocks(&self.inode, |OffsetBytes(start_bytes), block_buf| {
+            let start_bytes = start_bytes as usize;
+            let slice_end = file_size - start_bytes;
             let slice_end = core::cmp::min(slice_end, block_size);
+            let end_bytes = start_bytes + slice_end;
+
             let block_data = block_buf.data();
-            data.extend(&block_data[..slice_end]);
+            data[start_bytes..end_bytes].copy_from_slice(&block_data[..slice_end]);
+
             true
         });
         data

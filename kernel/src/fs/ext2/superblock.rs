@@ -6,6 +6,7 @@ use bitflags::bitflags;
 use crate::block::{BlockIndex, BlockSize};
 
 use super::block_group::InodeTableBlockAddress;
+use super::inode::{Inode, InodeDirectBlocks};
 use super::strings::CStringBytes;
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#superblock>
@@ -148,6 +149,35 @@ impl Superblock {
         let relative_byte_offset = OffsetBytes(byte_offset % block_size);
         (block_index, relative_byte_offset)
     }
+
+    pub(super) fn inode_size(&self, inode: &Inode) -> u64 {
+        // In revision 0, we only have 32-bit sizes.
+        if self.rev_level == 0 {
+            return u64::from(inode.size_low);
+        }
+
+        (u64::from(inode.size_high) << 32) | u64::from(inode.size_low)
+    }
+
+    pub(super) fn iter_inode_blocks(
+        &self,
+        inode: &Inode,
+    ) -> impl Iterator<Item = (OffsetBytes, BlockAddress)> {
+        let block_size = u64::from(u16::from(self.block_size()));
+
+        // Remember, inode.blocks is number of 512 byte blocks, not
+        // filesystem-sized blocks. Need to divide by block size to get actual
+        // number of blocks.
+        let num_blocks = (inode.blocks as usize * 512).div_ceil(block_size as usize);
+
+        InodeBlockIterator {
+            direct_blocks: inode.direct_blocks,
+            block_size,
+            num_blocks,
+            seen_blocks: 0,
+            index: 0,
+        }
+    }
 }
 
 /// Address of a block in the filesystem.
@@ -273,6 +303,44 @@ impl fmt::Debug for UUID {
         write!(f, "-")?;
         write_bytes(f, 10, 15)?;
         write!(f, ")")
+    }
+}
+
+struct InodeBlockIterator {
+    direct_blocks: InodeDirectBlocks,
+    block_size: u64,
+    num_blocks: usize,
+    seen_blocks: usize,
+    index: usize,
+}
+
+impl Iterator for InodeBlockIterator {
+    type Item = (OffsetBytes, BlockAddress);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Iterate through blocks, skipping blocks that aren't allocated (for
+        // e.g. file holes).
+        while self.seen_blocks < self.num_blocks {
+            if self.index == 12 {
+                todo!("support indirect blocks");
+            }
+
+            let index = self.index;
+            self.index += 1;
+
+            let block = self.direct_blocks.0.get(index)?;
+
+            if block.0 == 0 {
+                continue;
+            }
+
+            self.seen_blocks += 1;
+            let offset = OffsetBytes(index as u64 * self.block_size);
+            let address = BlockAddress(block.0);
+
+            return Some((offset, address));
+        }
+        None
     }
 }
 

@@ -152,15 +152,6 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
             .read_blocks(self.block_size, block_bitmap_block_address, 1)
     }
 
-    pub(super) fn inode_size(&self, inode: &Inode) -> u64 {
-        // In revision 0, we only have 32-bit sizes.
-        if self.superblock.rev_level == 0 {
-            return u64::from(inode.size_low);
-        }
-
-        (u64::from(inode.size_high) << 32) | u64::from(inode.size_low)
-    }
-
     pub(super) fn write_inode(&mut self, inode: Inode, inode_number: InodeNumber) {
         let (block_group_index, local_inode_index) = self.superblock.inode_location(inode_number);
         let block_group_descriptor = self
@@ -185,14 +176,13 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
 
     pub(super) fn iter_file_blocks<F>(&mut self, inode: &Inode, mut func: F)
     where
-        F: FnMut(usize, BlockBuffer) -> bool,
+        F: FnMut(OffsetBytes, BlockBuffer) -> bool,
     {
-        let direct_blocks = inode.direct_blocks;
-        for (i, block_addr) in direct_blocks.iter().enumerate() {
+        for (offset, block_addr) in self.superblock.iter_inode_blocks(inode) {
             let addr = BlockIndex::from(u64::from(block_addr.0));
             let block_buf = self.device.read_blocks(self.block_size, addr, 1);
 
-            if !func(i, block_buf) {
+            if !func(offset, block_buf) {
                 return;
             }
         }
@@ -207,7 +197,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         // Invariant: the directory data length is always a multiple of the
         // block size. Extra space manifests as directory entries with rec_len
         // longer than necessary.
-        let inode_size = self.inode_size(inode);
+        let inode_size = self.superblock.inode_size(inode);
         let block_size = u64::from(u16::from(self.superblock.block_size()));
         assert!(inode_size % block_size == 0, "invariant violated: directory size {inode_size} not a multiple of block size {block_size}");
 
