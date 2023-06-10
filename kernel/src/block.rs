@@ -182,10 +182,6 @@ pub(crate) struct BlockBufferView<T> {
 }
 
 impl<T> BlockBufferView<T> {
-    pub(crate) fn into_buffer(self) -> BlockBuffer {
-        self.buffer
-    }
-
     pub(crate) fn flush(&self) {
         self.buffer.flush();
     }
