@@ -86,6 +86,12 @@
             ];
           }))
 
+          # Debugging
+          gdb
+
+          # Assembly
+          nasm
+
           # For emulation
           qemu
           screen # For serial ports

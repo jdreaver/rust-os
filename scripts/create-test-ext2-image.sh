@@ -7,6 +7,8 @@ if [ "$#" -ne 1 ]; then
   exit 1
 fi
 
+cd "$(dirname "$0")/.."
+
 output_file="$1"
 
 rm -f "$output_file"
@@ -25,6 +27,11 @@ sudo chown "$user" "$mount_dir"
 echo "Hello, world!" > "$mount_dir/hello.txt"
 mkdir "$mount_dir/nested-dir"
 echo "Nested hello" > "$mount_dir/nested-dir/nested.txt"
+
+# Include userspace files
+mkdir "$mount_dir/bin"
+make -C userspace/hello
+cp userspace/hello/hello "$mount_dir/bin/hello"
 
 # Unmount
 sudo exa --tree -lahgnimuU "$mount_dir"

@@ -91,6 +91,15 @@ make test
 
 ## TODO
 
+- Userspace
+  - Fix reading files that are too long in filesystem
+  - Parse ELF files <https://crates.io/crates/elf>. We can include our test binary into the `ext2` disk under `/bin` and simply read it
+  - <https://github.com/bendudson/EuraliOS/blob/main/doc/journal/02-userspace.org>
+  - Use `syscall`/`sysret`, which are only available on x86_64 <https://blog.llandsmeer.com/tech/2019/07/21/uefi-x64-userland.html>
+- Tests: Add thorough unit test suite we can trigger with shell command.
+  - Consider a way to run tests on boot and return the QEMU exit code with the result
+- Multiprocessing (use multiple CPUs)
+- Networking
 - Filesystem
   - Writes
     - Adding blocks to a file (maybe use some lorem ipsum generator or something to make up text of a given length, or embed some out-of-copyright literature in the binary)
@@ -161,7 +170,6 @@ make test
 - virtio-rng interrupt doesn't seem to fire with UEFI disabled (`make run UEFI=off`). Fix it.
   - virtio-blk interrupts work! Just a problem with RNG
 - Read [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/)
-- Tests: Add thorough unit test suite we can trigger with shell command
 
 ## Resources
 

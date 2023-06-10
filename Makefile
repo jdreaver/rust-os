@@ -128,3 +128,6 @@ test:
 .PHONY: clean
 clean:
 	rm -rf target img_mount iso_root *.iso *.elf *.hdd
+	for crate in $(ALL_CRATES); do \
+		(cd $$crate && cargo clean) \
+	done
