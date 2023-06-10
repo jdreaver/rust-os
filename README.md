@@ -91,8 +91,8 @@ make test
 
 ## TODO
 
+- Fix reading files with holes in ext2. If a file has a hold, the direct blocks are 0x0, but the inode's size is large enough that we still need to iterate blocks. Have `read()` populate a `Vec` with the proper size (with zeros), and when it iterates it should handle holes fine.
 - Userspace
-  - Fix reading files that are too long in filesystem
   - Parse ELF files <https://crates.io/crates/elf>. We can include our test binary into the `ext2` disk under `/bin` and simply read it
   - <https://github.com/bendudson/EuraliOS/blob/main/doc/journal/02-userspace.org>
   - Use `syscall`/`sysret`, which are only available on x86_64 <https://blog.llandsmeer.com/tech/2019/07/21/uefi-x64-userland.html>

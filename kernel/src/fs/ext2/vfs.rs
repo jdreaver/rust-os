@@ -70,6 +70,7 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for VFSInode<D> {
         let file_size = reader.inode_size(&self.inode) as usize;
         reader.iter_file_blocks(&self.inode, |i, block_buf| {
             let slice_end = file_size - (i * block_size);
+            let slice_end = core::cmp::min(slice_end, block_size);
             let block_data = block_buf.data();
             data.extend(&block_data[..slice_end]);
             true
