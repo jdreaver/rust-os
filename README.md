@@ -92,11 +92,11 @@ make test
 ## TODO
 
 - Userspace
-  - Parse ELF better (maybe in our own `elf` module) so it is clear what bits need loading from file and where they need to be mapped
+  - Create a dummy userspace function writting in Rust without loading an ELF file.
+    - Map the Rust function's physical frame (plus maybe a few more) to e.g. 0x400000 in a new page table with pages marked as executable by the user, make a dummy stack for the user and map that to the userspace page table as well, and then load that as the userspace program.
   - Create a kernel task start function called `task_userspace_setup` that is used to set up ELF stuff, page table, (anything else?), and call `jump_to_userspace`
   - Ensure we are setting CR3 to kernel page table when we do `syscall` and back to userspace page table before we leave syscall handler
-    - `switch_to_task` might need to handle this as well. We likely need to store the current CR3/page_table so we can restore it. Consider storing task registers in a struct to make this easier.
-    - Maybe future TODO: don't set cr3 if it didn't actually change, because setting `cr3` wipes the TLB (verify it does wipe the TLB)
+  - Parse ELF better (maybe in our own `elf` module) so it is clear what bits need loading from file and where they need to be mapped
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - Consider a way to run tests on boot and return the QEMU exit code with the result
 - Multiprocessing (use multiple CPUs)

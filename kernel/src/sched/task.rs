@@ -1,6 +1,8 @@
 use alloc::sync::Arc;
+use x86_64::PhysAddr;
 
 use crate::hpet::Milliseconds;
+use crate::memory;
 use crate::sched::force_unlock_scheduler;
 use crate::sync::{AtomicEnum, AtomicInt, WaitCell};
 
@@ -15,6 +17,9 @@ pub(crate) struct Task {
     pub(super) kernel_stack_pointer: TaskKernelStackPointer,
     pub(super) state: AtomicEnum<u8, TaskState>,
     pub(super) exit_wait_queue: Arc<WaitCell<TaskExitCode>>,
+
+    /// Value of CR3 register, which is the page table for this task.
+    pub(super) cr3: PhysAddr,
 
     /// How much longer the task can run before it is preempted.
     pub(super) remaining_slice: AtomicInt<u64, Milliseconds>,
@@ -87,8 +92,9 @@ impl Task {
             name,
             kernel_stack_pointer: TaskKernelStackPointer(stack_top),
             state: AtomicEnum::new(TaskState::ReadyToRun),
-            remaining_slice: AtomicInt::new(Milliseconds::new(0)),
             exit_wait_queue: Arc::new(WaitCell::new()),
+            cr3: memory::kernel_cr3(),
+            remaining_slice: AtomicInt::new(Milliseconds::new(0)),
             _kernel_stack: kernel_stack,
         }
     }

@@ -72,6 +72,13 @@ impl KernelMapper {
     }
 }
 
+pub(crate) fn kernel_cr3() -> PhysAddr {
+    KERNEL_PAGE_TABLE_FRAME
+        .get()
+        .expect("kernel page table frame not initialized")
+        .start_address()
+}
+
 /// Translate a given physical address to a virtual address, if possible.
 pub(crate) fn translate_addr(addr: VirtAddr) -> Option<PhysAddr> {
     KERNEL_MAPPER.with_lock(|mapper| mapper.translate_addr(addr))
