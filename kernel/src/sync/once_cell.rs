@@ -68,15 +68,13 @@ impl<T> OnceCell<T> {
     }
 }
 
-// impl<T: Copy> OnceCell<T> {
-//     /// Extracts a copy of the stored value.
-//     pub(super) fn get_copy(&self) -> Option<T> {
-//         if self.ready.load(Ordering::Acquire) {
-//             // Safety: We ensure that the type implements Copy, which is
-//             // required by `assume_init_read`.
-//             Some(self.message.get().read().assume_init_read())
-//         } else {
-//             None
-//         }
-//     }
-// }
+impl<T: Clone> OnceCell<T> {
+    /// Extracts a clone of the stored value.
+    pub(super) fn get_clone(&self) -> Option<T> {
+        if self.ready.load(Ordering::Acquire) {
+            self.message.borrow().clone()
+        } else {
+            None
+        }
+    }
+}
