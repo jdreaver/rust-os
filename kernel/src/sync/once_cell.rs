@@ -1,4 +1,4 @@
-use core::cell::UnsafeCell;
+use core::cell::{Ref, RefCell};
 use core::sync::atomic::{AtomicBool, Ordering};
 
 /// A thread-safe cell that can be written to only once.
@@ -11,7 +11,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 /// primitive for other synchronization primitives that are safer.
 #[derive(Debug)]
 pub(super) struct OnceCell<T> {
-    message: UnsafeCell<Option<T>>,
+    message: RefCell<Option<T>>,
     ready: AtomicBool,
 }
 
@@ -20,49 +20,36 @@ unsafe impl<T> Sync for OnceCell<T> where T: Send {}
 impl<T> OnceCell<T> {
     pub(super) const fn new() -> Self {
         Self {
-            message: UnsafeCell::new(None),
+            message: RefCell::new(None),
             ready: AtomicBool::new(false),
         }
     }
 
     /// Write a value to the cell.
     ///
-    /// # Safety
-    ///
     /// This function can only be called once. This is important because writing
     /// a value discards the old value, and we will never drop the old value
     /// (this is a `MaybeUninit` feature/limitation). We panic if we call this
-    /// function twice, but it is still marked unsafe so the caller is careful.
-    pub(super) unsafe fn set(&self, message: T) {
-        unsafe {
-            self.message.get().write(Some(message));
-        };
+    /// function twice.
+    pub(super) fn set(&self, message: T) {
+        let _ = self.message.replace(Some(message));
         let old = self.ready.swap(true, Ordering::Release);
         assert!(!old, "ERROR: Tried to write cell value twice");
     }
 
     /// Extracts the value from the cell.
     ///
-    /// # Safety
-    ///
     /// This function can only be called once. It is itself "safe" because the
     /// invariant on `set` ensures we only call `set` once, and the function
     /// also uses the atomic bool `ready` to ensure we only read once. However,
     /// the caller should ensure that if `get_once` is ever called, then other
     /// functions that get references or copied to the value are _never_ called.
-    pub(super) unsafe fn get_once(&self) -> Option<T> {
+    pub(super) fn get_once(&self) -> Option<T> {
         if self.ready.swap(false, Ordering::Acquire) {
             // Safety: We should only read a message once, since we are reifying
             // it from a single memory location. The swap above is an extra
             // safeguard to ensure we don't read the message twice.
-            unsafe {
-                // This swap dance is to avoid a double free of the internal
-                // value when the `UnsafeCell` is dropped.
-                let ptr = self.message.get();
-                let value = ptr.read();
-                ptr.write(None);
-                value
-            }
+            self.message.replace(None)
         } else {
             None
         }
@@ -71,8 +58,10 @@ impl<T> OnceCell<T> {
     /// Extracts a reference to the stored value.
     pub(super) fn get_ref(&self) -> Option<&T> {
         if self.ready.load(Ordering::Acquire) {
-            let ptr_ref = unsafe { self.message.get().as_ref().expect("null pointer") };
-            ptr_ref.as_ref()
+            // NOTE: We use `Ref::leak` here to avoid needing to wrap in `Ref`.
+            // Using `leak` means writing to the `RefCell` will panic, which is
+            // preferred to unsafe behavior.
+            Ref::leak(self.message.borrow()).as_ref()
         } else {
             None
         }
@@ -81,7 +70,7 @@ impl<T> OnceCell<T> {
 
 // impl<T: Copy> OnceCell<T> {
 //     /// Extracts a copy of the stored value.
-//     pub(super) unsafe fn get_copy(&self) -> Option<T> {
+//     pub(super) fn get_copy(&self) -> Option<T> {
 //         if self.ready.load(Ordering::Acquire) {
 //             // Safety: We ensure that the type implements Copy, which is
 //             // required by `assume_init_read`.

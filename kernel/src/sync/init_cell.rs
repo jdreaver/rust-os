@@ -17,9 +17,7 @@ impl<T> InitCell<T> {
     }
 
     pub(crate) fn init(&self, value: T) {
-        unsafe {
-            self.cell.set(value);
-        }
+        self.cell.set(value);
     }
 
     pub(crate) fn get(&self) -> Option<&T> {

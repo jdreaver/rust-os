@@ -42,7 +42,7 @@ impl<T> OnceSender<T> {
     pub(crate) fn send(self, message: T) {
         // Safety: We only call this function once, which is enforced by this
         // function consuming `self`.
-        unsafe { self.channel.set(message) };
+        self.channel.set(message);
         sched::scheduler_lock().awaken_task(self.receiver_task_id);
     }
 }
@@ -61,7 +61,7 @@ pub(crate) struct OnceReceiver<T> {
 impl<T> OnceReceiver<T> {
     pub(crate) fn wait_sleep(&self) -> T {
         loop {
-            let message = unsafe { self.channel.get_once() };
+            let message = self.channel.get_once();
             if let Some(message) = message {
                 return message;
             }
