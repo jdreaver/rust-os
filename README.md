@@ -91,25 +91,6 @@ make test
 
 ## TODO
 
-- BUG: race condition if a task completes before we try to wait on it, we could wait forever.
-  - We could store the exit code in the task, but maybe in WaitQueue we should store the value if it was sent. We might want a `OnceWaitQueue` that will only ever send a single value and will inform all consumers. We could require the value to be `Copy`. Is that even a wait queue? Should we allow `OnceSender` to have multiple `OnceReceiver`s if `T: Copy`?
-  - Consider separating the concepts of "storing a value a client wants" and "holding a task ID that we need to wake up and then waking it up".
-
-  ```
-  ksh > prime sync 10
-  Waiting for task TaskId(7) to finish...
-  [INFO] SCHEDULER: Switching from 'shell' TaskId(3) SP: TaskKernelStackPointer(55550002c268) (@ 0x444444440220) to 'calculate prime' TaskId(7) SP: TaskKernelStackPointer(55550003ff80)
-  calculate_prime_task DONE: 10th prime: 31
-  [INFO] task_setup: task calculate prime TaskId(7) task_fn returned, halting
-  [INFO] SCHEDULER: Switching from 'calculate prime' TaskId(7) SP: TaskKernelStackPointer(55550003ff80) (@ 0x444444440258) to 'shell' TaskId(3) SP: TaskKernelStackPointer(55550002c628)
-  [WARN] about to wait_sleep() for task TaskId(7)
-  [WARN] wait queue wait_sleep, creating channel
-  [WARN] wait queue wait_sleep, waiting
-  [WARN] OnceReceiver wait_sleep() no message, going to sleep
-  [INFO] SCHEDULER: Switching from 'shell' TaskId(3) SP: TaskKernelStackPointer(55550002c628) (@ 0x444444440220) to '__IDLE_TASK__' TaskId(1) SP: TaskKernelStackPointer(55550000f3f0)
-  QEMU: Terminated
-  ```
-
 - Userspace
   - Parse ELF files <https://crates.io/crates/elf>. We can include our test binary into the `ext2` disk under `/bin` and simply read it
   - <https://blog.llandsmeer.com/tech/2019/07/21/uefi-x64-userland.html>
