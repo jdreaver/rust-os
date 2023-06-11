@@ -17,13 +17,13 @@ use super::once_cell::OnceCell;
 /// implementing `Send`.
 pub(crate) fn once_channel<T>() -> (OnceSender<T>, OnceReceiver<T>) {
     let receiver_task_id = sched::scheduler_lock().current_task_id();
-    let channel = Arc::new(OnceCell::new());
+    let cell = Arc::new(OnceCell::new());
     let sender = OnceSender {
-        channel: channel.clone(),
+        cell: cell.clone(),
         receiver_task_id,
     };
     let receiver = OnceReceiver {
-        channel,
+        cell,
         _no_send: PhantomData,
     };
     (sender, receiver)
@@ -32,7 +32,7 @@ pub(crate) fn once_channel<T>() -> (OnceSender<T>, OnceReceiver<T>) {
 /// Sender side of a `once_channel`.
 #[derive(Debug)]
 pub(crate) struct OnceSender<T> {
-    channel: Arc<OnceCell<T>>,
+    cell: Arc<OnceCell<T>>,
     receiver_task_id: TaskId,
 }
 
@@ -42,7 +42,7 @@ impl<T> OnceSender<T> {
     pub(crate) fn send(self, message: T) {
         // Safety: We only call this function once, which is enforced by this
         // function consuming `self`.
-        self.channel.set(message);
+        self.cell.set(message);
         sched::scheduler_lock().awaken_task(self.receiver_task_id);
     }
 }
@@ -50,7 +50,7 @@ impl<T> OnceSender<T> {
 /// Receiver side of a `once_channel`.
 #[derive(Debug)]
 pub(crate) struct OnceReceiver<T> {
-    channel: Arc<OnceCell<T>>,
+    cell: Arc<OnceCell<T>>,
 
     /// This is a hack to make `OnceReceiver` not implement `Send`. This is
     /// necessary so the `TaskId` of the receiver doesn't change. If the
@@ -61,7 +61,7 @@ pub(crate) struct OnceReceiver<T> {
 impl<T> OnceReceiver<T> {
     pub(crate) fn wait_sleep(&self) -> T {
         loop {
-            let message = self.channel.get_once();
+            let message = self.cell.get_once();
             if let Some(message) = message {
                 return message;
             }
