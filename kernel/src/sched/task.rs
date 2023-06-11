@@ -133,8 +133,7 @@ pub(crate) enum TaskExitCode {
     // TODO: Add failure codes here
 }
 
-/// Architecture-specific assembly code that is run when a task is switched to
-/// for the very first time.
+/// Function that is run when a task is switched to for the very first time.
 ///
 /// This is similar to Linux's
 /// [`ret_from_fork`](https://elixir.bootlin.com/linux/v6.3.2/source/arch/x86/entry/entry_64.S#L279)

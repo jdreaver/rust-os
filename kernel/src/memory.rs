@@ -9,7 +9,7 @@ use x86_64::structures::paging::{
 };
 use x86_64::{PhysAddr, VirtAddr};
 
-use crate::sync::SpinLock;
+use crate::sync::{InitCell, SpinLock};
 
 /// Page table mapper used by all kernel contexts.
 static KERNEL_MAPPER: KernelMapper = KernelMapper::new();
@@ -40,6 +40,9 @@ struct KernelMapper {
     lock: SpinLock<Option<OffsetPageTable<'static>>>,
 }
 
+/// Holds the physical location of the kernel's page table.
+static KERNEL_PAGE_TABLE_FRAME: InitCell<PhysFrame<Size4KiB>> = InitCell::new();
+
 impl KernelMapper {
     const fn new() -> Self {
         Self {
@@ -49,6 +52,7 @@ impl KernelMapper {
 
     unsafe fn init(&self, physical_memory_offset: VirtAddr) {
         let (level_4_table_frame, _) = x86_64::registers::control::Cr3::read();
+        KERNEL_PAGE_TABLE_FRAME.init(level_4_table_frame);
 
         let phys = level_4_table_frame.start_address();
         let virt = physical_memory_offset + phys.as_u64();

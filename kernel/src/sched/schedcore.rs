@@ -8,10 +8,10 @@ use crate::hpet::Milliseconds;
 use crate::sync::{InitCell, SpinLock, SpinLockInterruptGuard};
 use crate::{apic, tick};
 
-use super::stack;
 use super::task::{
     KernelTaskStartFunction, Task, TaskExitCode, TaskId, TaskKernelStackPointer, TaskState,
 };
+use super::{stack, syscall};
 
 static SCHEDULER: InitCell<SpinLock<Scheduler>> = InitCell::new();
 
@@ -335,6 +335,7 @@ extern "C" fn idle_task_start(_arg: *const ()) {
 
 pub(crate) fn init(acpi_info: &ACPIInfo) {
     stack::stack_init();
+    syscall::syscall_init();
 
     let processor_info = acpi_info.processor_info();
     let max_lapic_id = processor_info

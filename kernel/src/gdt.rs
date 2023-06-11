@@ -14,16 +14,20 @@ lazy_static! {
 
         // User code/data segments in 64 bit mode are here just to set the
         // privilege level to ring 3.
-        let user_code_selector = gdt.add_entry(Descriptor::user_code_segment());
+        //
+        // N.B. The ordering here matters for some reason when we set the STAR
+        // register. The user data segment must be added _before_ the user code
+        // segment.
         let user_data_selector = gdt.add_entry(Descriptor::user_data_segment());
+        let user_code_selector = gdt.add_entry(Descriptor::user_code_segment());
         (
             gdt,
             Selectors {
                 kernel_code_selector,
                 kernel_data_selector,
                 tss_selector,
-                _user_code_selector: user_code_selector,
-                _user_data_selector: user_data_selector,
+                user_code_selector,
+                user_data_selector,
             },
         )
     };
@@ -33,8 +37,8 @@ struct Selectors {
     kernel_code_selector: SegmentSelector,
     kernel_data_selector: SegmentSelector,
     tss_selector: SegmentSelector,
-    _user_code_selector: SegmentSelector,
-    _user_data_selector: SegmentSelector,
+    user_code_selector: SegmentSelector,
+    user_data_selector: SegmentSelector,
 }
 
 pub(crate) const DOUBLE_FAULT_IST_INDEX: u16 = 0;
@@ -101,4 +105,14 @@ pub(crate) fn init() {
         GS::set_reg(SegmentSelector(0));
         SS::set_reg(SegmentSelector(0));
     }
+
+    // Use STAR to set the kernel and userspace segment selectors for the
+    // SYSCALL and SYSRET instructions.
+    x86_64::registers::model_specific::Star::write(
+        GDT.1.user_code_selector,
+        GDT.1.user_data_selector,
+        GDT.1.kernel_code_selector,
+        GDT.1.kernel_data_selector,
+    )
+    .unwrap_or_else(|err| panic!("Failed to set STAR: {err}"));
 }

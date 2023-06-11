@@ -1,6 +1,8 @@
 mod schedcore;
 mod stack;
+mod syscall;
 mod task;
+mod userspace;
 
 pub(crate) use schedcore::*;
 pub(crate) use stack::*;
