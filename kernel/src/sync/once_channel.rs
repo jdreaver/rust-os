@@ -59,7 +59,7 @@ pub(crate) struct OnceReceiver<T> {
 }
 
 impl<T> OnceReceiver<T> {
-    pub(crate) fn wait_sleep(&self) -> T {
+    pub(crate) fn wait_sleep(self) -> T {
         loop {
             let message = self.cell.get_once();
             if let Some(message) = message {
