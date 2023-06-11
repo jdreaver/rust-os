@@ -2,7 +2,7 @@ use alloc::sync::Arc;
 
 use crate::hpet::Milliseconds;
 use crate::sched::force_unlock_scheduler;
-use crate::sync::{AtomicEnum, AtomicInt, WaitQueue};
+use crate::sync::{AtomicEnum, AtomicInt, WaitCell};
 
 use super::schedcore::scheduler_lock;
 use super::stack;
@@ -14,7 +14,7 @@ pub(crate) struct Task {
     pub(super) name: &'static str,
     pub(super) kernel_stack_pointer: TaskKernelStackPointer,
     pub(super) state: AtomicEnum<u8, TaskState>,
-    pub(super) exit_wait_queue: Arc<WaitQueue<TaskExitCode>>,
+    pub(super) exit_wait_queue: Arc<WaitCell<TaskExitCode>>,
 
     /// How much longer the task can run before it is preempted.
     pub(super) remaining_slice: AtomicInt<u64, Milliseconds>,
@@ -88,7 +88,7 @@ impl Task {
             kernel_stack_pointer: TaskKernelStackPointer(stack_top),
             state: AtomicEnum::new(TaskState::ReadyToRun),
             remaining_slice: AtomicInt::new(Milliseconds::new(0)),
-            exit_wait_queue: Arc::new(WaitQueue::new()),
+            exit_wait_queue: Arc::new(WaitCell::new()),
             _kernel_stack: kernel_stack,
         }
     }

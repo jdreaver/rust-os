@@ -11,12 +11,12 @@ use super::spin_lock::SpinLock;
 /// copy of the value. It is common to use `Arc` as the value type, to make
 /// copies cheap.
 #[derive(Debug)]
-pub(crate) struct WaitQueue<T> {
+pub(crate) struct WaitCell<T> {
     cell: OnceCell<T>,
     waiting_tasks: SpinLock<Vec<TaskId>>,
 }
 
-impl<T: Clone> WaitQueue<T> {
+impl<T: Clone> WaitCell<T> {
     pub(crate) fn new() -> Self {
         Self {
             cell: OnceCell::new(),
