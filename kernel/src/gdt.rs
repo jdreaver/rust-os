@@ -8,21 +8,33 @@ use x86_64::VirtAddr;
 lazy_static! {
     static ref GDT: (GlobalDescriptorTable, Selectors) = {
         let mut gdt = GlobalDescriptorTable::new();
-        let code_selector = gdt.add_entry(Descriptor::kernel_code_segment());
+        let kernel_code_selector = gdt.add_entry(Descriptor::kernel_code_segment());
+        let kernel_data_selector = gdt.add_entry(Descriptor::kernel_data_segment());
         let tss_selector = gdt.add_entry(Descriptor::tss_segment(&TSS));
+
+        // User code/data segments in 64 bit mode are here just to set the
+        // privilege level to ring 3.
+        let user_code_selector = gdt.add_entry(Descriptor::user_code_segment());
+        let user_data_selector = gdt.add_entry(Descriptor::user_data_segment());
         (
             gdt,
             Selectors {
-                code_selector,
+                kernel_code_selector,
+                kernel_data_selector,
                 tss_selector,
+                _user_code_selector: user_code_selector,
+                _user_data_selector: user_data_selector,
             },
         )
     };
 }
 
 struct Selectors {
-    code_selector: SegmentSelector,
+    kernel_code_selector: SegmentSelector,
+    kernel_data_selector: SegmentSelector,
     tss_selector: SegmentSelector,
+    _user_code_selector: SegmentSelector,
+    _user_data_selector: SegmentSelector,
 }
 
 pub(crate) const DOUBLE_FAULT_IST_INDEX: u16 = 0;
@@ -68,21 +80,22 @@ pub(crate) fn init() {
 
     GDT.0.load();
     unsafe {
-        // Reload to the CS (code segment) register to point to the new GDT, not
-        // the GDT we built for bootstrapping.
-        CS::set_reg(GDT.1.code_selector);
+        // Reload to the CS (code segment) and DS (data segment) registers to
+        // point to the new GDT, not the GDT we built for bootstrapping.
+        CS::set_reg(GDT.1.kernel_code_selector);
+        DS::set_reg(GDT.1.kernel_data_selector);
         load_tss(GDT.1.tss_selector);
 
-        // NOTE: It is very important that the data segment registers (DS, ES,
-        // FS, GS, SS) are set to zero. If they are not, the CPU will try to
-        // access the GDT to get the segment descriptors for those registers,
-        // but the GDT is not set up yet. This will cause a triple fault.
+        // NOTE: It is very important that the legacy data segment registers
+        // (ES, FS, GS, SS) are set to zero. If they are not, the CPU will
+        // try to access the GDT to get the segment descriptors for those
+        // registers, but the GDT is not set up yet. This will cause a triple
+        // fault.
         //
         // In 64 bit mode you don't need an actual data segment; using the null
         // segment from the GDT is okay. Many instructions, including iretq
         // (returning from exception handlers) require a data segment descriptor
         // _or_ the null descriptor.
-        DS::set_reg(SegmentSelector(0));
         ES::set_reg(SegmentSelector(0));
         FS::set_reg(SegmentSelector(0));
         GS::set_reg(SegmentSelector(0));
