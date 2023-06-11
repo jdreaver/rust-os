@@ -93,8 +93,9 @@ make test
 
 - Userspace
   - Parse ELF files <https://crates.io/crates/elf>. We can include our test binary into the `ext2` disk under `/bin` and simply read it
+  - <https://blog.llandsmeer.com/tech/2019/07/21/uefi-x64-userland.html>
   - <https://github.com/bendudson/EuraliOS/blob/main/doc/journal/02-userspace.org>
-  - Use `syscall`/`sysret`, which are only available on x86_64 <https://blog.llandsmeer.com/tech/2019/07/21/uefi-x64-userland.html>
+  - Use `syscall`/`sysret`, which are only available on x86_64
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - Consider a way to run tests on boot and return the QEMU exit code with the result
 - Multiprocessing (use multiple CPUs)

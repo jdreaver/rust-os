@@ -3,6 +3,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
+use elf::endian::AnyEndian;
+use elf::ElfBytes;
 use uefi::table::{Runtime, SystemTable};
 
 use crate::block;
@@ -143,6 +145,7 @@ enum Command {
     Unmount,
     Ls(FilePath),
     Cat(FilePath),
+    Elf(FilePath),
     WriteToFile { path: FilePath, content: String },
     FATBIOS { device_id: usize },
     Timer(Milliseconds),
@@ -260,6 +263,10 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
         "cat" => {
             let path = parse_next_word(&mut words, "path", "cat <path>")?;
             Some(Command::Cat(path))
+        }
+        "elf" => {
+            let path = parse_next_word(&mut words, "path", "elf <path>")?;
+            Some(Command::Elf(path))
         }
         "write-to-file" => {
             let path = parse_next_word(&mut words, "path", "write-to-file <path> <content>")?;
@@ -496,6 +503,58 @@ fn run_command(command: &Command) {
 
             let bytes = file.read();
             serial_println!("{}", String::from_utf8_lossy(&bytes));
+        }
+        Command::Elf(path) => {
+            serial_println!("elf: {path:?}");
+            let Some(inode) = get_path_inode(path) else { return; };
+
+            let vfs::InodeType::File(mut file) = inode.inode_type else {
+                serial_println!("Not a file");
+                return;
+            };
+
+            let bytes = file.read();
+            let elf = match ElfBytes::<AnyEndian>::minimal_parse(&bytes) {
+                Ok(elf) => elf,
+                Err(e) => {
+                    serial_println!("Failed to parse ELF: {e}");
+                    return;
+                }
+            };
+
+            serial_println!("ELF header: {:#x?}", elf.ehdr);
+
+            let Some(segments) = elf.segments() else {
+                serial_println!("Failed to get ELF segments");
+                return;
+            };
+            serial_println!("segments: {:?}", segments.iter().collect::<Vec<_>>());
+
+            let Some(section_headers) = elf.section_headers() else {
+                serial_println!("Failed to get ELF section_headers");
+                return;
+            };
+            serial_println!(
+                "section_headers: {:?}",
+                section_headers.iter().collect::<Vec<_>>()
+            );
+
+            let symbol_table = match elf.symbol_table() {
+                Ok(symbol_table) => symbol_table,
+                Err(e) => {
+                    serial_println!("Failed to get ELF symbol table: {e}");
+                    return;
+                }
+            };
+            let Some((symbol_table, _)) = symbol_table else {
+                serial_println!("Failed to get ELF symbol table");
+                return;
+            };
+            let symbol_table = symbol_table.iter().collect::<Vec<_>>();
+            serial_println!(
+                "symbol table: {:?}",
+                symbol_table.iter().collect::<Vec<_>>()
+            );
         }
         Command::WriteToFile { path, content } => {
             let mut file = if let Some(inode) = get_path_inode(path) {

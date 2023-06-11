@@ -64,8 +64,6 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for VFSInode<D> {
             self.inode
         );
 
-        log::warn!("{:#x?}", self.inode);
-
         let mut reader = self.reader.lock_disable_interrupts();
 
         let block_size = usize::from(u16::from(reader.superblock().block_size()));
