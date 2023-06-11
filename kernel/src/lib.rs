@@ -29,6 +29,8 @@
     clippy::wildcard_imports
 )]
 
+#[macro_use] // For format! macro
+#[allow(unused_imports)] // format! macro is unused at the time of writing
 extern crate alloc;
 
 pub(crate) mod acpi;

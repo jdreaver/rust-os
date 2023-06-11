@@ -102,8 +102,11 @@ make test
 - Networking
 - Filesystem
   - Writes
+    - Instead of providing a block iterator function, have existing users request specific blocks. They can do iteration on their own. Then a user can request a new block at a specific location if it needs to do a write and a block doesn't exist.
     - Adding blocks to a file (maybe use some lorem ipsum generator or something to make up text of a given length, or embed some out-of-copyright literature in the binary)
       - Also ensure we add a block to directory inodes if we are trying to add a new directory entry and there isn't enough space. Might need a special constructor on `DirectoryEntry` for this case.
+      - Make a function to find a new block given a desired block. It can be very dumb for now and in the future it can be smarter, but try to make a good interface for future improvements.
+        - One simple but likely very effective algorithm is to first try and allocate a free block right after the previous block, and I'd that fails search for free blocks by byte in the bitmap (which would fine 8 free blocks in a row, and is super fast).
     - Appending: make sure we use the file length module block size to index into blocks. Don't just iterate over blocks.
     - Inode stats: ensure `blocks` and `size_low`/`size_high` fields are kept up to date
     - Creating a new file
@@ -448,6 +451,7 @@ ext2:
 - <https://en.wikipedia.org/wiki/Ext2>
 - <https://git.kernel.org/pub/scm/utils/util-linux/util-linux.git/tree/libblkid/src/superblocks/ext.c>
 - "CHAPTER 18: The Ext2 and Ext3 Filesystems" in "Understanding the Linux Kernel - Bovet (3rd ed, 2005)"
+- "Ch 9, The Extended Filesystem Family" in "Professional Linux Kernel Architecture - Maurer (2008)"
 
 Linux block devices:
 - <https://linux-kernel-labs.github.io/refs/heads/master/labs/block_device_drivers.html>
