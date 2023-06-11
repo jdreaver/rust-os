@@ -619,8 +619,8 @@ fn run_command(command: &Command) {
             );
             if *sync {
                 serial_println!("Waiting for task {task_id:?} to finish...");
-                sched::wait_on_task(task_id);
-                serial_println!("Task {task_id:?} finished!");
+                let exit_code = sched::wait_on_task(task_id);
+                serial_println!("Task {task_id:?} finished! Exit code: {exit_code:?}");
             } else {
                 serial_println!("Task {task_id:?} is running in the background");
                 sched::scheduler_lock().run_scheduler();
