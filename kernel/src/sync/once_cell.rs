@@ -1,5 +1,4 @@
 use core::cell::UnsafeCell;
-use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 /// A thread-safe cell that can be written to only once.
@@ -12,7 +11,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 /// primitive for other synchronization primitives that are safer.
 #[derive(Debug)]
 pub(super) struct OnceCell<T> {
-    message: UnsafeCell<MaybeUninit<T>>,
+    message: UnsafeCell<Option<T>>,
     ready: AtomicBool,
 }
 
@@ -21,7 +20,7 @@ unsafe impl<T> Sync for OnceCell<T> where T: Send {}
 impl<T> OnceCell<T> {
     pub(super) const fn new() -> Self {
         Self {
-            message: UnsafeCell::new(MaybeUninit::uninit()),
+            message: UnsafeCell::new(None),
             ready: AtomicBool::new(false),
         }
     }
@@ -36,7 +35,7 @@ impl<T> OnceCell<T> {
     /// function twice, but it is still marked unsafe so the caller is careful.
     pub(super) unsafe fn set(&self, message: T) {
         unsafe {
-            self.message.get().write(MaybeUninit::new(message));
+            self.message.get().write(Some(message));
         };
         let old = self.ready.swap(true, Ordering::Release);
         assert!(!old, "ERROR: Tried to write cell value twice");
@@ -56,8 +55,14 @@ impl<T> OnceCell<T> {
             // Safety: We should only read a message once, since we are reifying
             // it from a single memory location. The swap above is an extra
             // safeguard to ensure we don't read the message twice.
-            let message = unsafe { self.message.get().read().assume_init_read() };
-            Some(message)
+            unsafe {
+                // This swap dance is to avoid a double free of the internal
+                // value when the `UnsafeCell` is dropped.
+                let ptr = self.message.get();
+                let value = ptr.read();
+                ptr.write(None);
+                value
+            }
         } else {
             None
         }
@@ -67,7 +72,7 @@ impl<T> OnceCell<T> {
     pub(super) fn get_ref(&self) -> Option<&T> {
         if self.ready.load(Ordering::Acquire) {
             let ptr_ref = unsafe { self.message.get().as_ref().expect("null pointer") };
-            unsafe { Some(ptr_ref.assume_init_ref()) }
+            ptr_ref.as_ref()
         } else {
             None
         }
@@ -86,14 +91,3 @@ impl<T> OnceCell<T> {
 //         }
 //     }
 // }
-
-impl<T> Drop for OnceCell<T> {
-    fn drop(&mut self) {
-        if self.ready.load(Ordering::Acquire) {
-            // Safety: We only ever store the message in `send`, which sets
-            // `ready` to `true`. Therefore we can assume that this message has
-            // been initialized.
-            unsafe { self.message.get_mut().assume_init_drop() }
-        }
-    }
-}
