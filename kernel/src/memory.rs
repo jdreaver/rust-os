@@ -121,7 +121,6 @@ pub(crate) fn map_page_to_frame(
 ) -> Result<(), MapToError<Size4KiB>> {
     KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
         KERNEL_MAPPER.with_lock(|mapper| unsafe {
-            log::warn!("mapping {:?} to {:?}", page, frame);
             mapper.map_to(page, frame, flags, allocator)?.flush();
             Ok(())
         })

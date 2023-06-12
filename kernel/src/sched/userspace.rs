@@ -1,6 +1,7 @@
 use core::arch::asm;
 
 use x86_64::registers::rflags::RFlags;
+use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::{Page, PageTableFlags, PhysFrame};
 use x86_64::VirtAddr;
 
@@ -24,10 +25,13 @@ pub(crate) extern "C" fn task_userspace_setup(_arg: *const ()) {
     let instruction_ptr_frame = PhysFrame::containing_address(instruction_ptr_phys);
     let flags =
         PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
-    memory::map_page_to_frame(instruction_ptr_page, instruction_ptr_frame, flags)
-        .expect("failed to map instruction page");
+    match memory::map_page_to_frame(instruction_ptr_page, instruction_ptr_frame, flags) {
+        Ok(_) | Err(MapToError::PageAlreadyMapped(_)) => {}
+        Err(e) => panic!("failed to map instruction page: {:?}", e),
+    }
 
-    let instruction_virt_offset = instruction_ptr_phys.as_u64() - instruction_ptr_frame.start_address().as_u64();
+    let instruction_virt_offset =
+        instruction_ptr_phys.as_u64() - instruction_ptr_frame.start_address().as_u64();
     let instruction_virt = instruction_ptr_page_start + instruction_virt_offset;
 
     let stack_ptr_start = VirtAddr::new(DUMMY_USERSPACE_STACK.as_ptr() as u64);
@@ -37,8 +41,10 @@ pub(crate) extern "C" fn task_userspace_setup(_arg: *const ()) {
     let stack_ptr_frame = PhysFrame::containing_address(stack_ptr_phys);
     let flags =
         PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
-    memory::map_page_to_frame(stack_ptr_page, stack_ptr_frame, flags)
-        .expect("failed to map stack page");
+    match memory::map_page_to_frame(stack_ptr_page, stack_ptr_frame, flags) {
+        Ok(_) | Err(MapToError::PageAlreadyMapped(_)) => {}
+        Err(e) => panic!("failed to map stack page: {:?}", e),
+    }
 
     let stack_ptr_end = VirtAddr::new(
         (DUMMY_USERSPACE_STACK.as_ptr() as usize + DUMMY_USERSPACE_STACK.len()) as u64,
@@ -49,8 +55,10 @@ pub(crate) extern "C" fn task_userspace_setup(_arg: *const ()) {
     let stack_ptr_frame = PhysFrame::containing_address(stack_ptr_phys);
     let flags =
         PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
-    memory::map_page_to_frame(stack_ptr_page, stack_ptr_frame, flags)
-        .expect("failed to map stack page");
+    match memory::map_page_to_frame(stack_ptr_page, stack_ptr_frame, flags) {
+        Ok(_) | Err(MapToError::PageAlreadyMapped(_)) => {}
+        Err(e) => panic!("failed to map stack page: {:?}", e),
+    }
 
     let stack_ptr = stack_end_virt;
 

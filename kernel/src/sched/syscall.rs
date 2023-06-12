@@ -3,6 +3,8 @@ use core::arch::asm;
 use x86_64::registers::rflags::RFlags;
 use x86_64::VirtAddr;
 
+use crate::sched::{self, TaskExitCode};
+
 pub(super) fn syscall_init() {
     // N.B. There is some other initialization done when setting up the GDT for
     // the STAR register to set user and kernel mode segments. See gdt.rs for
@@ -39,6 +41,7 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             "push r13",
             "push r14",
             "push r15",
+            // TODO: Switch to a fresh kernel stack?
             // Call the actual syscall handler
             "call {syscall_handler_inner}",
             // Restore registers and run systretq to get back to userland.
@@ -59,9 +62,8 @@ pub(super) unsafe extern "C" fn syscall_handler() {
 
 #[allow(clippy::similar_names)]
 extern "C" fn syscall_handler_inner(rdi: u64, rsi: u64, rdx: u64, r10: u64) {
-    // TODO: Set CR3 to kernel page table
-
     log::warn!("syscall handler! rdi: {rdi:#x}, rsi: {rsi:#x}, rdx: {rdx:#x}, r10: {r10:#x}");
 
-    // TODO: Set CR3 back to task's userspace page table
+    // Kill the task for now.
+    sched::scheduler_lock().kill_current_task(TaskExitCode::ExitSuccess);
 }
