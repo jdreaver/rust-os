@@ -17,9 +17,7 @@ pub(crate) struct Task {
     pub(super) kernel_stack_pointer: TaskKernelStackPointer,
     pub(super) state: AtomicEnum<u8, TaskState>,
     pub(super) exit_wait_queue: Arc<WaitCell<TaskExitCode>>,
-
-    /// Value of CR3 register, which is the page table for this task.
-    pub(super) cr3: PhysAddr,
+    pub(super) page_table_addr: PhysAddr,
 
     /// How much longer the task can run before it is preempted.
     pub(super) remaining_slice: AtomicInt<u64, Milliseconds>,
@@ -93,7 +91,7 @@ impl Task {
             kernel_stack_pointer: TaskKernelStackPointer(stack_top),
             state: AtomicEnum::new(TaskState::ReadyToRun),
             exit_wait_queue: Arc::new(WaitCell::new()),
-            cr3: memory::kernel_cr3(),
+            page_table_addr: memory::kernel_default_page_table_address(),
             remaining_slice: AtomicInt::new(Milliseconds::new(0)),
             _kernel_stack: kernel_stack,
         }

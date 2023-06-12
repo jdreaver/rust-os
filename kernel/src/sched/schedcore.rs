@@ -196,10 +196,9 @@ impl Scheduler {
 
         let prev_task = self.get_task_assert(prev_task_id);
         let prev_stack_ptr = core::ptr::addr_of!(prev_task.kernel_stack_pointer);
-        let prev_cr3 = core::ptr::addr_of!(prev_task.cr3);
         let next_task = self.get_task_assert(next_task_id);
         let next_stack_ptr = next_task.kernel_stack_pointer;
-        let next_cr3 = next_task.cr3;
+        let next_page_table = next_task.page_table_addr;
 
         // Give the next task some time slice
         next_task.remaining_slice.store(Self::DEFAULT_TIME_SLICE);
@@ -218,7 +217,7 @@ impl Scheduler {
                 next_task.name,
                 next_task.id,
             );
-            switch_to_task(prev_stack_ptr, prev_cr3, next_stack_ptr, next_cr3);
+            switch_to_task(prev_stack_ptr, next_stack_ptr, next_page_table);
         }
     }
 
@@ -367,12 +366,11 @@ pub(crate) fn start_multitasking(
     // pointer.
     let dummy_stack_ptr = TaskKernelStackPointer(0);
     let prev_stack_ptr = core::ptr::addr_of!(dummy_stack_ptr);
-    let dummy_cr3 = PhysAddr::new(0_u64);
-    let prev_cr3 = core::ptr::addr_of!(dummy_cr3);
     let next_stack_ptr = scheduler.current_task().kernel_stack_pointer;
-    let next_cr3 = scheduler.current_task().cr3;
+    let next_page_table = scheduler.current_task().page_table_addr;
+
     unsafe {
-        switch_to_task(prev_stack_ptr, prev_cr3, next_stack_ptr, next_cr3);
+        switch_to_task(prev_stack_ptr, next_stack_ptr, next_page_table);
     }
 }
 
@@ -413,9 +411,8 @@ pub(crate) fn wait_on_task(target_task_id: TaskId) -> Option<TaskExitCode> {
 #[naked]
 pub(super) unsafe extern "C" fn switch_to_task(
     previous_task_stack_pointer: *const TaskKernelStackPointer,
-    previous_cr3: *const PhysAddr,
     next_task_stack_pointer: TaskKernelStackPointer,
-    next_cr3: PhysAddr,
+    next_page_table: PhysAddr,
 ) {
     unsafe {
         asm!(
@@ -443,19 +440,15 @@ pub(super) unsafe extern "C" fn switch_to_task(
             // Save the previous task's stack pointer in the task struct. (First
             // param of this function is in rdi)
             "mov [rdi], rsp",
-            // Save the previous task's CR3 in the task struct. (Second
-            // param of this function is in rsi)
-            "mov r8, cr3", // r8 is caller-saved, safe to use
-            "mov [rsi], r8",
             // Restore the next task's stack pointer from the task struct.
-            // (Third param of this function is in rdx)
-            "mov rsp, rdx",
+            // (Second param of this function is in rsi)
+            "mov rsp, rsi",
             // Restore the next task's CR3 from the task struct.
-            // (Fourth param of this function is in rcx)
+            // (Third param of this function is in rdx)
             //
             // TODO: Don't reload cr3 if it didn't actually change! Reloading
             // cr3 invalidates the page cache.
-            "mov cr3, rcx",
+            "mov cr3, rdx",
             // Pop the next task's saved general purpose registers. Remember,
             // the only way we could have gotten to this point in the old task
             // is if it called this function itself, so we know that the next

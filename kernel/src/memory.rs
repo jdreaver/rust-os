@@ -41,7 +41,7 @@ struct KernelMapper {
 }
 
 /// Holds the physical location of the kernel's page table.
-static KERNEL_PAGE_TABLE_FRAME: InitCell<PhysFrame<Size4KiB>> = InitCell::new();
+static KERNEL_PAGE_TABLE_ADDR: InitCell<PhysAddr> = InitCell::new();
 
 impl KernelMapper {
     const fn new() -> Self {
@@ -52,9 +52,9 @@ impl KernelMapper {
 
     unsafe fn init(&self, physical_memory_offset: VirtAddr) {
         let (level_4_table_frame, _) = x86_64::registers::control::Cr3::read();
-        KERNEL_PAGE_TABLE_FRAME.init(level_4_table_frame);
 
         let phys = level_4_table_frame.start_address();
+        KERNEL_PAGE_TABLE_ADDR.init(phys);
         let virt = physical_memory_offset + phys.as_u64();
         let page_table_ptr: *mut PageTable = virt.as_mut_ptr();
 
@@ -72,11 +72,10 @@ impl KernelMapper {
     }
 }
 
-pub(crate) fn kernel_cr3() -> PhysAddr {
-    KERNEL_PAGE_TABLE_FRAME
+pub(crate) fn kernel_default_page_table_address() -> PhysAddr {
+    *KERNEL_PAGE_TABLE_ADDR
         .get()
         .expect("kernel page table frame not initialized")
-        .start_address()
 }
 
 /// Translate a given physical address to a virtual address, if possible.
