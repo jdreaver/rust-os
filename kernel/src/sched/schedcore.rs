@@ -327,6 +327,20 @@ impl Scheduler {
         ids.sort();
         ids
     }
+
+    pub(super) fn kill_current_task(&mut self, exit_code: TaskExitCode) {
+        let current_task = self.current_task();
+        log::info!("killing task {} {:?}", current_task.name, current_task.id);
+        current_task.state.swap(TaskState::Killed);
+
+        // Inform waiters that the task has exited.
+        current_task
+            .exit_wait_cell
+            .clone()
+            .send_all_consumers(exit_code, self);
+
+        self.run_scheduler();
+    }
 }
 
 extern "C" fn idle_task_start(_arg: *const ()) {
@@ -401,7 +415,7 @@ pub(crate) fn wait_on_task(target_task_id: TaskId) -> Option<TaskExitCode> {
 
         // If target task doesn't exist, assume it is done and was killed
         let Some(target_task) = scheduler.get_task(target_task_id) else { return None; };
-        target_task.exit_wait_queue.clone()
+        target_task.exit_wait_cell.clone()
     };
     let exit_code = exit_wait_queue.wait_sleep();
     Some(exit_code)

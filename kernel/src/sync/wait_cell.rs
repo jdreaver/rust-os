@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::sched;
-use crate::sched::TaskId;
+use crate::sched::{Scheduler, TaskId};
 
 use super::once_cell::OnceCell;
 use super::spin_lock::SpinLock;
@@ -25,17 +25,15 @@ impl<T: Clone> WaitCell<T> {
     }
 
     /// Sends value to all waiting tasks and wakes them up.
-    pub(crate) fn send_all_consumers(&self, val: T) {
+    pub(crate) fn send_all_consumers(&self, val: T, scheduler: &mut Scheduler) {
         // Lock task_ids _before_ setting the value, or else a task might add
         // itself to the list of waiting tasks after we awaken tasks and never
         // get woken up.
         let mut task_ids = self.waiting_tasks.lock_disable_interrupts();
         self.cell.set(val);
         for task_id in task_ids.drain(..) {
-            sched::scheduler_lock().awaken_task(task_id);
+            scheduler.awaken_task(task_id);
         }
-        // N.B. Cannot call run_scheduler here because this might be running in
-        // an interrupt context.
     }
 
     /// Waits until the value is initialized, sleeping if necessary.

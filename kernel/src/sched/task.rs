@@ -16,7 +16,7 @@ pub(crate) struct Task {
     pub(super) name: &'static str,
     pub(super) kernel_stack_pointer: TaskKernelStackPointer,
     pub(super) state: AtomicEnum<u8, TaskState>,
-    pub(super) exit_wait_queue: Arc<WaitCell<TaskExitCode>>,
+    pub(super) exit_wait_cell: Arc<WaitCell<TaskExitCode>>,
     pub(super) page_table_addr: PhysAddr,
 
     /// How much longer the task can run before it is preempted.
@@ -90,7 +90,7 @@ impl Task {
             name,
             kernel_stack_pointer: TaskKernelStackPointer(stack_top),
             state: AtomicEnum::new(TaskState::ReadyToRun),
-            exit_wait_queue: Arc::new(WaitCell::new()),
+            exit_wait_cell: Arc::new(WaitCell::new()),
             page_table_addr: memory::kernel_default_page_table_address(),
             remaining_slice: AtomicInt::new(Milliseconds::new(0)),
             _kernel_stack: kernel_stack,
@@ -160,23 +160,7 @@ pub(super) extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *cons
 
     task_fn(arg);
 
-    // Mark the current task as dead and run the scheduler.
-    let wait_queue = {
-        let lock = scheduler_lock();
-        let current_task = lock.current_task();
-        log::info!(
-            "task_setup: task {} {:?} task_fn returned, halting",
-            current_task.name,
-            current_task.id
-        );
-        current_task.state.swap(TaskState::Killed);
-        current_task.exit_wait_queue.clone()
-    };
-
-    // Inform waiters that the task has exited.
-    wait_queue.send_all_consumers(TaskExitCode::ExitSuccess);
-
-    scheduler_lock().run_scheduler();
+    scheduler_lock().kill_current_task(TaskExitCode::ExitSuccess);
 
     panic!("somehow returned to task_setup for dead task after running scheduler");
 }
