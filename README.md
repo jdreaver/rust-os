@@ -92,10 +92,10 @@ make test
 ## TODO
 
 - Userspace
-  - Create a dummy userspace function writting in Rust without loading an ELF file.
+  - Create a dummy userspace function written in Rust without loading an ELF file.
     - Map the Rust function's physical frame (plus maybe a few more) to e.g. 0x400000 in a new page table with pages marked as executable by the user, make a dummy stack for the user and map that to the userspace page table as well, and then load that as the userspace program.
+  - Create a type showing the intended memory mapping of a process and turn that into a page table. This should make it easier to reason about the memory map.
   - Create a kernel task start function called `task_userspace_setup` that is used to set up ELF stuff, page table, (anything else?), and call `jump_to_userspace`
-  - Ensure we are setting CR3 to kernel page table when we do `syscall` and back to userspace page table before we leave syscall handler
   - Parse ELF better (maybe in our own `elf` module) so it is clear what bits need loading from file and where they need to be mapped
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - Consider a way to run tests on boot and return the QEMU exit code with the result
@@ -125,6 +125,12 @@ make test
 - Task struct access: investigate not hiding all tasks (or just the current tasks) inside the big scheduler lock. Are there situations where it is okay to modify a task if the scheduler is running concurrently? Can we lock individual tasks? Is this inviting a deadlock?
   - For example, putting a task to sleep or waking it up. Is this bad to do concurrently with the scheduler? Maybe instead of calling this the "state" it can be thought of as a "state intent", which the scheduler should action next time it changes the task's scheduling. Wait queues and channels do this, but they need a scheduler lock under the hood.
 - Stack size: figure out why stacks need to be so large when compiling in debug mode. Is Rust putting a ton of debug info on the stack?
+- Memory mapping
+  - Make a doc like <https://www.kernel.org/doc/Documentation/x86/x86_64/mm.txt>, and perhaps a static array of regions that other modules use
+  - Hard-code the expected kernel offset and direct map memory offset from limine and assert it is what we expect
+  - Consider abandoning the default limine memory mapping and making our own.
+  - Map all physical memory starting at `0xffff_8000_0000_0000`. Limine just does 4 GiB, but make sure to do it all
+  - Consider a `KernelAddress` that wraps `VirtAddr` and can be converted to `PhysAddr` by just subtracting
 - Synchronization primitives
   - Mutex (not spinlock "mutex") that handles sleeping and waking
     - We can use `WaitQueue` along with `send_single_consumer` for wakeups. (The primary lock mechanism is still an atomic bool)

@@ -12,7 +12,7 @@ use crate::memory;
 #[global_allocator]
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
-pub(crate) const HEAP_START: usize = 0x_4444_4444_0000;
+pub(crate) const HEAP_START: usize = 0x_ffff_8500_0000_0000;
 pub(crate) const HEAP_SIZE: usize = 10 * 1024 * 1024; // 10 MiB
 
 /// Maps pages for a kernel heap defined by `HEAP_START` and `HEAP_SIZE` and
