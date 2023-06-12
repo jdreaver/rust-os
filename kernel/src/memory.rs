@@ -114,6 +114,20 @@ pub(crate) fn allocate_and_map_pages(
     })
 }
 
+pub(crate) fn map_page_to_frame(
+    page: Page,
+    frame: PhysFrame,
+    flags: PageTableFlags,
+) -> Result<(), MapToError<Size4KiB>> {
+    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
+        KERNEL_MAPPER.with_lock(|mapper| unsafe {
+            log::warn!("mapping {:?} to {:?}", page, frame);
+            mapper.map_to(page, frame, flags, allocator)?.flush();
+            Ok(())
+        })
+    })
+}
+
 /// Maps a page to a non-existent frame.
 pub(crate) unsafe fn map_guard_page(page: Page) -> Result<(), MapToError<Size4KiB>> {
     KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {

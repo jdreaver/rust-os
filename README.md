@@ -92,8 +92,14 @@ make test
 ## TODO
 
 - Userspace
-  - Create a dummy userspace function written in Rust without loading an ELF file.
-    - Map the Rust function's physical frame (plus maybe a few more) to e.g. 0x400000 in a new page table with pages marked as executable by the user, make a dummy stack for the user and map that to the userspace page table as well, and then load that as the userspace program.
+  - Debug dummy userspace function: hit page fault at the sysretq. Is it because the GDT isn't set up correctly? I checked the memory maps and they look right, so it seems like a red herring?
+    - Ah no, it is pretty clearly reaching for an address crazy far away
+
+      ```
+      [ERROR] EXCEPTION: PAGE FAULT
+      [ERROR] Accessed Address (CR2): VirtAddr(0xfffffffffffffff8)
+      ```
+
   - Create a type showing the intended memory mapping of a process and turn that into a page table. This should make it easier to reason about the memory map.
   - Create a kernel task start function called `task_userspace_setup` that is used to set up ELF stuff, page table, (anything else?), and call `jump_to_userspace`
   - Parse ELF better (maybe in our own `elf` module) so it is clear what bits need loading from file and where they need to be mapped

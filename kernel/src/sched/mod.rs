@@ -7,3 +7,4 @@ mod userspace;
 pub(crate) use schedcore::*;
 pub(crate) use stack::*;
 pub(crate) use task::*;
+pub(crate) use userspace::*;

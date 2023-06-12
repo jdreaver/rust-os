@@ -146,6 +146,7 @@ enum Command {
     Ls(FilePath),
     Cat(FilePath),
     Elf(FilePath),
+    Exec,
     WriteToFile { path: FilePath, content: String },
     FATBIOS { device_id: usize },
     Timer(Milliseconds),
@@ -268,6 +269,7 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
             let path = parse_next_word(&mut words, "path", "elf <path>")?;
             Some(Command::Elf(path))
         }
+        "exec" => Some(Command::Exec),
         "write-to-file" => {
             let path = parse_next_word(&mut words, "path", "write-to-file <path> <content>")?;
             let content = parse_next_word(&mut words, "content", "write-to-file <path> <content>")?;
@@ -555,6 +557,16 @@ fn run_command(command: &Command) {
                 "symbol table: {:?}",
                 symbol_table.iter().collect::<Vec<_>>()
             );
+        }
+        Command::Exec => {
+            let task_id = sched::scheduler_lock().new_task(
+                "dummy userspace",
+                sched::task_userspace_setup,
+                core::ptr::null(),
+            );
+            serial_println!("Waiting for userspace task {task_id:?} to finish...");
+            let exit_code = sched::wait_on_task(task_id);
+            serial_println!("Task {task_id:?} finished! Exit code: {exit_code:?}");
         }
         Command::WriteToFile { path, content } => {
             let mut file = if let Some(inode) = get_path_inode(path) {
