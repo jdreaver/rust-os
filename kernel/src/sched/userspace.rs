@@ -46,20 +46,7 @@ pub(crate) extern "C" fn task_userspace_setup(_arg: *const ()) {
         Err(e) => panic!("failed to map stack page: {:?}", e),
     }
 
-    let stack_ptr_end = VirtAddr::new(
-        (DUMMY_USERSPACE_STACK.as_ptr() as usize + DUMMY_USERSPACE_STACK.len()) as u64,
-    );
-    let stack_ptr_phys = memory::translate_addr(stack_ptr_end).unwrap();
     let stack_end_virt = VirtAddr::new(0x2_1000_0000 + DUMMY_USERSPACE_STACK.len() as u64);
-    let stack_ptr_page = Page::containing_address(stack_end_virt);
-    let stack_ptr_frame = PhysFrame::containing_address(stack_ptr_phys);
-    let flags =
-        PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
-    match memory::map_page_to_frame(stack_ptr_page, stack_ptr_frame, flags) {
-        Ok(_) | Err(MapToError::PageAlreadyMapped(_)) => {}
-        Err(e) => panic!("failed to map stack page: {:?}", e),
-    }
-
     let stack_ptr = stack_end_virt;
 
     let user_code_segment_idx: u64 = u64::from(gdt::selectors().user_code_selector.0);

@@ -471,8 +471,11 @@ Linux VFS:
 - <https://tldp.org/LDP/khg/HyperNews/get/fs/vfstour.html>
 - Chapter 13 and 14 of "Linux Kernel Development - Love (3rd ed, 2010)"
 
-### Userspace in x86_64
+### Userspace and system calls in x86_64
 
 - <https://blog.llandsmeer.com/tech/2019/07/21/uefi-x64-userland.html>
 - <https://nfil.dev/kernel/rust/coding/rust-kernel-to-userspace-and-back/>
 - <https://github.com/bendudson/EuraliOS/blob/main/doc/journal/02-userspace.org>
+- <https://wiki.osdev.org/System_Calls>
+- <https://wiki.osdev.org/Sysenter> (also discusses syscall)
+- <https://wiki.osdev.org/SWAPGS>
