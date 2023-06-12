@@ -97,6 +97,7 @@ make test
     - <https://elixir.bootlin.com/linux/latest/source/include/linux/percpu.h>
     - <https://elixir.bootlin.com/linux/latest/source/arch/x86/include/asm/percpu.h>
     - If we do per CPU, ensure we disable preemption while reading per CPU variables so the current task doesn't get rescheduled and cause the CPU number to change
+    - Consider using per CPU for storing the currently running task instead of having a Vec of those in `Scheduler`
   - Re-enable interrupts while handling syscalls (or don't? at least be explicit)
   - Figure out how to get to userspace for the first time with sysretq instead of iretq
   - Define actual system calls

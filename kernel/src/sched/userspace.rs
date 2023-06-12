@@ -114,10 +114,12 @@ pub(super) unsafe extern "C" fn jump_to_userspace(
 unsafe extern "C" fn dummy_hacky_userspace_task() {
     unsafe {
         asm!(
-            "mov rdi, 0x1337",
-            "mov rsi, 0x1338",
-            "mov rdx, 0x1339",
-            "mov r10, 0x133A",
+            "mov rdi, 0x1111",
+            "mov rsi, 0x2222",
+            "mov rdx, 0x3333",
+            "mov r10, 0x4444",
+            "mov r8, 0x5555",
+            "mov r9, 0x6666",
             "syscall",
             options(noreturn),
         )

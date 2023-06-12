@@ -48,6 +48,14 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             // Save user stack and restore kernel stack
             "mov r12, rsp", // r12 is callee-saved, and should be preserved
             "mov rsp, [{kernel_stack}]",
+            // Set up syscall handler arguments. We use the Linux x86_64 syscall
+            // calling convention, which uses rdi, rsi, rdx, r10, r8, and r9.
+            // The standard x86_64 C calling convention uses rdi, rsi, rdx, rcx,
+            // r8, r9, for arguments; note that r10 and rcx are different for
+            // the 4th arg. This is because the syscall instruction clobbers
+            // rcx. Therefore, we just set rcx to r10, and then our syscall
+            // handler will use r10 for the 4th arg.
+            "mov rcx, r10",
             // TODO: Switch to a fresh kernel stack?
             // Call the actual syscall handler
             "call {syscall_handler_inner}",
@@ -72,8 +80,8 @@ pub(super) unsafe extern "C" fn syscall_handler() {
 }
 
 #[allow(clippy::similar_names)]
-extern "C" fn syscall_handler_inner(rdi: u64, rsi: u64, rdx: u64, r10: u64) {
-    log::warn!("syscall handler! rdi: {rdi:#x}, rsi: {rsi:#x}, rdx: {rdx:#x}, r10: {r10:#x}");
+extern "C" fn syscall_handler_inner(rdi: u64, rsi: u64, rdx: u64, r10: u64, r8: u64, r9: u64) {
+    log::warn!("syscall handler! rdi: {rdi:#x}, rsi: {rsi:#x}, rdx: {rdx:#x}, r10: {r10:#x}, r8: {r8:#x}, r9: {r9:#x}");
 
     // Kill the task for now.
     sched::scheduler_lock().kill_current_task(TaskExitCode::ExitSuccess);
