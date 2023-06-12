@@ -26,6 +26,13 @@ pub(super) fn syscall_init() {
     x86_64::registers::model_specific::LStar::write(syscall_handler_addr);
 }
 
+static USER_STACK: u64 = 0;
+static USER_STACK_LOCATION: &u64 = &USER_STACK;
+
+// TODO: Kernel stack location per CPU instead of a single global
+static KERNEL_STACK: u64 = 0;
+pub(super) static KERNEL_STACK_LOCATION: &u64 = &KERNEL_STACK;
+
 #[naked]
 pub(super) unsafe extern "C" fn syscall_handler() {
     unsafe {
@@ -41,9 +48,15 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             "push r13",
             "push r14",
             "push r15",
+            // Save user stack and restore kernel stack
+            "mov [{user_stack}], rsp",
+            "mov rsp, [{kernel_stack}]",
             // TODO: Switch to a fresh kernel stack?
             // Call the actual syscall handler
             "call {syscall_handler_inner}",
+            // Restore user stack
+            "mov [{kernel_stack}], rsp",
+            "mov rsp, [{user_stack}]",
             // Restore registers and run systretq to get back to userland.
             "pop r15",
             "pop r14",
@@ -54,6 +67,8 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             "pop r11",
             "pop rcx",
             "sysretq",
+            user_stack = sym USER_STACK_LOCATION,
+            kernel_stack = sym KERNEL_STACK_LOCATION,
             syscall_handler_inner = sym syscall_handler_inner,
             options(noreturn),
         )

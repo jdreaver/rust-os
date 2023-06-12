@@ -7,6 +7,8 @@ use x86_64::VirtAddr;
 
 use crate::{gdt, memory};
 
+use super::syscall;
+
 static DUMMY_USERSPACE_STACK: &[u8] = &[0; 4096];
 
 /// Kernel function that is called when we are starting a userspace task. This
@@ -63,7 +65,6 @@ pub(crate) extern "C" fn task_userspace_setup(_arg: *const ()) {
 }
 
 /// Function to go to userspace for the first time in a task.
-
 #[naked]
 pub(super) unsafe extern "C" fn jump_to_userspace(
     user_instruction_pointer: VirtAddr,
@@ -73,12 +74,16 @@ pub(super) unsafe extern "C" fn jump_to_userspace(
 ) {
     unsafe {
         asm!(
+            // Store the kernel stack
+            "mov [{kernel_stack}], rsp",
+            // Set up and execute iretq
             "push rcx",      // Fourth arg, stack segment
             "push rsi",      // Second arg, stack pointer
             "push {rflags}", // rflags
             "push rdx",      // Third arg, code segment
             "push rdi",      // First arg, instruction pointer
             "iretq",
+            kernel_stack = sym syscall::KERNEL_STACK_LOCATION,
             rflags = const RFlags::INTERRUPT_FLAG.bits(),
             options(noreturn),
         )
