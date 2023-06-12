@@ -28,10 +28,11 @@ pub(super) fn syscall_init() {
 pub(super) unsafe extern "C" fn syscall_handler() {
     unsafe {
         asm!(
-            // Back up registers for sysret. Only need to save callee-saved
-            // registers.
+            // Back up registers for sysret. rcx holds caller's userspace RIP
+            // and r11 holds rflags.
             "push rcx",
             "push r11",
+            // Callee-saved registers.
             "push rbp",
             "push rbx",
             "push r12",
