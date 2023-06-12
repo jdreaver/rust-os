@@ -1,4 +1,3 @@
-use alloc::sync::Arc;
 use x86_64::PhysAddr;
 
 use crate::hpet::Milliseconds;
@@ -16,7 +15,7 @@ pub(crate) struct Task {
     pub(super) name: &'static str,
     pub(super) kernel_stack_pointer: TaskKernelStackPointer,
     pub(super) state: AtomicEnum<u8, TaskState>,
-    pub(super) exit_wait_cell: Arc<WaitCell<TaskExitCode>>,
+    pub(super) exit_wait_cell: WaitCell<TaskExitCode>,
     pub(super) page_table_addr: PhysAddr,
 
     /// How much longer the task can run before it is preempted.
@@ -90,7 +89,7 @@ impl Task {
             name,
             kernel_stack_pointer: TaskKernelStackPointer(stack_top),
             state: AtomicEnum::new(TaskState::ReadyToRun),
-            exit_wait_cell: Arc::new(WaitCell::new()),
+            exit_wait_cell: WaitCell::new(),
             page_table_addr: memory::kernel_default_page_table_address(),
             remaining_slice: AtomicInt::new(Milliseconds::new(0)),
             _kernel_stack: kernel_stack,

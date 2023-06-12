@@ -1,4 +1,5 @@
 use alloc::collections::{BTreeMap, VecDeque};
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -49,7 +50,7 @@ pub(crate) struct Scheduler {
     next_task_id: TaskId,
 
     /// All tasks by ID
-    tasks: BTreeMap<TaskId, Task>,
+    tasks: BTreeMap<TaskId, Arc<Task>>,
 
     /// Currently running tasks, indexed by CPU (via LAPIC ID)
     running_tasks_by_cpu: Vec<TaskId>,
@@ -76,7 +77,7 @@ impl Scheduler {
         for _ in 0..=max_lapic_id {
             let id = next_task_id;
             let task = Task::new(id, "__IDLE_TASK__", idle_task_start, core::ptr::null());
-            tasks.insert(id, task);
+            tasks.insert(id, Arc::new(task));
             running_tasks_by_cpu.push(id);
             idle_tasks_by_cpu.push(id);
             next_task_id.0 += 1;
@@ -112,16 +113,16 @@ impl Scheduler {
         );
 
         let task = Task::new(id, name, start_fn, arg);
-        self.tasks.insert(id, task);
+        self.tasks.insert(id, Arc::new(task));
         self.pending_tasks.push_back(id);
         id
     }
 
-    pub(crate) fn get_task(&self, id: TaskId) -> Option<&Task> {
-        self.tasks.get(&id)
+    pub(crate) fn get_task(&self, id: TaskId) -> Option<Arc<Task>> {
+        self.tasks.get(&id).cloned()
     }
 
-    fn get_task_assert(&self, id: TaskId) -> &Task {
+    fn get_task_assert(&self, id: TaskId) -> Arc<Task> {
         self.get_task(id).map_or_else(
             || panic!("tried to fetch task ID {id:?} but it does not exist"),
             |task| task,
@@ -129,7 +130,7 @@ impl Scheduler {
     }
 
     /// Gets the currently running task on the current CPU.
-    pub(super) fn current_task(&self) -> &Task {
+    pub(super) fn current_task(&self) -> Arc<Task> {
         let id = self.current_task_id();
         self.get_task_assert(id)
     }
@@ -336,7 +337,6 @@ impl Scheduler {
         // Inform waiters that the task has exited.
         current_task
             .exit_wait_cell
-            .clone()
             .send_all_consumers(exit_code, self);
 
         self.run_scheduler();
@@ -410,14 +410,8 @@ pub(crate) fn scheduler_tick(time_between_ticks: Milliseconds) {
 
 /// Waits until the given task is finished.
 pub(crate) fn wait_on_task(target_task_id: TaskId) -> Option<TaskExitCode> {
-    let exit_wait_queue = {
-        let scheduler = scheduler_lock();
-
-        // If target task doesn't exist, assume it is done and was killed
-        let Some(target_task) = scheduler.get_task(target_task_id) else { return None; };
-        target_task.exit_wait_cell.clone()
-    };
-    let exit_code = exit_wait_queue.wait_sleep();
+    let Some(target_task) = scheduler_lock().get_task(target_task_id) else { return None; };
+    let exit_code = target_task.exit_wait_cell.wait_sleep();
     Some(exit_code)
 }
 
