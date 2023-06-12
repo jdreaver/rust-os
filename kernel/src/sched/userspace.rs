@@ -1,5 +1,6 @@
 use core::arch::asm;
 
+use x86_64::registers::rflags::RFlags;
 use x86_64::structures::paging::{Page, PageTableFlags, PhysFrame};
 use x86_64::VirtAddr;
 
@@ -67,8 +68,9 @@ pub(super) unsafe extern "C" fn jump_to_userspace(
         asm!(
             "mov rcx, rdi",    // First argument, new instruction pointer
             "mov rsp, rsi",    // Second argument, new stack pointer
-            "mov r11, 0x0200", // rflags
+            "mov r11, {rflags}", // rflags
             "sysretq",
+            rflags = const RFlags::INTERRUPT_FLAG.bits(),
             options(noreturn),
         )
     }

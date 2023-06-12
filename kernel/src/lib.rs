@@ -1,6 +1,7 @@
 #![no_std]
 #![feature(abi_x86_interrupt)]
 #![feature(allocator_api)]
+#![feature(asm_const)]
 #![feature(cell_leak)]
 #![feature(int_roundings)]
 #![feature(naked_functions)]
