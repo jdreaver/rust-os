@@ -93,9 +93,15 @@ make test
 
 - Userspace
   - Syscall kernel stack: don't have just a single memory location for the kernel and user stacks. We might need a memory location per CPU. Ideally we store these in the Task struct but I'm not sure that is possible. How does Linux do this with its percpu variable system? Is the scheduler locked during system calls?
+    - <https://docs.kernel.org/core-api/this_cpu_ops.html>
+    - <https://elixir.bootlin.com/linux/latest/source/include/linux/percpu.h>
+    - <https://elixir.bootlin.com/linux/latest/source/arch/x86/include/asm/percpu.h>
+    - If we do per CPU, ensure we disable preemption while reading per CPU variables so the current task doesn't get rescheduled and cause the CPU number to change
+  - Re-enable interrupts while handling syscalls (or don't? at least be explicit)
   - Figure out how to get to userspace for the first time with sysretq instead of iretq
   - Define actual system calls
   - Segfault a user process and kill it instead of panicking and crashing the kernel
+    - Be careful about locking the scheduler in the page fault handler. It is possible a spin lock was already taken on the scheduler and we'll deadlock (all though that shouldn't happen on the current CPU. Hmm)
   - Create a type showing the intended memory mapping of a process and turn that into a page table. This should make it easier to reason about the memory map.
   - Create a kernel task start function called `task_userspace_setup` that is used to set up ELF stuff, page table, (anything else?), and call `jump_to_userspace`
   - Parse ELF better (maybe in our own `elf` module) so it is clear what bits need loading from file and where they need to be mapped

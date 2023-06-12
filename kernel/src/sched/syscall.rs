@@ -1,4 +1,5 @@
 use core::arch::asm;
+use core::sync::atomic::AtomicU64;
 
 use x86_64::registers::rflags::RFlags;
 use x86_64::VirtAddr;
@@ -26,12 +27,8 @@ pub(super) fn syscall_init() {
     x86_64::registers::model_specific::LStar::write(syscall_handler_addr);
 }
 
-static USER_STACK: u64 = 0;
-static USER_STACK_LOCATION: &u64 = &USER_STACK;
-
 // TODO: Kernel stack location per CPU instead of a single global
-static KERNEL_STACK: u64 = 0;
-pub(super) static KERNEL_STACK_LOCATION: &u64 = &KERNEL_STACK;
+pub(super) static KERNEL_STACK: AtomicU64 = AtomicU64::new(0);
 
 #[naked]
 pub(super) unsafe extern "C" fn syscall_handler() {
@@ -49,14 +46,14 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             "push r14",
             "push r15",
             // Save user stack and restore kernel stack
-            "mov [{user_stack}], rsp",
+            "mov r12, rsp", // r12 is callee-saved, and should be preserved
             "mov rsp, [{kernel_stack}]",
             // TODO: Switch to a fresh kernel stack?
             // Call the actual syscall handler
             "call {syscall_handler_inner}",
-            // Restore user stack
+            // Restore user stack (stored in r12 earlier)
             "mov [{kernel_stack}], rsp",
-            "mov rsp, [{user_stack}]",
+            "mov rsp, r12",
             // Restore registers and run systretq to get back to userland.
             "pop r15",
             "pop r14",
@@ -67,8 +64,7 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             "pop r11",
             "pop rcx",
             "sysretq",
-            user_stack = sym USER_STACK_LOCATION,
-            kernel_stack = sym KERNEL_STACK_LOCATION,
+            kernel_stack = sym KERNEL_STACK,
             syscall_handler_inner = sym syscall_handler_inner,
             options(noreturn),
         )

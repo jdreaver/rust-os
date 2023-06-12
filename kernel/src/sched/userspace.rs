@@ -83,7 +83,7 @@ pub(super) unsafe extern "C" fn jump_to_userspace(
             "push rdx",      // Third arg, code segment
             "push rdi",      // First arg, instruction pointer
             "iretq",
-            kernel_stack = sym syscall::KERNEL_STACK_LOCATION,
+            kernel_stack = sym syscall::KERNEL_STACK,
             rflags = const RFlags::INTERRUPT_FLAG.bits(),
             options(noreturn),
         )
