@@ -92,14 +92,9 @@ make test
 ## TODO
 
 - Userspace
-  - Debug dummy userspace function: hit page fault at the sysretq. Is it because the GDT isn't set up correctly? I checked the memory maps and they look right, so it seems like a red herring?
-    - Ah no, it is pretty clearly reaching for an address crazy far away
-
-      ```
-      [ERROR] EXCEPTION: PAGE FAULT
-      [ERROR] Accessed Address (CR2): VirtAddr(0xfffffffffffffff8)
-      ```
-
+  - Kernel stack: should I be switching stacks in the syscall handler?
+    - I see my syscall handler when I use `RUST_BUILD_MODE=release` b/c the stack size stays small!
+  - Figure out how to get to userspace for the first time with sysretq instead of iretq
   - Create a type showing the intended memory mapping of a process and turn that into a page table. This should make it easier to reason about the memory map.
   - Create a kernel task start function called `task_userspace_setup` that is used to set up ELF stuff, page table, (anything else?), and call `jump_to_userspace`
   - Parse ELF better (maybe in our own `elf` module) so it is clear what bits need loading from file and where they need to be mapped

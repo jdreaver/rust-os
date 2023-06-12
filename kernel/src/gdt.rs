@@ -33,12 +33,17 @@ lazy_static! {
     };
 }
 
-struct Selectors {
-    kernel_code_selector: SegmentSelector,
-    kernel_data_selector: SegmentSelector,
-    tss_selector: SegmentSelector,
-    user_code_selector: SegmentSelector,
-    user_data_selector: SegmentSelector,
+#[derive(Debug, Clone)]
+pub(crate) struct Selectors {
+    pub(crate) kernel_code_selector: SegmentSelector,
+    pub(crate) kernel_data_selector: SegmentSelector,
+    pub(crate) tss_selector: SegmentSelector,
+    pub(crate) user_code_selector: SegmentSelector,
+    pub(crate) user_data_selector: SegmentSelector,
+}
+
+pub(crate) fn selectors() -> Selectors {
+    GDT.1.clone()
 }
 
 pub(crate) const DOUBLE_FAULT_IST_INDEX: u16 = 0;

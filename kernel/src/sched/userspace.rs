@@ -4,7 +4,7 @@ use x86_64::registers::rflags::RFlags;
 use x86_64::structures::paging::{Page, PageTableFlags, PhysFrame};
 use x86_64::VirtAddr;
 
-use crate::memory;
+use crate::{gdt, memory};
 
 static DUMMY_USERSPACE_STACK: &[u8] = &[0; 4096];
 
@@ -15,18 +15,20 @@ pub(crate) extern "C" fn task_userspace_setup(_arg: *const ()) {
     // TODO: This is currently a big fat hack
 
     let instruction_ptr = dummy_hacky_userspace_task as usize;
-    log::warn!("instruction_ptr: {:#x}", instruction_ptr);
 
     // Map our fake code to userspace addresses that userspace has access to
     let instruction_ptr_virt = VirtAddr::new(instruction_ptr as u64);
     let instruction_ptr_phys = memory::translate_addr(instruction_ptr_virt).unwrap();
-    let instruction_virt = VirtAddr::new(0x2_0000_0000);
-    let instruction_ptr_page = Page::containing_address(instruction_virt);
+    let instruction_ptr_page_start = VirtAddr::new(0x2_0000_0000);
+    let instruction_ptr_page = Page::containing_address(instruction_ptr_page_start);
     let instruction_ptr_frame = PhysFrame::containing_address(instruction_ptr_phys);
     let flags =
         PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
     memory::map_page_to_frame(instruction_ptr_page, instruction_ptr_frame, flags)
         .expect("failed to map instruction page");
+
+    let instruction_virt_offset = instruction_ptr_phys.as_u64() - instruction_ptr_frame.start_address().as_u64();
+    let instruction_virt = instruction_ptr_page_start + instruction_virt_offset;
 
     let stack_ptr_start = VirtAddr::new(DUMMY_USERSPACE_STACK.as_ptr() as u64);
     let stack_ptr_phys = memory::translate_addr(stack_ptr_start).unwrap();
@@ -51,30 +53,62 @@ pub(crate) extern "C" fn task_userspace_setup(_arg: *const ()) {
         .expect("failed to map stack page");
 
     let stack_ptr = stack_end_virt;
-    log::warn!("stack_ptr: {:#x}", stack_ptr);
+
+    let user_code_segment_idx: u64 = u64::from(gdt::selectors().user_code_selector.0);
+    let user_data_segment_idx: u64 = u64::from(gdt::selectors().user_data_selector.0);
 
     unsafe {
-        jump_to_userspace(instruction_virt, stack_ptr);
+        jump_to_userspace(
+            instruction_virt,
+            stack_ptr,
+            user_code_segment_idx,
+            user_data_segment_idx,
+        );
     };
 }
 
 /// Function to go to userspace for the first time in a task.
+
 #[naked]
 pub(super) unsafe extern "C" fn jump_to_userspace(
     user_instruction_pointer: VirtAddr,
     user_stack_pointer: VirtAddr,
+    user_code_segment_idx: u64,
+    user_data_segment_idx: u64,
 ) {
     unsafe {
         asm!(
-            "mov rcx, rdi",    // First argument, new instruction pointer
-            "mov rsp, rsi",    // Second argument, new stack pointer
-            "mov r11, {rflags}", // rflags
-            "sysretq",
+            "push rcx",      // Fourth arg, stack segment
+            "push rsi",      // Second arg, stack pointer
+            "push {rflags}", // rflags
+            "push rdx",      // Third arg, code segment
+            "push rdi",      // First arg, instruction pointer
+            "iretq",
             rflags = const RFlags::INTERRUPT_FLAG.bits(),
             options(noreturn),
         )
     }
 }
+
+// TODO: For some reason I couldn't get sysretq to work for the first jump to
+// userspace. I had to use iretq instead.
+//
+// #[naked]
+// pub(super) unsafe extern "C" fn jump_to_userspace(
+//     user_instruction_pointer: VirtAddr,
+//     user_stack_pointer: VirtAddr,
+// ) {
+//     unsafe {
+//         asm!(
+//             "mov rcx, rdi",    // First argument, new instruction pointer
+//             "mov rsp, rsi",    // Second argument, new stack pointer
+//             "mov r11, {rflags}", // rflags
+//             "sysretq",
+//             rflags = const RFlags::INTERRUPT_FLAG.bits(),
+//             options(noreturn),
+//         )
+//     }
+// }
 
 #[naked]
 unsafe extern "C" fn dummy_hacky_userspace_task() {
