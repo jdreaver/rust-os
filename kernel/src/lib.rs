@@ -68,7 +68,7 @@ pub(crate) mod virtio;
 pub fn start() -> ! {
     logging::init();
 
-    gdt::init();
+    gdt::init(true);
     interrupts::init_interrupts();
 
     let boot_info_data = boot_info::boot_info();
@@ -140,8 +140,8 @@ fn bootstrap_cpu() {
 extern "C" fn bootstrap_secondary_cpu(info: *const limine::LimineSmpInfo) -> ! {
     let info = unsafe { &*info };
     log::info!("bootstrapping CPU: {info:#x?}");
-    // gdt::init();
-    // interrupts::init_interrupts();
+    gdt::init(false);
+    interrupts::init_interrupts();
     bootstrap_cpu();
     loop {
         x86_64::instructions::hlt();

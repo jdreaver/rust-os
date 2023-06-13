@@ -93,6 +93,9 @@ make test
 
 - Multiprocessing (use multiple CPUs). This needs to be done ASAP or it will be very hard to debug in the future.
   - Ensure GDT, IDT, and anything else I missed are set up in secondary CPUs
+    - I think we can't share TSS? I have `load_tss` enabled for now
+    - Linux has an "early" GDT and an "early" IDT. Does that mean there are non-early versions?
+    - Once GDT is fixed, enable that before interrupts for consistency
   - DRY common CPU setup bits between bootstrap processor and other CPUs. Make distinction between global init and per CPU, and maybe "early" vs "late" CPU init
   - Make sure hard coded `0` values for HPET, IOAPIC, and other interrupts (PCI? MSI-X? VirtIO?) is accurate. Make sure to use a processor ID newtype.
   - Store current processor ID and maybe LAPIC ID in `percpu` variable so we don't have to ask LAPIC.

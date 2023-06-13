@@ -1,6 +1,8 @@
 //! Global Descriptor Table (GDT) and Task State Segment (TSS) setup.
 
 use lazy_static::lazy_static;
+use x86_64::instructions::tables::load_tss;
+use x86_64::registers::segmentation::{Segment, CS, DS, ES, FS, GS, SS};
 use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector};
 use x86_64::structures::tss::TaskStateSegment;
 use x86_64::VirtAddr;
@@ -83,17 +85,16 @@ lazy_static! {
     };
 }
 
-pub(crate) fn init() {
-    use x86_64::instructions::tables::load_tss;
-    use x86_64::registers::segmentation::{Segment, CS, DS, ES, FS, GS, SS};
-
+pub(crate) fn init(do_load_tss: bool) {
     GDT.0.load();
     unsafe {
         // Reload to the CS (code segment) and DS (data segment) registers to
         // point to the new GDT, not the GDT we built for bootstrapping.
         CS::set_reg(GDT.1.kernel_code_selector);
         DS::set_reg(GDT.1.kernel_data_selector);
-        load_tss(GDT.1.tss_selector);
+        if do_load_tss {
+            load_tss(GDT.1.tss_selector);
+        }
 
         // NOTE: It is very important that the legacy data segment registers
         // (ES, FS, GS, SS) are set to zero. If they are not, the CPU will
