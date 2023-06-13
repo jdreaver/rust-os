@@ -92,6 +92,13 @@ make test
 ## TODO
 
 - Multiprocessing (use multiple CPUs). This needs to be done ASAP or it will be very hard to debug in the future.
+  - Linux has `NR_CPUS` as a config parameter and uses it to pre-populate static arrays. I like that idea. Can we use it to simplify per CPU data structures like the GDT and run queue?
+    - We could have a macro to create an array of atomic values `NR_CPUS` in length, and some getter/setter methods based on the current CPU's processor ID.
+      - Make sure the array is padded so we don't share cache lines.
+    - Make sure `NR_CPUS` is a `u8`, or at least matches `ProcessorID`'s underlying size.
+      - In fact, move `ProcessorID` to this file.
+    - Rename the existing `percpu` stuff to like "fast percpu" or "`GS` percpu" and use it to store the processor ID at the very least (I'm sure I'll find other uses for it)
+    - Then the `percpu` stuff that uses `gs` can just be for optimizations. Honestly maybe we don't even need it? I could see an array of atomic values being just as useful. Hmm.
   - Store current processor ID and maybe LAPIC ID in `percpu` variable so we don't have to ask LAPIC.
   - Per CPU scheduling:
     - Should each runqueue be a percpu var?
