@@ -13,8 +13,8 @@ use crate::hpet::Milliseconds;
 use crate::sync::SpinLock;
 use crate::vfs::FilePath;
 use crate::{
-    acpi, ansiterm, boot_info, pci, percpu, sched, serial, serial_print, serial_println, tests,
-    tick, vfs, virtio,
+    acpi, ansiterm, boot_info, pci, sched, serial, serial_print, serial_println, tests, tick, vfs,
+    virtio,
 };
 
 static NEXT_COMMAND_BUFFER: SpinLock<ShellBuffer> = SpinLock::new(ShellBuffer::new());
@@ -559,10 +559,6 @@ fn run_command(command: &Command) {
             );
         }
         Command::Exec => {
-            let cpu_test = percpu::get_per_cpu_test();
-            log::warn!("cpu_vars: {cpu_test:#x?}");
-            percpu::set_per_cpu_test(cpu_test + 1);
-
             let task_id = sched::scheduler_lock().new_task(
                 "dummy userspace",
                 sched::task_userspace_setup,

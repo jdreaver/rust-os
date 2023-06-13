@@ -30,6 +30,7 @@ pub(crate) fn end_of_interrupt() {
 }
 
 /// Get the local APIC ID for the current processor.
+#[allow(dead_code)]
 pub(crate) fn lapic_id() -> u8 {
     LOCAL_APIC
         .get()

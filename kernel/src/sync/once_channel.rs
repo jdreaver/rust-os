@@ -16,7 +16,7 @@ use super::once_cell::OnceCell;
 /// receiver is stored in `OnceSender`. This is enforced by `OnceReceiver` _not_
 /// implementing `Send`.
 pub(crate) fn once_channel<T>() -> (OnceSender<T>, OnceReceiver<T>) {
-    let receiver_task_id = sched::scheduler_lock().current_task_id();
+    let receiver_task_id = sched::current_task_id();
     let cell = Arc::new(OnceCell::new());
     let sender = OnceSender {
         cell: cell.clone(),

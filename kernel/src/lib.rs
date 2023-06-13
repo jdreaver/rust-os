@@ -104,7 +104,7 @@ pub fn start() -> ! {
     let acpi_info = acpi::acpi_info();
     apic::init_local_apic(acpi_info);
     ioapic::init(acpi_info);
-    sched::init(acpi_info);
+    sched::init();
 
     unsafe {
         hpet::init(acpi_info.hpet_info().base_address);

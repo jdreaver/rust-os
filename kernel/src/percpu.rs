@@ -17,14 +17,16 @@ use x86_64::VirtAddr;
 // repr(C) so offsets are stable, align(64) to prevent sharing cache lines
 #[repr(C, align(64))]
 pub(crate) struct PerCPUVars {
-    pub(crate) test: u64,
+    pub(crate) current_task_id: u32,
+    pub(crate) idle_task_id: u32,
     pub(crate) syscall_top_of_kernel_stack: u64,
 }
 
 /// Initializes per CPU storage on the current CPU.
 pub(crate) fn init_current_cpu() {
     let vars = Box::new(PerCPUVars {
-        test: 0xdead_beef,
+        current_task_id: 0,
+        idle_task_id: 0,
         syscall_top_of_kernel_stack: 0,
     });
     let addr = VirtAddr::new(Box::leak(vars) as *mut PerCPUVars as u64);
@@ -32,13 +34,13 @@ pub(crate) fn init_current_cpu() {
 }
 
 macro_rules! get_per_cpu {
-    ($field:ident, $type:ty) => {
+    ($field:ident, $size:literal, $type:ty) => {
         paste! {
             pub(crate) fn [<get_per_cpu_ $field>]() -> $type {
                 let field: $type;
                 unsafe {
                     asm!(
-                        "mov {0}, gs:{1}",
+                        concat!("mov {0:", $size, "}, gs:{1}"),
                         out(reg) field,
                         const offset_of!(PerCPUVars, $field),
                         options(nomem, nostack, preserves_flags),
@@ -51,12 +53,12 @@ macro_rules! get_per_cpu {
 }
 
 macro_rules! set_per_cpu {
-    ($field:ident, $type:ty) => {
+    ($field:ident, $size:literal, $type:ty) => {
         paste! {
             pub(crate) fn [<set_per_cpu_ $field>](x: $type) {
                 unsafe {
                     asm!(
-                        "mov gs:{0}, {1}",
+                        concat!("mov gs:{0}, {1:", $size, "}"),
                         const offset_of!(PerCPUVars, $field),
                         in(reg) x,
                         options(nomem, nostack, preserves_flags),
@@ -67,8 +69,23 @@ macro_rules! set_per_cpu {
     };
 }
 
-get_per_cpu!(test, u64);
-set_per_cpu!(test, u64);
+macro_rules! get_per_cpu_4 {
+    ($field:ident, $type:ty) => {
+        get_per_cpu!($field, "e", $type);
+    };
+}
+
+macro_rules! set_per_cpu_4 {
+    ($field:ident, $type:ty) => {
+        set_per_cpu!($field, "e", $type);
+    };
+}
+
+get_per_cpu_4!(current_task_id, u32);
+set_per_cpu_4!(current_task_id, u32);
+
+get_per_cpu_4!(idle_task_id, u32);
+set_per_cpu_4!(idle_task_id, u32);
 
 pub(crate) const PER_CPU_SYSCALL_TOP_OF_KERNEL_STACK: u64 =
     offset_of!(PerCPUVars, syscall_top_of_kernel_stack) as u64;

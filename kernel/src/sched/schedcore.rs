@@ -1,14 +1,12 @@
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 use core::arch::asm;
 use core::sync::atomic::{AtomicBool, Ordering};
 use x86_64::PhysAddr;
 
-use crate::acpi::ACPIInfo;
 use crate::hpet::Milliseconds;
 use crate::sync::{InitCell, SpinLock, SpinLockInterruptGuard};
-use crate::{apic, tick};
+use crate::{percpu, tick};
 
 use super::task::{
     DesiredTaskState, KernelTaskStartFunction, Task, TaskExitCode, TaskId, TaskKernelStackPointer,
@@ -53,31 +51,13 @@ static NEEDS_RESCHEDULE: AtomicBool = AtomicBool::new(false);
 /// and many methods use `&mut self` to ensure only a single user has access to
 /// the scheduler at a time.
 pub(crate) struct Scheduler {
-    /// Currently running tasks, indexed by CPU (via LAPIC ID)
-    running_tasks_by_cpu: Vec<TaskId>,
-
-    /// Idle tasks, indexed by CPU (via LAPIC ID)
-    idle_tasks_by_cpu: Vec<TaskId>,
-
     /// All tasks that are not running, except for the idle tasks.
     pending_tasks: VecDeque<TaskId>,
 }
 
 impl Scheduler {
-    fn new(max_lapic_id: u8) -> Self {
-        // Populate the idle tasks.
-        let mut running_tasks_by_cpu = Vec::with_capacity(max_lapic_id as usize + 1);
-        let mut idle_tasks_by_cpu = Vec::with_capacity(max_lapic_id as usize + 1);
-        let mut tasks = TASKS.lock();
-        for _ in 0..=max_lapic_id {
-            let id = tasks.new_task("__IDLE_TASK__", idle_task_start, core::ptr::null());
-            running_tasks_by_cpu.push(id);
-            idle_tasks_by_cpu.push(id);
-        }
-
+    fn new() -> Self {
         Self {
-            running_tasks_by_cpu,
-            idle_tasks_by_cpu,
             pending_tasks: VecDeque::new(),
         }
     }
@@ -98,39 +78,18 @@ impl Scheduler {
         id
     }
 
-    /// Gets the currently running task on the current CPU.
-    pub(super) fn current_task(&self) -> Arc<Task> {
-        let id = self.current_task_id();
-        TASKS.lock().get_task_assert(id)
-    }
-
-    pub(crate) fn current_task_id(&self) -> TaskId {
-        // Assert that interrupts are disabled. Otherwise, we could get
-        // rescheduled onto another CPU and the LAPIC ID could change. xv6 does
-        // this, but is it necessary?
-        assert!(
-            !x86_64::instructions::interrupts::are_enabled(),
-            "tried to access current CPU task while interrupts are enabled"
-        );
-
-        let lapic_id = apic::lapic_id();
-        *self
-            .running_tasks_by_cpu
-            .get(lapic_id as usize)
-            .expect("could not get running CPU task for the current LAPIC ID")
-    }
-
     /// How much time a task gets to run before being preempted.
     const DEFAULT_TIME_SLICE: Milliseconds = Milliseconds::new(100);
 
+    // TODO: Audit this function and see what actually needs &mut self
     pub(crate) fn run_scheduler(&mut self) {
         // Set needs_reschedule to false if it hasn't been set already.
         NEEDS_RESCHEDULE.store(true, Ordering::Relaxed);
 
         // If the previous task still has a time slice left, don't preempt it.
         // (Except for idle task. We don't care if that ran out of time.)
-        let idle_task_id = self.current_cpu_idle_task();
-        let current_task = self.current_task();
+        let idle_task_id = TaskId(percpu::get_per_cpu_idle_task_id());
+        let current_task = current_task();
 
         let is_idle = current_task.id == idle_task_id;
         let is_ready = current_task.desired_state.load() == DesiredTaskState::ReadyToRun;
@@ -140,7 +99,7 @@ impl Scheduler {
         }
 
         self.remove_killed_pending_tasks();
-        let prev_task = self.current_task();
+        let prev_task = current_task;
         let prev_task_id = prev_task.id;
         let prev_task_state = prev_task.desired_state.load();
         let next_task_id = match self.pop_next_ready_pending_task() {
@@ -156,7 +115,7 @@ impl Scheduler {
                 }
             }
         };
-        self.put_current_task_id(next_task_id);
+        percpu::set_per_cpu_current_task_id(next_task_id.0);
 
         // Store the previous task ID in pending task list, unless it is the
         // idle task.
@@ -174,9 +133,9 @@ impl Scheduler {
         next_task.remaining_slice.store(Self::DEFAULT_TIME_SLICE);
 
         unsafe {
-            if *prev_stack_ptr == next_stack_ptr {
+            if prev_task_id == next_task_id {
                 // We're already running the next task, so just return.
-                log::warn!("Tried to switch to the same task!");
+                log::warn!("Tried to switch to the same task!: {prev_task_id:?} {next_task_id:?}");
                 return;
             }
             log::info!(
@@ -196,31 +155,6 @@ impl Scheduler {
         if NEEDS_RESCHEDULE.load(Ordering::Acquire) {
             self.run_scheduler();
         }
-    }
-
-    fn put_current_task_id(&mut self, id: TaskId) {
-        // Assert that interrupts are disabled. Otherwise, we could get
-        // rescheduled onto another CPU and the LAPIC ID could change. xv6 does
-        // this, but is it necessary?
-        assert!(
-            !x86_64::instructions::interrupts::are_enabled(),
-            "tried to access current CPU task while interrupts are enabled"
-        );
-
-        let lapic_id = apic::lapic_id();
-        assert!(
-            lapic_id < self.running_tasks_by_cpu.len() as u8,
-            "lapic_id {lapic_id} out of range"
-        );
-        self.running_tasks_by_cpu[lapic_id as usize] = id;
-    }
-
-    fn current_cpu_idle_task(&self) -> TaskId {
-        let lapic_id = apic::lapic_id();
-        *self
-            .idle_tasks_by_cpu
-            .get(lapic_id as usize)
-            .expect("could not get idle CPU task for the current LAPIC ID")
     }
 
     /// Removes all killed tasks from the pending task list. It is important we
@@ -263,30 +197,21 @@ impl Scheduler {
 
     /// Puts the current task to sleep for the given number of milliseconds.
     pub(crate) fn sleep_timeout(&mut self, timeout: Milliseconds) {
-        let task_id = self.go_to_sleep_no_run_scheduler();
+        let task_id = go_to_sleep_no_run_scheduler();
         tick::add_relative_timer(timeout, move || {
             awaken_task(task_id);
         });
         self.run_scheduler();
     }
 
-    /// Puts the current task to sleep and returns the current task ID, but does
-    /// _not_ run the scheduler.
-    fn go_to_sleep_no_run_scheduler(&mut self) -> TaskId {
-        NEEDS_RESCHEDULE.store(true, Ordering::Relaxed);
-        let current_task = self.current_task();
-        current_task.desired_state.swap(DesiredTaskState::Sleeping);
-        current_task.id
-    }
-
     /// Puts the current task to sleep and runs the scheduler
     pub(crate) fn go_to_sleep(&mut self) {
-        self.go_to_sleep_no_run_scheduler();
+        go_to_sleep_no_run_scheduler();
         self.run_scheduler();
     }
 
     pub(super) fn kill_current_task(&mut self, exit_code: TaskExitCode) {
-        let current_task = self.current_task();
+        let current_task = current_task();
         log::info!("killing task {} {:?}", current_task.name, current_task.id);
         current_task.desired_state.swap(DesiredTaskState::Killed);
 
@@ -303,19 +228,29 @@ extern "C" fn idle_task_start(_arg: *const ()) {
     }
 }
 
-pub(crate) fn init(acpi_info: &ACPIInfo) {
+pub(crate) fn init() {
     stack::stack_init();
     syscall::syscall_init();
 
-    let processor_info = acpi_info.processor_info();
-    let max_lapic_id = processor_info
-        .application_processors
-        .iter()
-        .map(|info| info.local_apic_id)
-        .max()
-        .expect("no processors found!");
-    let max_lapic_id = u8::try_from(max_lapic_id).expect("LAPIC ID too large!");
-    SCHEDULER.init(SpinLock::new(Scheduler::new(max_lapic_id)));
+    SCHEDULER.init(SpinLock::new(Scheduler::new()));
+
+    // Set the current CPU's idle task.
+    //
+    // TODO: Do this for all CPUs, or make this a per CPU data structure.
+    let idle_task_id = TASKS
+        .lock()
+        .new_task("__IDLE_TASK__", idle_task_start, core::ptr::null());
+    percpu::set_per_cpu_idle_task_id(idle_task_id.0);
+    percpu::set_per_cpu_current_task_id(idle_task_id.0);
+}
+
+pub(crate) fn current_task_id() -> TaskId {
+    let id = percpu::get_per_cpu_current_task_id();
+    TaskId(id)
+}
+
+pub(crate) fn current_task() -> Arc<Task> {
+    TASKS.lock().get_task_assert(current_task_id())
 }
 
 /// Switches from the bootstrap code, which isn't a task, to the first actual
@@ -334,8 +269,8 @@ pub(crate) fn start_multitasking(
     // pointer.
     let dummy_stack_ptr = TaskKernelStackPointer(0);
     let prev_stack_ptr = core::ptr::addr_of!(dummy_stack_ptr);
-    let next_stack_ptr = scheduler.current_task().kernel_stack_pointer;
-    let next_page_table = scheduler.current_task().page_table_addr;
+    let next_stack_ptr = current_task().kernel_stack_pointer;
+    let next_page_table = current_task().page_table_addr;
 
     unsafe {
         switch_to_task(prev_stack_ptr, next_stack_ptr, next_page_table);
@@ -349,7 +284,7 @@ pub(crate) fn scheduler_tick(time_between_ticks: Milliseconds) {
     }
 
     // Deduct time from the currently running task's time slice.
-    let current_task = scheduler_lock().current_task();
+    let current_task = current_task();
     let slice = current_task.remaining_slice.load();
     let slice = slice.saturating_sub(time_between_ticks);
     current_task.remaining_slice.store(slice);
@@ -358,6 +293,15 @@ pub(crate) fn scheduler_tick(time_between_ticks: Milliseconds) {
     if slice == Milliseconds::new(0) {
         NEEDS_RESCHEDULE.store(true, Ordering::Relaxed);
     }
+}
+
+/// Puts the current task to sleep and returns the current task ID, but does
+/// _not_ run the scheduler.
+fn go_to_sleep_no_run_scheduler() -> TaskId {
+    NEEDS_RESCHEDULE.store(true, Ordering::Relaxed);
+    let current_task = current_task();
+    current_task.desired_state.swap(DesiredTaskState::Sleeping);
+    current_task.id
 }
 
 /// Awakens the given task and sets needs_reschedule to true.

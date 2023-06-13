@@ -43,7 +43,7 @@ impl<T: Clone> WaitCell<T> {
         // with a lock on `waiting_tasks` (which is also taken in
         // `send_all_consumers`), otherwise we might miss the value being set
         // and go to sleep forever because no one will wake us up.
-        let task_id = sched::scheduler_lock().current_task_id();
+        let task_id = sched::current_task_id();
         self.waiting_tasks.lock_disable_interrupts().push(task_id);
 
         loop {
