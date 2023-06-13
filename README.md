@@ -91,11 +91,11 @@ make test
 
 ## TODO
 
+- Multiprocessing (use multiple CPUs). This needs to be done ASAP or it will be very hard to debug in the future.
 - Scheduler refactor:
   - Rename `Scheduler` to `RunQueue`
-  - Audit all `&mut self` uses and check if they are needed
+  - Refactor killing and sleeping so we don't rely on never having spurious wakeups, and so we don't need to rely on `&mut self` for scheduler to immediately run scheduler just once (we should run scheduler in a loop in case of spurious wakeup).
   - Have run queue be per CPU. Get rid of LAPIC stuff and use new per CPU vars.
-- Multiprocessing (use multiple CPUs). This needs to be done ASAP or it will be very hard to debug in the future.
 - Per CPU
   - Encapsulation: it would be great to be able to have private per CPU vars. For example, a module could declare a CPU var, and the central `percpu` module ensures space gets allocated for it and it has an offset, but otherwise nothing is allowed to touch it outside of the module it is declared in.
   - Automatic conversion to/from primitive types. Allow loading `TaskId` directly instead of needing to use `u32`.

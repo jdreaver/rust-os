@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use x86_64::PhysAddr;
 
 use crate::hpet::Milliseconds;
-use crate::sync::{InitCell, SpinLock, SpinLockInterruptGuard};
+use crate::sync::{SpinLock, SpinLockInterruptGuard};
 use crate::{percpu, tick};
 
 use super::task::{
@@ -14,7 +14,7 @@ use super::task::{
 };
 use super::{stack, syscall};
 
-static SCHEDULER: InitCell<SpinLock<Scheduler>> = InitCell::new();
+static SCHEDULER: SpinLock<Scheduler> = SpinLock::new(Scheduler::new());
 
 /// Used to protect against accidentally calling scheduling functions that
 /// require a task context before we've started running tasks.
@@ -22,20 +22,14 @@ static MULTITASKING_STARTED: AtomicBool = AtomicBool::new(false);
 
 /// Locks the scheduler and disables interrupts.
 pub(crate) fn scheduler_lock() -> SpinLockInterruptGuard<'static, Scheduler> {
-    SCHEDULER
-        .get()
-        .expect("tasks not initialized")
-        .lock_disable_interrupts()
+    SCHEDULER.lock_disable_interrupts()
 }
 
 /// Force unlocks the scheduler and re-enables interrupts. This is necessary in
 /// contexts where we switched to a task in the scheduler but we can't release
 /// the lock.
 pub(super) unsafe fn force_unlock_scheduler() {
-    SCHEDULER
-        .get()
-        .expect("tasks not initialized")
-        .force_unlock();
+    SCHEDULER.force_unlock();
     // N.B. Ordering is important. Don't re-enable interrupts until the spinlock
     // is released or else we could get an interrupt + a deadlock.
     x86_64::instructions::interrupts::enable();
@@ -56,7 +50,7 @@ pub(crate) struct Scheduler {
 }
 
 impl Scheduler {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             pending_tasks: VecDeque::new(),
         }
@@ -231,8 +225,6 @@ extern "C" fn idle_task_start(_arg: *const ()) {
 pub(crate) fn init() {
     stack::stack_init();
     syscall::syscall_init();
-
-    SCHEDULER.init(SpinLock::new(Scheduler::new()));
 
     // Set the current CPU's idle task.
     //
