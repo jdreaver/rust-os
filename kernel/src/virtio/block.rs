@@ -4,6 +4,7 @@ use bitflags::bitflags;
 use core::mem;
 use spin::RwLock;
 
+use crate::apic::ProcessorID;
 use crate::interrupts::InterruptHandlerID;
 use crate::memory::PhysicalBuffer;
 use crate::registers::RegisterRO;
@@ -39,7 +40,7 @@ pub(crate) fn try_init_virtio_block(device_config: VirtIODeviceConfig) {
     device.initialized_device.install_virtqueue_msix_handler(
         device.virtqueue.index(),
         0,
-        0,
+        ProcessorID(0),
         handler_id,
         virtio_block_interrupt,
     );

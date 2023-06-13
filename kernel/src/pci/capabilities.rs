@@ -2,6 +2,7 @@ use core::fmt;
 
 use bitfield_struct::bitfield;
 
+use crate::apic::ProcessorID;
 use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW};
 
@@ -229,10 +230,10 @@ impl MSIXTable {
 pub(crate) struct MSIXTableEntry(RawMSIXTableEntry);
 
 impl MSIXTableEntry {
-    pub(crate) fn set_interrupt_vector(self, processor: u8, vector: u8) {
+    pub(crate) fn set_interrupt_vector(self, processor_id: ProcessorID, vector: u8) {
         self.0
             .message_address()
-            .write(MSIXMessageAddress::new(processor));
+            .write(MSIXMessageAddress::new(processor_id));
         self.0
             .message_data()
             .write(MSIXMessageData::new().with_vector(vector));
@@ -265,12 +266,12 @@ pub(crate) struct MSIXMessageAddress(RawMSIXMessageAddress);
 impl MSIXMessageAddress {
     const INTEL_PREFIX: u16 = 0x0fee;
 
-    pub(crate) fn new(processor: u8) -> Self {
+    pub(crate) fn new(processor_id: ProcessorID) -> Self {
         Self(
             RawMSIXMessageAddress::new()
                 .with_intel_prefix(Self::INTEL_PREFIX)
                 // Setting RH and DM = false makes Destination ID a processor ID
-                .with_destination_id(processor)
+                .with_destination_id(processor_id.0)
                 .with_redirection_hint(false)
                 .with_destination_mode(false),
         )

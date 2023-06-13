@@ -31,15 +31,27 @@ pub(crate) fn end_of_interrupt() {
 
 /// Get the local APIC ID for the current processor.
 #[allow(dead_code)]
-pub(crate) fn lapic_id() -> u8 {
-    LOCAL_APIC
+pub(crate) fn lapic_id() -> ProcessorID {
+    let id = LOCAL_APIC
         .get()
         .expect("Local APIC not initialized")
         .registers
         .local_apic_id()
         .read()
-        .id()
+        .id();
+    ProcessorID(id)
 }
+
+/// Both a LAPIC ID and a processor ID. See the Intel manual:
+///
+/// 11.4.6 Local APIC ID
+///
+/// At power up, system hardware assigns a unique APIC ID to each local APIC on
+/// the system bus. ... In MP systems, the local APIC ID is also used as a
+/// processor ID by the BIOS and the operating system.
+#[derive(Debug, Copy, Clone)]
+#[repr(transparent)]
+pub(crate) struct ProcessorID(pub(crate) u8);
 
 #[derive(Debug, Clone)]
 struct LocalAPIC {
@@ -134,7 +146,7 @@ register_struct!(
 pub(crate) struct APICIdRegister {
     #[bits(24)]
     __reserved: u32,
-    id: u8,
+    id: u8, // ProcessorID, but bitfield_struct doesn't support newtypes
 }
 
 #[bitfield(u32)]

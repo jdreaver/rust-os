@@ -3,6 +3,7 @@ use core::cmp::min;
 
 use bitflags::Flags;
 
+use crate::apic::ProcessorID;
 use crate::barrier::barrier;
 use crate::interrupts;
 use crate::interrupts::{InterruptHandler, InterruptHandlerID};
@@ -158,7 +159,7 @@ where
         &mut self,
         virtqueue_index: VirtQueueIndex,
         msix_table_index: u16,
-        processor_number: u8,
+        processor_id: ProcessorID,
         handler_id: InterruptHandlerID,
         handler: InterruptHandler,
     ) {
@@ -183,7 +184,7 @@ where
             .expect("failed to get MSIX config for VirtIO device");
         let interrupt_vector = interrupts::install_interrupt(handler_id, handler);
         let table_entry = msix.table_entry(msix_table_index as usize);
-        table_entry.set_interrupt_vector(processor_number, interrupt_vector);
+        table_entry.set_interrupt_vector(processor_id, interrupt_vector);
         msix.enable();
     }
 }

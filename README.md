@@ -92,14 +92,13 @@ make test
 ## TODO
 
 - Multiprocessing (use multiple CPUs). This needs to be done ASAP or it will be very hard to debug in the future.
-  - Ensure GDT, IDT, and anything else I missed are set up in secondary CPUs
-  - DRY common CPU setup bits between bootstrap processor and other CPUs. Make distinction between global init and per CPU, and maybe "early" vs "late" CPU init
-  - Make sure hard coded `0` values for HPET, IOAPIC, and other interrupts (PCI? MSI-X? VirtIO?) is accurate. Make sure to use a processor ID newtype.
   - Store current processor ID and maybe LAPIC ID in `percpu` variable so we don't have to ask LAPIC.
+  - Per CPU scheduling:
+    - Should each runqueue be a percpu var?
+    - Ensure each CPU gets its own tick
 - Scheduler refactor:
   - Rename `Scheduler` to `RunQueue`
   - Refactor killing and sleeping so we don't rely on never having spurious wakeups, and so we don't need to rely on `&mut self` for scheduler to immediately run scheduler just once (we should run scheduler in a loop in case of spurious wakeup).
-  - Have run queue be per CPU. Get rid of LAPIC stuff and use new per CPU vars.
 - Per CPU
   - Encapsulation: it would be great to be able to have private per CPU vars. For example, a module could declare a CPU var, and the central `percpu` module ensures space gets allocated for it and it has an offset, but otherwise nothing is allowed to touch it outside of the module it is declared in.
   - Automatic conversion to/from primitive types. Allow loading `TaskId` directly instead of needing to use `u32`.

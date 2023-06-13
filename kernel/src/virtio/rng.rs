@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 use bitflags::bitflags;
 
+use crate::apic::ProcessorID;
 use crate::interrupts::InterruptHandlerID;
 use crate::memory::PhysicalBuffer;
 use crate::sync::{once_channel, OnceReceiver, OnceSender, SpinLock};
@@ -23,7 +24,7 @@ pub(crate) fn try_init_virtio_rng(device_config: VirtIODeviceConfig) {
     }
 
     let mut virtio_rng = VirtIORNG::from_device(device_config);
-    virtio_rng.enable_msix(0);
+    virtio_rng.enable_msix(ProcessorID(0));
 
     VIRTIO_RNG.lock_disable_interrupts().replace(virtio_rng);
 }
@@ -68,7 +69,7 @@ impl VirtIORNG {
         }
     }
 
-    fn enable_msix(&mut self, processor_id: u8) {
+    fn enable_msix(&mut self, processor_id: ProcessorID) {
         let msix_table_id = 0;
         let handler_id = 1; // If we had multiple RNG devices, we could disambiguate them
         self.initialized_device.install_virtqueue_msix_handler(

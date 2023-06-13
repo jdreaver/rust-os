@@ -68,9 +68,32 @@ pub(crate) mod virtio;
 pub fn start() -> ! {
     logging::init();
 
-    gdt::init_bootstrap_gdt();
-    interrupts::init_interrupts();
+    early_per_cpu_setup(true);
+    global_setup();
 
+    // Finish bootstrapping current CPU
+    later_per_cpu_setup();
+
+    // Bootstrap other CPUs
+    for mut entry in boot_info::limine_smp_entries() {
+        entry.bootstrap_cpu(bootstrap_secondary_cpu);
+    }
+
+    sched::start_multitasking("shell", shell::run_serial_shell, core::ptr::null::<()>());
+
+    panic!("ERROR: ended multi-tasking");
+}
+
+fn early_per_cpu_setup(bootstrap_cpu: bool) {
+    if bootstrap_cpu {
+        gdt::init_bootstrap_gdt();
+    } else {
+        gdt::init_secondary_cpu_gdt();
+    }
+    interrupts::init_interrupts();
+}
+
+fn global_setup() {
     let boot_info_data = boot_info::boot_info();
 
     // KLUDGE: Limine just doesn't report on memory below 0x1000, so we
@@ -117,32 +140,18 @@ pub fn start() -> ! {
         virtio::try_init_virtio_rng(device_config);
         virtio::try_init_virtio_block(device_config);
     });
-
-    // Bootstrap current CPU
-    bootstrap_cpu();
-
-    // Bootstrap other CPUs
-    for mut entry in boot_info::limine_smp_entries() {
-        log::info!("SMP entry: {entry:?}");
-        entry.bootstrap_cpu(bootstrap_secondary_cpu);
-    }
-
-    sched::start_multitasking("shell", shell::run_serial_shell, core::ptr::null::<()>());
-
-    panic!("ERROR: ended multi-tasking");
 }
 
-fn bootstrap_cpu() {
+fn later_per_cpu_setup() {
     percpu::init_current_cpu();
     sched::per_cpu_init();
 }
 
-extern "C" fn bootstrap_secondary_cpu(info: *const limine::LimineSmpInfo) -> ! {
-    let info = unsafe { &*info };
-    log::info!("bootstrapping CPU: {info:#x?}");
-    gdt::init_secondary_cpu_gdt();
-    interrupts::init_interrupts();
-    bootstrap_cpu();
+extern "C" fn bootstrap_secondary_cpu(_info: *const limine::LimineSmpInfo) -> ! {
+    // let info = unsafe { &*info };
+    // log::info!("bootstrapping CPU: {info:#x?}");
+    early_per_cpu_setup(false);
+    later_per_cpu_setup();
     loop {
         x86_64::instructions::hlt();
     }
