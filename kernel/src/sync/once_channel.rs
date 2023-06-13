@@ -43,7 +43,7 @@ impl<T> OnceSender<T> {
         // Safety: We only call this function once, which is enforced by this
         // function consuming `self`.
         self.cell.set(message);
-        sched::scheduler_lock().awaken_task(self.receiver_task_id);
+        sched::awaken_task(self.receiver_task_id);
     }
 }
 

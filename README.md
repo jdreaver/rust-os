@@ -92,6 +92,7 @@ make test
 ## TODO
 
 - Multiprocessing (use multiple CPUs). This needs to be done ASAP or it will be very hard to debug in the future.
+- Per CPU var encapsulation: it would be great to be able to have private per CPU vars. For example, a module could declare a CPU var, and the central `percpu` module ensures space gets allocated for it and it has an offset, but otherwise nothing is allowed to touch it outside of the module it is declared in.
 - Userspace
   - Kernel stack swapping: ensure storing kernel stack is sound in the face of multiple CPUs. What if we store the kernel stack in GS, but while we are in userspace we get rescheduled to a different CPU? I think we need to always ensure the top of stack per CPU var is set before returning to userspace. Or maybe is needs to be set in scheduler?
     - Should we just be using the kernel stack top in the task struct? Why does Linux have a separate per CPU var outside of the task struct?
