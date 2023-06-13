@@ -92,8 +92,8 @@ make test
 ## TODO
 
 - Multiprocessing (use multiple CPUs). This needs to be done ASAP or it will be very hard to debug in the future.
-  - BUG: Fix what appears to be a general protection fault and a restart. I bet we are deadlocking when trying to log the exception
-    - I think the problem might be GDT and lack of interrupts
+  - Ensure GDT, IDT, and anything else I missed are set up in secondary CPUs
+  - DRY common CPU setup bits between bootstrap processor and other CPUs. Make distinction between global init and per CPU, and maybe "early" vs "late" CPU init
   - Make sure hard coded `0` values for HPET, IOAPIC, and other interrupts (PCI? MSI-X? VirtIO?) is accurate. Make sure to use a processor ID newtype.
   - Store current processor ID and maybe LAPIC ID in `percpu` variable so we don't have to ask LAPIC.
 - Scheduler refactor:

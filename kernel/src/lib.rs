@@ -94,9 +94,6 @@ pub fn start() -> ! {
     };
     heap::init().expect("failed to initialize heap");
 
-    // TODO: Initialize multiple CPUs
-    percpu::init_current_cpu();
-
     // N.B. Probing ACPI must happen after heap initialization because the Rust
     // `acpi` crate uses alloc. It would be nice to not need that...
     unsafe { acpi::init(boot_info_data.rsdp_physical_addr()) };
@@ -136,13 +133,16 @@ pub fn start() -> ! {
 }
 
 fn bootstrap_cpu() {
+    percpu::init_current_cpu();
     sched::per_cpu_init();
 }
 
 extern "C" fn bootstrap_secondary_cpu(info: *const limine::LimineSmpInfo) -> ! {
     let info = unsafe { &*info };
     log::info!("bootstrapping CPU: {info:#x?}");
-    // bootstrap_cpu();
+    // gdt::init();
+    // interrupts::init_interrupts();
+    bootstrap_cpu();
     loop {
         x86_64::instructions::hlt();
     }
