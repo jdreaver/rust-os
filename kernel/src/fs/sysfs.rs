@@ -49,7 +49,8 @@ impl vfs::DirectoryEntry for VFSTasksDirectory {
 
 impl vfs::DirectoryInode for VFSTasksDirectory {
     fn subdirectories(&mut self) -> alloc::vec::Vec<alloc::boxed::Box<dyn vfs::DirectoryEntry>> {
-        sched::scheduler_lock()
+        sched::TASKS
+            .lock()
             .task_ids()
             .into_iter()
             .map(|task_id| Box::new(VFSTaskDirectory { task_id }) as Box<dyn vfs::DirectoryEntry>)
@@ -113,7 +114,7 @@ impl vfs::DirectoryEntry for VFSTaskInfoFile {
 
 impl vfs::FileInode for VFSTaskInfoFile {
     fn read(&mut self) -> Vec<u8> {
-        sched::scheduler_lock().get_task(self.task_id).map_or_else(
+        sched::TASKS.lock().get_task(self.task_id).map_or_else(
             || format!("task not found...").into_bytes(),
             |task| format!("{:#X?}", task).into_bytes(),
         )

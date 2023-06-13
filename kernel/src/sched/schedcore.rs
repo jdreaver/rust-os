@@ -1,4 +1,4 @@
-use alloc::collections::{BTreeMap, VecDeque};
+use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
@@ -11,7 +11,7 @@ use crate::sync::{InitCell, SpinLock, SpinLockInterruptGuard};
 use crate::{apic, tick};
 
 use super::task::{
-    KernelTaskStartFunction, Task, TaskExitCode, TaskId, TaskKernelStackPointer, TaskState,
+    KernelTaskStartFunction, Task, TaskExitCode, TaskId, TaskKernelStackPointer, TaskState, TASKS,
 };
 use super::{stack, syscall};
 
@@ -46,12 +46,6 @@ pub(super) unsafe fn force_unlock_scheduler() {
 /// and many methods use `&mut self` to ensure only a single user has access to
 /// the scheduler at a time.
 pub(crate) struct Scheduler {
-    /// Next ID to use when creating a new task.
-    next_task_id: TaskId,
-
-    /// All tasks by ID
-    tasks: BTreeMap<TaskId, Arc<Task>>,
-
     /// Currently running tasks, indexed by CPU (via LAPIC ID)
     running_tasks_by_cpu: Vec<TaskId>,
 
@@ -70,22 +64,16 @@ pub(crate) struct Scheduler {
 impl Scheduler {
     fn new(max_lapic_id: u8) -> Self {
         // Populate the idle tasks.
-        let mut next_task_id = TaskId(1);
-        let mut tasks = BTreeMap::new();
         let mut running_tasks_by_cpu = Vec::with_capacity(max_lapic_id as usize + 1);
         let mut idle_tasks_by_cpu = Vec::with_capacity(max_lapic_id as usize + 1);
+        let mut tasks = TASKS.lock();
         for _ in 0..=max_lapic_id {
-            let id = next_task_id;
-            let task = Task::new(id, "__IDLE_TASK__", idle_task_start, core::ptr::null());
-            tasks.insert(id, Arc::new(task));
+            let id = tasks.new_task("__IDLE_TASK__", idle_task_start, core::ptr::null());
             running_tasks_by_cpu.push(id);
             idle_tasks_by_cpu.push(id);
-            next_task_id.0 += 1;
         }
 
         Self {
-            next_task_id,
-            tasks,
             running_tasks_by_cpu,
             idle_tasks_by_cpu,
             pending_tasks: VecDeque::new(),
@@ -104,35 +92,15 @@ impl Scheduler {
             "multi-tasking not initialized, but tasks_lock called"
         );
 
-        let id = self.next_task_id;
-        self.next_task_id.0 += 1;
-
-        assert!(
-            !self.tasks.contains_key(&id),
-            "task ID {id:?} already exists"
-        );
-
-        let task = Task::new(id, name, start_fn, arg);
-        self.tasks.insert(id, Arc::new(task));
+        let id = TASKS.lock().new_task(name, start_fn, arg);
         self.pending_tasks.push_back(id);
         id
-    }
-
-    pub(crate) fn get_task(&self, id: TaskId) -> Option<Arc<Task>> {
-        self.tasks.get(&id).cloned()
-    }
-
-    fn get_task_assert(&self, id: TaskId) -> Arc<Task> {
-        self.get_task(id).map_or_else(
-            || panic!("tried to fetch task ID {id:?} but it does not exist"),
-            |task| task,
-        )
     }
 
     /// Gets the currently running task on the current CPU.
     pub(super) fn current_task(&self) -> Arc<Task> {
         let id = self.current_task_id();
-        self.get_task_assert(id)
+        TASKS.lock().get_task_assert(id)
     }
 
     pub(crate) fn current_task_id(&self) -> TaskId {
@@ -195,9 +163,9 @@ impl Scheduler {
             self.pending_tasks.push_back(prev_task_id);
         }
 
-        let prev_task = self.get_task_assert(prev_task_id);
+        let prev_task = TASKS.lock().get_task_assert(prev_task_id);
         let prev_stack_ptr = core::ptr::addr_of!(prev_task.kernel_stack_pointer);
-        let next_task = self.get_task_assert(next_task_id);
+        let next_task = TASKS.lock().get_task_assert(next_task_id);
         let next_stack_ptr = next_task.kernel_stack_pointer;
         let next_page_table = next_task.page_table_addr;
 
@@ -260,9 +228,9 @@ impl Scheduler {
     fn remove_killed_pending_tasks(&mut self) {
         let mut remaining_pending_tasks = VecDeque::new();
         for id in &self.pending_tasks {
-            let task = self.get_task_assert(*id);
+            let task = TASKS.lock().get_task_assert(*id);
             if task.state.load() == TaskState::Killed {
-                self.tasks.remove(id);
+                TASKS.lock().delete_task(*id);
             } else {
                 remaining_pending_tasks.push_back(*id);
             }
@@ -281,7 +249,7 @@ impl Scheduler {
                 break None;
             };
 
-            let next_task = self.get_task_assert(next_task_id);
+            let next_task = TASKS.lock().get_task_assert(next_task_id);
             if next_task.state.load() == TaskState::ReadyToRun {
                 // Found a ready task
                 break Some(next_task_id);
@@ -303,7 +271,7 @@ impl Scheduler {
 
     /// Awakens the given task and sets needs_reschedule to true.
     pub(crate) fn awaken_task(&mut self, task_id: TaskId) {
-        let task = self.get_task_assert(task_id);
+        let task = TASKS.lock().get_task_assert(task_id);
         task.state.swap(TaskState::ReadyToRun);
         self.needs_reschedule = true;
     }
@@ -321,12 +289,6 @@ impl Scheduler {
     pub(crate) fn go_to_sleep(&mut self) {
         self.go_to_sleep_no_run_scheduler();
         self.run_scheduler();
-    }
-
-    pub(crate) fn task_ids(&self) -> Vec<TaskId> {
-        let mut ids: Vec<TaskId> = self.tasks.keys().copied().collect();
-        ids.sort();
-        ids
     }
 
     pub(super) fn kill_current_task(&mut self, exit_code: TaskExitCode) {
@@ -410,7 +372,7 @@ pub(crate) fn scheduler_tick(time_between_ticks: Milliseconds) {
 
 /// Waits until the given task is finished.
 pub(crate) fn wait_on_task(target_task_id: TaskId) -> Option<TaskExitCode> {
-    let Some(target_task) = scheduler_lock().get_task(target_task_id) else { return None; };
+    let Some(target_task) = TASKS.lock().get_task(target_task_id) else { return None; };
     let exit_code = target_task.exit_wait_cell.wait_sleep();
     Some(exit_code)
 }

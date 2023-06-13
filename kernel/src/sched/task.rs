@@ -1,12 +1,75 @@
+use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+
 use x86_64::PhysAddr;
 
 use crate::hpet::Milliseconds;
 use crate::memory;
 use crate::sched::force_unlock_scheduler;
-use crate::sync::{AtomicEnum, AtomicInt, WaitCell};
+use crate::sync::{AtomicEnum, AtomicInt, SpinLock, WaitCell};
 
 use super::schedcore::scheduler_lock;
 use super::stack;
+
+/// All tasks in the system.
+pub(crate) static TASKS: SpinLock<Tasks> = SpinLock::new(Tasks::new());
+
+pub(crate) struct Tasks {
+    /// Next ID to use when creating a new task. Starts at 1, not 0.
+    next_task_id: TaskId,
+
+    tasks: BTreeMap<TaskId, Arc<Task>>,
+}
+
+impl Tasks {
+    const fn new() -> Self {
+        Self {
+            next_task_id: TaskId(1),
+            tasks: BTreeMap::new(),
+        }
+    }
+
+    pub(super) fn new_task(
+        &mut self,
+        name: &'static str,
+        start_fn: KernelTaskStartFunction,
+        arg: *const (),
+    ) -> TaskId {
+        let id = self.next_task_id;
+        self.next_task_id.0 += 1;
+
+        assert!(
+            !self.tasks.contains_key(&id),
+            "task ID {id:?} already exists"
+        );
+
+        let task = Task::new(id, name, start_fn, arg);
+        self.tasks.insert(id, Arc::new(task));
+        id
+    }
+
+    pub(crate) fn get_task(&self, id: TaskId) -> Option<Arc<Task>> {
+        self.tasks.get(&id).cloned()
+    }
+
+    pub(crate) fn get_task_assert(&self, id: TaskId) -> Arc<Task> {
+        self.get_task(id).map_or_else(
+            || panic!("tried to fetch task ID {id:?} but it does not exist"),
+            |task| task,
+        )
+    }
+
+    pub(crate) fn task_ids(&self) -> Vec<TaskId> {
+        let mut ids: Vec<TaskId> = self.tasks.keys().copied().collect();
+        ids.sort();
+        ids
+    }
+
+    pub(super) fn delete_task(&mut self, id: TaskId) {
+        self.tasks.remove(&id);
+    }
+}
 
 /// A `Task` is a unit of work that can be scheduled, like a thread or a process.
 #[derive(Debug)]
