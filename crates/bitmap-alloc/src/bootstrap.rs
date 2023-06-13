@@ -95,8 +95,9 @@ where
         })
         .expect("couldn't find a free region large enough to store the allocator bitmap");
 
-    // Allocate the bitmap
+    // Allocate and zero the bitmap
     let bitmap = allocate_bitmap(bitmap_start, bitmap_bytes);
+    bitmap.fill(0);
 
     // Mark all used regions as used in the bitmap
     let mut alloc = BitmapAllocator::new(bitmap);
