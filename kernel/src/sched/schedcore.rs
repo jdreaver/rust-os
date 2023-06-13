@@ -11,7 +11,8 @@ use crate::sync::{InitCell, SpinLock, SpinLockInterruptGuard};
 use crate::{apic, tick};
 
 use super::task::{
-    KernelTaskStartFunction, Task, TaskExitCode, TaskId, TaskKernelStackPointer, TaskState, TASKS,
+    DesiredTaskState, KernelTaskStartFunction, Task, TaskExitCode, TaskId, TaskKernelStackPointer,
+    TASKS,
 };
 use super::{stack, syscall};
 
@@ -132,7 +133,7 @@ impl Scheduler {
         let current_task = self.current_task();
 
         let is_idle = current_task.id == idle_task_id;
-        let is_ready = current_task.state.load() == TaskState::ReadyToRun;
+        let is_ready = current_task.desired_state.load() == DesiredTaskState::ReadyToRun;
         let is_expired = current_task.remaining_slice.load() == Milliseconds::new(0);
         if !is_idle && is_ready && !is_expired {
             return;
@@ -141,13 +142,13 @@ impl Scheduler {
         self.remove_killed_pending_tasks();
         let prev_task = self.current_task();
         let prev_task_id = prev_task.id;
-        let prev_task_state = prev_task.state.load();
+        let prev_task_state = prev_task.desired_state.load();
         let next_task_id = match self.pop_next_ready_pending_task() {
             Some(id) => id,
             None => {
                 // If we are not on the idle task, and if our current task is
                 // not ready, let's switch to the idle task.
-                if prev_task_state != TaskState::ReadyToRun && prev_task_id != idle_task_id {
+                if prev_task_state != DesiredTaskState::ReadyToRun && prev_task_id != idle_task_id {
                     idle_task_id
                 } else {
                     // Otherwise, just return. We won't do a switch.
@@ -229,7 +230,7 @@ impl Scheduler {
         let mut remaining_pending_tasks = VecDeque::new();
         for id in &self.pending_tasks {
             let task = TASKS.lock().get_task_assert(*id);
-            if task.state.load() == TaskState::Killed {
+            if task.desired_state.load() == DesiredTaskState::Killed {
                 TASKS.lock().delete_task(*id);
             } else {
                 remaining_pending_tasks.push_back(*id);
@@ -250,7 +251,7 @@ impl Scheduler {
             };
 
             let next_task = TASKS.lock().get_task_assert(next_task_id);
-            if next_task.state.load() == TaskState::ReadyToRun {
+            if next_task.desired_state.load() == DesiredTaskState::ReadyToRun {
                 // Found a ready task
                 break Some(next_task_id);
             }
@@ -272,7 +273,7 @@ impl Scheduler {
     /// Awakens the given task and sets needs_reschedule to true.
     pub(crate) fn awaken_task(&mut self, task_id: TaskId) {
         let task = TASKS.lock().get_task_assert(task_id);
-        task.state.swap(TaskState::ReadyToRun);
+        task.desired_state.swap(DesiredTaskState::ReadyToRun);
         self.needs_reschedule = true;
     }
 
@@ -281,7 +282,7 @@ impl Scheduler {
     fn go_to_sleep_no_run_scheduler(&mut self) -> TaskId {
         self.needs_reschedule = true;
         let current_task = self.current_task();
-        current_task.state.swap(TaskState::Sleeping);
+        current_task.desired_state.swap(DesiredTaskState::Sleeping);
         current_task.id
     }
 
@@ -294,7 +295,7 @@ impl Scheduler {
     pub(super) fn kill_current_task(&mut self, exit_code: TaskExitCode) {
         let current_task = self.current_task();
         log::info!("killing task {} {:?}", current_task.name, current_task.id);
-        current_task.state.swap(TaskState::Killed);
+        current_task.desired_state.swap(DesiredTaskState::Killed);
 
         // Inform waiters that the task has exited.
         current_task

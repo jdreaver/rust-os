@@ -77,7 +77,7 @@ pub(crate) struct Task {
     pub(super) id: TaskId,
     pub(super) name: &'static str,
     pub(super) kernel_stack_pointer: TaskKernelStackPointer,
-    pub(super) state: AtomicEnum<u8, TaskState>,
+    pub(super) desired_state: AtomicEnum<u8, DesiredTaskState>,
     pub(super) exit_wait_cell: WaitCell<TaskExitCode>,
     pub(super) page_table_addr: PhysAddr,
 
@@ -151,7 +151,7 @@ impl Task {
             id,
             name,
             kernel_stack_pointer: TaskKernelStackPointer(stack_top),
-            state: AtomicEnum::new(TaskState::ReadyToRun),
+            desired_state: AtomicEnum::new(DesiredTaskState::ReadyToRun),
             exit_wait_cell: WaitCell::new(),
             page_table_addr: memory::kernel_default_page_table_address(),
             remaining_slice: AtomicInt::new(Milliseconds::new(0)),
@@ -164,17 +164,18 @@ impl Task {
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub(super) struct TaskKernelStackPointer(pub(super) usize);
 
+/// `DesiredTaskState` is the _desired_ state for a task (duh). For example, if
+/// the state is `ReadyToRun`, it means that the task would like CPU time, but
+/// it may not be running at the moment. Same with `Sleeping`, `Killed`, etc.
 #[derive(Debug, PartialEq, Eq)]
 #[repr(u8)]
-pub(super) enum TaskState {
-    /// ReadyToRun covers both a running task and a task that is currently
-    /// running.
+pub(super) enum DesiredTaskState {
     ReadyToRun,
     Sleeping,
     Killed,
 }
 
-impl TryFrom<u8> for TaskState {
+impl TryFrom<u8> for DesiredTaskState {
     type Error = ();
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
@@ -187,8 +188,8 @@ impl TryFrom<u8> for TaskState {
     }
 }
 
-impl From<TaskState> for u8 {
-    fn from(value: TaskState) -> Self {
+impl From<DesiredTaskState> for u8 {
+    fn from(value: DesiredTaskState) -> Self {
         value as Self
     }
 }
