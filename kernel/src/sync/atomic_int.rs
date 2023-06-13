@@ -4,7 +4,6 @@ use core::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
 
 /// Wrapper around an atomic integer type (via `AtomicInt`) that supports
 /// transparently converting to/from a specific type.
-#[derive(Debug)]
 pub(crate) struct AtomicInt<I, T>
 where
     I: AtomicIntTrait,
@@ -37,6 +36,16 @@ where
     pub(crate) fn swap(&self, val: T) -> T {
         let old_val = <I as AtomicIntTrait>::swap(&self.atom, val.into(), Ordering::Acquire);
         T::from(old_val)
+    }
+}
+
+impl<I, T> fmt::Debug for AtomicInt<I, T>
+where
+    I: AtomicIntTrait + fmt::Display + Copy,
+    T: From<I> + Into<I> + fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "AtomicInt({:?})", self.load())
     }
 }
 
@@ -80,7 +89,6 @@ atomic_int_trait_impl!(u64, AtomicU64);
 
 /// Wrapper around `AtomicInt` that allows fallible conversion, which is super
 /// useful for enums.
-#[derive(Debug)]
 pub(crate) struct AtomicEnum<I, T>
 where
     I: AtomicIntTrait,
@@ -120,5 +128,16 @@ where
     pub(crate) fn swap(&self, val: T) -> T {
         let old_val = self.int.swap(val.into());
         Self::convert_from_integer(old_val)
+    }
+}
+
+impl<I, T> fmt::Debug for AtomicEnum<I, T>
+where
+    I: AtomicIntTrait + fmt::Display + Copy,
+    I::Atomic: fmt::Debug,
+    T: TryFrom<I> + Into<I> + fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "AtomicEnum({:?})", self.load())
     }
 }
