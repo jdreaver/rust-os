@@ -559,9 +559,9 @@ fn run_command(command: &Command) {
             );
         }
         Command::Exec => {
-            let cpu_test = percpu::get_current_cpu_test();
+            let cpu_test = percpu::get_per_cpu_test();
             log::warn!("cpu_vars: {cpu_test:#x?}");
-            percpu::inc_current_cpu_test();
+            percpu::set_per_cpu_test(cpu_test + 1);
 
             let task_id = sched::scheduler_lock().new_task(
                 "dummy userspace",
