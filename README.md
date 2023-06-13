@@ -91,9 +91,10 @@ make test
 
 ## TODO
 
+- Multiprocessing (use multiple CPUs). This needs to be done ASAP or it will be very hard to debug in the future.
 - Userspace
-  - Syscall kernel stack: use swapgs for kernel stack instead of single global var
-    - <https://wiki.osdev.org/SWAPGS>
+  - Kernel stack swapping: ensure storing kernel stack is sound in the face of multiple CPUs. What if we store the kernel stack in GS, but while we are in userspace we get rescheduled to a different CPU? I think we need to always ensure the top of stack per CPU var is set before returning to userspace. Or maybe is needs to be set in scheduler?
+    - Should we just be using the kernel stack top in the task struct? Why does Linux have a separate per CPU var outside of the task struct?
   - Re-enable interrupts while handling syscalls (or don't? at least be explicit)
     - If we expect interrupts to be disabled, make a comment where we disabled and where we do e.g. `swapgs` or something else that expects interrupts disabled
   - Figure out how to get to userspace for the first time with sysretq instead of iretq
@@ -105,7 +106,6 @@ make test
   - Parse ELF better (maybe in our own `elf` module) so it is clear what bits need loading from file and where they need to be mapped
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - Consider a way to run tests on boot and return the QEMU exit code with the result
-- Multiprocessing (use multiple CPUs)
 - Networking
 - Filesystem
   - Writes

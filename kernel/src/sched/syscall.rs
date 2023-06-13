@@ -19,7 +19,8 @@ pub(super) fn syscall_init() {
         });
     }
 
-    // Use SFMASK register to disable interrupts when executing a syscall
+    // Use SFMASK register to disable interrupts when executing a syscall. This
+    // is important because we use swapgs and we mess with the stack.
     x86_64::registers::model_specific::SFMask::write(RFlags::INTERRUPT_FLAG);
 
     // Set syscall handler address via LSTAR register
@@ -42,9 +43,16 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             "push r13",
             "push r14",
             "push r15",
-            // Save user stack and restore kernel stack
-            "mov r12, rsp", // r12 is callee-saved, and should be preserved
+
+            // Save user stack in r12, which is callee-saved, and should be
+            // preserved across the syscall handler.
+            "mov r12, rsp",
+
+            // Swap out the user GS base for the kernel GS base and restore the
+            // kernel stack.
+            "swapgs",
             "mov rsp, gs:{kernel_stack}",
+
             // Set up syscall handler arguments. We use the Linux x86_64 syscall
             // calling convention, which uses rdi, rsi, rdx, r10, r8, and r9.
             // The standard x86_64 C calling convention uses rdi, rsi, rdx, rcx,
@@ -53,12 +61,15 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             // rcx. Therefore, we just set rcx to r10, and then our syscall
             // handler will use r10 for the 4th arg.
             "mov rcx, r10",
-            // TODO: Switch to a fresh kernel stack?
+
             // Call the actual syscall handler
             "call {syscall_handler_inner}",
+
             // Restore user stack (stored in r12 earlier)
             "mov gs:{kernel_stack}, rsp",
+            "swapgs",
             "mov rsp, r12",
+
             // Restore registers and run systretq to get back to userland.
             "pop r15",
             "pop r14",
