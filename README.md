@@ -93,8 +93,9 @@ make test
 
 - Multiprocessing (use multiple CPUs). This needs to be done ASAP or it will be very hard to debug in the future.
   - BUG: Fix what appears to be a general protection fault and a restart. I bet we are deadlocking when trying to log the exception
-    - Also, zero out memory we allocate for the physical memory bitmap allocator. I'm getting a red herring error because the memory is set but I'm doing `slice_from_raw_parts`
-- Log locking during exceptions: force unlock the logger if we hit an exception so we don't accidentally deadlock.
+    - I think the problem might be GDT and lack of interrupts
+  - Make sure hard coded `0` values for HPET, IOAPIC, and other interrupts (PCI? MSI-X? VirtIO?) is accurate. Make sure to use a processor ID newtype.
+  - Store current processor ID and maybe LAPIC ID in `percpu` variable so we don't have to ask LAPIC.
 - Scheduler refactor:
   - Rename `Scheduler` to `RunQueue`
   - Refactor killing and sleeping so we don't rely on never having spurious wakeups, and so we don't need to rely on `&mut self` for scheduler to immediately run scheduler just once (we should run scheduler in a loop in case of spurious wakeup).

@@ -7,7 +7,7 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, Pag
 
 use crate::sched::is_kernel_guard_page;
 use crate::sync::SpinLock;
-use crate::{apic, gdt, sched};
+use crate::{apic, gdt, logging, sched};
 
 /// CPU exception interrupt vectors stop at 32.
 const FIRST_EXTERNAL_INTERRUPT_VECTOR: usize = 32;
@@ -186,6 +186,7 @@ extern "x86-interrupt" fn non_maskable_interrupt_handler(stack_frame: InterruptS
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
+    logging::force_unlock_logger();
     log::warn!("EXCEPTION: BREAKPOINT");
     log::warn!("{stack_frame:#?}");
 }
@@ -255,6 +256,7 @@ extern "x86-interrupt" fn page_fault_handler(
 ) {
     use x86_64::registers::control::Cr2;
 
+    logging::force_unlock_logger();
     log::error!("EXCEPTION: PAGE FAULT");
     let accessed_address = Cr2::read();
     if is_kernel_guard_page(accessed_address) {

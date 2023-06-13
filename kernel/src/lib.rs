@@ -149,6 +149,7 @@ extern "C" fn bootstrap_secondary_cpu(info: *const limine::LimineSmpInfo) -> ! {
 }
 
 pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
+    logging::force_unlock_logger();
     log::error!("PANIC: {info}");
     hlt_loop()
 }

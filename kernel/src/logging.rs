@@ -52,3 +52,11 @@ pub(crate) fn init() {
     log::set_max_level(log::LevelFilter::Info);
     log::debug!("Logging initialized");
 }
+
+/// Force unlock the logger to ensure we can log something during a panic or CPU
+/// exception.
+pub(crate) fn force_unlock_logger() {
+    unsafe {
+        LOGGER.writer.force_unlock();
+    }
+}
