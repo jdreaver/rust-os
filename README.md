@@ -92,6 +92,7 @@ make test
 ## TODO
 
 - Multiprocessing (use multiple CPUs). This needs to be done ASAP or it will be very hard to debug in the future.
+- Log locking during exceptions: force unlock the logger if we hit an exception so we don't accidentally deadlock.
 - Scheduler refactor:
   - Rename `Scheduler` to `RunQueue`
   - Refactor killing and sleeping so we don't rely on never having spurious wakeups, and so we don't need to rely on `&mut self` for scheduler to immediately run scheduler just once (we should run scheduler in a loop in case of spurious wakeup).
