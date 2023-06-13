@@ -3,7 +3,7 @@ use spin::Once;
 use limine::{
     LimineBootInfoRequest, LimineEfiSystemTableRequest, LimineFramebufferRequest,
     LimineHhdmRequest, LimineKernelAddressRequest, LimineMemmapRequest, LimineMemoryMapEntryType,
-    LimineRsdpRequest, NonNullPtr,
+    LimineRsdpRequest, LimineSmpRequest, NonNullPtr,
 };
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -21,6 +21,9 @@ pub(crate) struct BootInfo {
     pub(crate) efi_system_table_address: Option<VirtAddr>,
     rsdp_address: Option<VirtAddr>,
     pub(crate) framebuffer: &'static mut limine::LimineFramebuffer,
+    pub(crate) _x2apic_enabled: bool,
+    pub(crate) _bootstrap_processor_lapic_id: u32,
+    pub(crate) _cpu_count: u64,
 }
 
 // We need to implement Send for BootInfo so it can be used with `Once`.
@@ -45,6 +48,7 @@ static HIGHER_HALF_DIRECT_MAP_REQUEST: LimineHhdmRequest = LimineHhdmRequest::ne
 static KERNEL_ADDRESS_REQUEST: LimineKernelAddressRequest = LimineKernelAddressRequest::new(0);
 static MEMORY_MAP_REQUEST: LimineMemmapRequest = LimineMemmapRequest::new(0);
 static RSDP_REQUEST: LimineRsdpRequest = LimineRsdpRequest::new(0);
+static SMP_REQUEST: LimineSmpRequest = LimineSmpRequest::new(0);
 
 pub(crate) fn boot_info() -> &'static BootInfo {
     BOOT_INFO_ONCE.call_once(|| -> BootInfo {
@@ -59,6 +63,11 @@ pub(crate) fn boot_info() -> &'static BootInfo {
 
         let framebuffer = limine_framebuffer();
 
+        let smp_info = SMP_REQUEST
+            .get_response()
+            .get()
+            .expect("failed to get limine smp info response");
+
         BootInfo {
             _info_name: info_name,
             _info_version: info_version,
@@ -68,6 +77,9 @@ pub(crate) fn boot_info() -> &'static BootInfo {
             efi_system_table_address: limine_efi_system_table_address(),
             rsdp_address: limine_rsdp_address(),
             framebuffer,
+            _x2apic_enabled: smp_info.flags & 1 == 1,
+            _bootstrap_processor_lapic_id: smp_info.bsp_lapic_id,
+            _cpu_count: smp_info.cpu_count,
         }
     })
 }
@@ -240,4 +252,59 @@ pub(crate) fn print_limine_memory_map() {
         "    framebuffer: {} MiB",
         memory_totals[LimineMemoryMapEntryType::Framebuffer as usize] / 1024 / 1024
     );
+}
+
+#[derive(Debug)]
+pub(crate) struct LimineCPU {
+    pub(crate) smp_response: &'static limine::LimineSmpResponse,
+    pub(crate) info: &'static mut limine::LimineSmpInfo,
+}
+
+impl LimineCPU {
+    pub(crate) fn bootstrap_cpu(&mut self, f: extern "C" fn(*const limine::LimineSmpInfo) -> !) {
+        if self.smp_response.bsp_lapic_id == self.info.lapic_id {
+            // This is the bootstrap processor, so we don't need to do anything.
+            return;
+        }
+        self.info.extra_argument = 0xdead_beef;
+        self.info.goto_address = f;
+    }
+}
+
+/// Internal struct to iterate over CPUs detected by limine.
+struct CPUIterator {
+    smp_response: &'static limine::LimineSmpResponse,
+    current: isize,
+}
+
+impl Iterator for CPUIterator {
+    type Item = LimineCPU;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        #[allow(clippy::cast_possible_wrap)]
+        if self.current >= self.smp_response.cpu_count as isize {
+            return None;
+        }
+
+        unsafe {
+            let entry = &mut **self.smp_response.cpus.as_ptr().offset(self.current);
+            self.current += 1;
+            Some(LimineCPU {
+                smp_response: self.smp_response,
+                info: entry,
+            })
+        }
+    }
+}
+
+pub(crate) fn limine_smp_entries() -> impl Iterator<Item = LimineCPU> {
+    let smp_response = SMP_REQUEST
+        .get_response()
+        .get()
+        .expect("failed to get limine SMP response");
+
+    CPUIterator {
+        smp_response,
+        current: 0,
+    }
 }

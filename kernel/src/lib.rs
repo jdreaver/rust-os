@@ -65,6 +65,14 @@ pub(crate) mod tick;
 pub(crate) mod vfs;
 pub(crate) mod virtio;
 
+extern "C" fn bootstrap_cpu(info: *const limine::LimineSmpInfo) -> ! {
+    let info = unsafe { &*info };
+    log::warn!("bootstrapping CPU: {info:#x?}");
+    loop {
+        x86_64::instructions::hlt();
+    }
+}
+
 pub fn start() -> ! {
     logging::init();
 
@@ -72,6 +80,11 @@ pub fn start() -> ! {
     interrupts::init_interrupts();
 
     let boot_info_data = boot_info::boot_info();
+
+    for mut entry in boot_info::limine_smp_entries() {
+        log::info!("SMP entry: {entry:?}");
+        entry.bootstrap_cpu(bootstrap_cpu);
+    }
 
     // KLUDGE: Limine just doesn't report on memory below 0x1000, so we
     // explicitly mark it as reserved. TODO: Perhaps instead of only reserving
