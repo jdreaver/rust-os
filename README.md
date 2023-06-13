@@ -91,14 +91,15 @@ make test
 
 ## TODO
 
+- Per CPU storage
+  - If we do per CPU, ensure we disable preemption while reading per CPU variables so the current task doesn't get rescheduled and cause the CPU number to change
+    - Might need to ensure we disable moving a task from one CPU to the next during syscalls, especially if we use swapgs
+  - Consider using per CPU for storing the currently running task instead of having a Vec of those in `Scheduler`
 - Userspace
-  - Syscall kernel stack: don't have just a single memory location for the kernel and user stacks. We might need a memory location per CPU. Ideally we store these in the Task struct but I'm not sure that is possible. How does Linux do this with its percpu variable system? Is the scheduler locked during system calls?
-    - <https://docs.kernel.org/core-api/this_cpu_ops.html>
-    - <https://elixir.bootlin.com/linux/latest/source/include/linux/percpu.h>
-    - <https://elixir.bootlin.com/linux/latest/source/arch/x86/include/asm/percpu.h>
-    - If we do per CPU, ensure we disable preemption while reading per CPU variables so the current task doesn't get rescheduled and cause the CPU number to change
-    - Consider using per CPU for storing the currently running task instead of having a Vec of those in `Scheduler`
+  - Syscall kernel stack: use swapgs for kernel stack instead of single global var
+    - <https://wiki.osdev.org/SWAPGS>
   - Re-enable interrupts while handling syscalls (or don't? at least be explicit)
+    - If we expect interrupts to be disabled, make a comment where we disabled and where we do e.g. `swapgs` or something else that expects interrupts disabled
   - Figure out how to get to userspace for the first time with sysretq instead of iretq
   - Define actual system calls
   - Segfault a user process and kill it instead of panicking and crashing the kernel
@@ -487,3 +488,9 @@ Linux VFS:
 - <https://wiki.osdev.org/System_Calls>
 - <https://wiki.osdev.org/Sysenter> (also discusses syscall)
 - <https://wiki.osdev.org/SWAPGS>
+
+### Per CPU variables
+
+- <https://docs.kernel.org/core-api/this_cpu_ops.html>
+- <https://elixir.bootlin.com/linux/latest/source/include/linux/percpu.h>
+- <https://elixir.bootlin.com/linux/latest/source/arch/x86/include/asm/percpu.h>

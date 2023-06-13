@@ -4,6 +4,7 @@
 #![feature(asm_const)]
 #![feature(cell_leak)]
 #![feature(int_roundings)]
+#![feature(offset_of)]
 #![feature(naked_functions)]
 #![feature(pointer_is_aligned)]
 #![feature(strict_provenance)]
@@ -51,6 +52,7 @@ pub(crate) mod keyboard;
 pub(crate) mod logging;
 pub(crate) mod memory;
 pub(crate) mod pci;
+pub(crate) mod percpu;
 #[allow(dead_code)] // This could be its own crate
 pub(crate) mod registers;
 pub(crate) mod sched;
@@ -91,6 +93,9 @@ pub fn start() -> ! {
         );
     };
     heap::init().expect("failed to initialize heap");
+
+    // TODO: Initialize multiple CPUs
+    percpu::init_current_cpu();
 
     // N.B. Probing ACPI must happen after heap initialization because the Rust
     // `acpi` crate uses alloc. It would be nice to not need that...
