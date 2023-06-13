@@ -65,14 +65,6 @@ pub(crate) mod tick;
 pub(crate) mod vfs;
 pub(crate) mod virtio;
 
-extern "C" fn bootstrap_cpu(info: *const limine::LimineSmpInfo) -> ! {
-    let info = unsafe { &*info };
-    log::warn!("bootstrapping CPU: {info:#x?}");
-    loop {
-        x86_64::instructions::hlt();
-    }
-}
-
 pub fn start() -> ! {
     logging::init();
 
@@ -80,11 +72,6 @@ pub fn start() -> ! {
     interrupts::init_interrupts();
 
     let boot_info_data = boot_info::boot_info();
-
-    for mut entry in boot_info::limine_smp_entries() {
-        log::info!("SMP entry: {entry:?}");
-        entry.bootstrap_cpu(bootstrap_cpu);
-    }
 
     // KLUDGE: Limine just doesn't report on memory below 0x1000, so we
     // explicitly mark it as reserved. TODO: Perhaps instead of only reserving
@@ -117,7 +104,7 @@ pub fn start() -> ! {
     let acpi_info = acpi::acpi_info();
     apic::init_local_apic(acpi_info);
     ioapic::init(acpi_info);
-    sched::init();
+    sched::global_init();
 
     unsafe {
         hpet::init(acpi_info.hpet_info().base_address);
@@ -134,9 +121,31 @@ pub fn start() -> ! {
         virtio::try_init_virtio_block(device_config);
     });
 
+    // Bootstrap current CPU
+    bootstrap_cpu();
+
+    // Bootstrap other CPUs
+    for mut entry in boot_info::limine_smp_entries() {
+        log::info!("SMP entry: {entry:?}");
+        entry.bootstrap_cpu(bootstrap_secondary_cpu);
+    }
+
     sched::start_multitasking("shell", shell::run_serial_shell, core::ptr::null::<()>());
 
     panic!("ERROR: ended multi-tasking");
+}
+
+fn bootstrap_cpu() {
+    sched::per_cpu_init();
+}
+
+extern "C" fn bootstrap_secondary_cpu(info: *const limine::LimineSmpInfo) -> ! {
+    let info = unsafe { &*info };
+    log::info!("bootstrapping CPU: {info:#x?}");
+    // bootstrap_cpu();
+    loop {
+        x86_64::instructions::hlt();
+    }
 }
 
 pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {

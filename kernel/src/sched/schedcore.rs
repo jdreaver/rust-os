@@ -67,7 +67,9 @@ impl Scheduler {
             "multi-tasking not initialized, but tasks_lock called"
         );
 
-        let id = TASKS.lock().new_task(name, start_fn, arg);
+        let id = TASKS
+            .lock_disable_interrupts()
+            .new_task(name, start_fn, arg);
         self.pending_tasks.push_back(id);
         id
     }
@@ -117,9 +119,13 @@ impl Scheduler {
             self.pending_tasks.push_back(prev_task_id);
         }
 
-        let prev_task = TASKS.lock().get_task_assert(prev_task_id);
+        let prev_task = TASKS
+            .lock_disable_interrupts()
+            .get_task_assert(prev_task_id);
         let prev_stack_ptr = core::ptr::addr_of!(prev_task.kernel_stack_pointer);
-        let next_task = TASKS.lock().get_task_assert(next_task_id);
+        let next_task = TASKS
+            .lock_disable_interrupts()
+            .get_task_assert(next_task_id);
         let next_stack_ptr = next_task.kernel_stack_pointer;
         let next_page_table = next_task.page_table_addr;
 
@@ -157,9 +163,9 @@ impl Scheduler {
     fn remove_killed_pending_tasks(&mut self) {
         let mut remaining_pending_tasks = VecDeque::new();
         for id in &self.pending_tasks {
-            let task = TASKS.lock().get_task_assert(*id);
+            let task = TASKS.lock_disable_interrupts().get_task_assert(*id);
             if task.desired_state.load() == DesiredTaskState::Killed {
-                TASKS.lock().delete_task(*id);
+                TASKS.lock_disable_interrupts().delete_task(*id);
             } else {
                 remaining_pending_tasks.push_back(*id);
             }
@@ -178,7 +184,9 @@ impl Scheduler {
                 break None;
             };
 
-            let next_task = TASKS.lock().get_task_assert(next_task_id);
+            let next_task = TASKS
+                .lock_disable_interrupts()
+                .get_task_assert(next_task_id);
             if next_task.desired_state.load() == DesiredTaskState::ReadyToRun {
                 // Found a ready task
                 break Some(next_task_id);
@@ -222,16 +230,19 @@ extern "C" fn idle_task_start(_arg: *const ()) {
     }
 }
 
-pub(crate) fn init() {
+pub(crate) fn global_init() {
     stack::stack_init();
+}
+
+pub(crate) fn per_cpu_init() {
     syscall::syscall_init();
 
     // Set the current CPU's idle task.
-    //
-    // TODO: Do this for all CPUs, or make this a per CPU data structure.
-    let idle_task_id = TASKS
-        .lock()
-        .new_task("__IDLE_TASK__", idle_task_start, core::ptr::null());
+    let idle_task_id = TASKS.lock_disable_interrupts().new_task(
+        "__IDLE_TASK__",
+        idle_task_start,
+        core::ptr::null(),
+    );
     percpu::set_per_cpu_idle_task_id(idle_task_id.0);
     percpu::set_per_cpu_current_task_id(idle_task_id.0);
 }
@@ -242,7 +253,9 @@ pub(crate) fn current_task_id() -> TaskId {
 }
 
 pub(crate) fn current_task() -> Arc<Task> {
-    TASKS.lock().get_task_assert(current_task_id())
+    TASKS
+        .lock_disable_interrupts()
+        .get_task_assert(current_task_id())
 }
 
 /// Switches from the bootstrap code, which isn't a task, to the first actual
@@ -298,14 +311,14 @@ fn go_to_sleep_no_run_scheduler() -> TaskId {
 
 /// Awakens the given task and sets needs_reschedule to true.
 pub(crate) fn awaken_task(task_id: TaskId) {
-    let task = TASKS.lock().get_task_assert(task_id);
+    let task = TASKS.lock_disable_interrupts().get_task_assert(task_id);
     task.desired_state.swap(DesiredTaskState::ReadyToRun);
     NEEDS_RESCHEDULE.store(true, Ordering::Relaxed);
 }
 
 /// Waits until the given task is finished.
 pub(crate) fn wait_on_task(target_task_id: TaskId) -> Option<TaskExitCode> {
-    let Some(target_task) = TASKS.lock().get_task(target_task_id) else { return None; };
+    let Some(target_task) = TASKS.lock_disable_interrupts().get_task(target_task_id) else { return None; };
     let exit_code = target_task.exit_wait_cell.wait_sleep();
     Some(exit_code)
 }

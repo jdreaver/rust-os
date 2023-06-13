@@ -92,6 +92,8 @@ make test
 ## TODO
 
 - Multiprocessing (use multiple CPUs). This needs to be done ASAP or it will be very hard to debug in the future.
+  - BUG: Fix what appears to be a general protection fault and a restart. I bet we are deadlocking when trying to log the exception
+    - Also, zero out memory we allocate for the physical memory bitmap allocator. I'm getting a red herring error because the memory is set but I'm doing `slice_from_raw_parts`
 - Log locking during exceptions: force unlock the logger if we hit an exception so we don't accidentally deadlock.
 - Scheduler refactor:
   - Rename `Scheduler` to `RunQueue`
