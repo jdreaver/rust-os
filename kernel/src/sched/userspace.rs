@@ -5,9 +5,7 @@ use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::{Page, PageTableFlags, PhysFrame};
 use x86_64::VirtAddr;
 
-use crate::{gdt, memory};
-
-use super::syscall;
+use crate::{gdt, memory, percpu};
 
 static DUMMY_USERSPACE_STACK: &[u8] = &[0; 4096];
 
@@ -75,7 +73,7 @@ pub(super) unsafe extern "C" fn jump_to_userspace(
     unsafe {
         asm!(
             // Store the kernel stack
-            "mov [{kernel_stack}], rsp",
+            "mov gs:{kernel_stack}, rsp",
             // Set up and execute iretq
             "push rcx",      // Fourth arg, stack segment
             "push rsi",      // Second arg, stack pointer
@@ -83,7 +81,7 @@ pub(super) unsafe extern "C" fn jump_to_userspace(
             "push rdx",      // Third arg, code segment
             "push rdi",      // First arg, instruction pointer
             "iretq",
-            kernel_stack = sym syscall::KERNEL_STACK,
+            kernel_stack = const percpu::PER_CPU_SYSCALL_TOP_OF_KERNEL_STACK,
             rflags = const RFlags::INTERRUPT_FLAG.bits(),
             options(noreturn),
         )

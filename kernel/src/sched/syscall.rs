@@ -1,10 +1,10 @@
 use core::arch::asm;
-use core::sync::atomic::AtomicU64;
 
 use x86_64::registers::rflags::RFlags;
 use x86_64::VirtAddr;
 
-use crate::sched::{self, TaskExitCode};
+use crate::sched::TaskExitCode;
+use crate::{percpu, sched};
 
 pub(super) fn syscall_init() {
     // N.B. There is some other initialization done when setting up the GDT for
@@ -27,9 +27,6 @@ pub(super) fn syscall_init() {
     x86_64::registers::model_specific::LStar::write(syscall_handler_addr);
 }
 
-// TODO: Kernel stack location per CPU instead of a single global
-pub(super) static KERNEL_STACK: AtomicU64 = AtomicU64::new(0);
-
 #[naked]
 pub(super) unsafe extern "C" fn syscall_handler() {
     unsafe {
@@ -47,7 +44,7 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             "push r15",
             // Save user stack and restore kernel stack
             "mov r12, rsp", // r12 is callee-saved, and should be preserved
-            "mov rsp, [{kernel_stack}]",
+            "mov rsp, gs:{kernel_stack}",
             // Set up syscall handler arguments. We use the Linux x86_64 syscall
             // calling convention, which uses rdi, rsi, rdx, r10, r8, and r9.
             // The standard x86_64 C calling convention uses rdi, rsi, rdx, rcx,
@@ -60,7 +57,7 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             // Call the actual syscall handler
             "call {syscall_handler_inner}",
             // Restore user stack (stored in r12 earlier)
-            "mov [{kernel_stack}], rsp",
+            "mov gs:{kernel_stack}, rsp",
             "mov rsp, r12",
             // Restore registers and run systretq to get back to userland.
             "pop r15",
@@ -72,7 +69,7 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             "pop r11",
             "pop rcx",
             "sysretq",
-            kernel_stack = sym KERNEL_STACK,
+            kernel_stack = const percpu::PER_CPU_SYSCALL_TOP_OF_KERNEL_STACK,
             syscall_handler_inner = sym syscall_handler_inner,
             options(noreturn),
         )

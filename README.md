@@ -91,10 +91,6 @@ make test
 
 ## TODO
 
-- Per CPU storage
-  - If we do per CPU, ensure we disable preemption while reading per CPU variables so the current task doesn't get rescheduled and cause the CPU number to change
-    - Might need to ensure we disable moving a task from one CPU to the next during syscalls, especially if we use swapgs
-  - Consider using per CPU for storing the currently running task instead of having a Vec of those in `Scheduler`
 - Userspace
   - Syscall kernel stack: use swapgs for kernel stack instead of single global var
     - <https://wiki.osdev.org/SWAPGS>
@@ -134,6 +130,8 @@ make test
 - ansiterm: move this to a separate crate with tests?
 - Task struct access: investigate not hiding all tasks (or just the current tasks) inside the big scheduler lock. Are there situations where it is okay to modify a task if the scheduler is running concurrently? Can we lock individual tasks? Is this inviting a deadlock?
   - For example, putting a task to sleep or waking it up. Is this bad to do concurrently with the scheduler? Maybe instead of calling this the "state" it can be thought of as a "state intent", which the scheduler should action next time it changes the task's scheduling. Wait queues and channels do this, but they need a scheduler lock under the hood.
+  - Consider using per CPU for storing the currently running task instead of having a Vec of those in `Scheduler`
+    - The "current task" is only valid in the current thread. We need to wrap it in a type that is not `Send` or `Sync`; we can't just return a `&'static` ref (or maybe we can if we make sa
 - Stack size: figure out why stacks need to be so large when compiling in debug mode. Is Rust putting a ton of debug info on the stack?
 - Memory mapping
   - Make a doc like <https://www.kernel.org/doc/Documentation/x86/x86_64/mm.txt>, and perhaps a static array of regions that other modules use

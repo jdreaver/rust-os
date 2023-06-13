@@ -18,12 +18,14 @@ use x86_64::VirtAddr;
 #[repr(C, align(64))]
 pub(crate) struct PerCPUVars {
     pub(crate) test: u64,
+    pub(crate) syscall_top_of_kernel_stack: u64,
 }
 
 /// Initializes per CPU storage on the current CPU.
 pub(crate) fn init_current_cpu() {
     let vars = Box::new(PerCPUVars {
         test: 0xdead_beef,
+        syscall_top_of_kernel_stack: 0,
     });
     let addr = VirtAddr::new(Box::leak(vars) as *mut PerCPUVars as u64);
     x86_64::registers::model_specific::GsBase::write(addr);
@@ -45,7 +47,7 @@ macro_rules! get_per_cpu {
                 field
             }
         }
-    }
+    };
 }
 
 macro_rules! set_per_cpu {
@@ -62,11 +64,16 @@ macro_rules! set_per_cpu {
                 }
             }
         }
-    }
+    };
 }
 
 get_per_cpu!(test, u64);
 set_per_cpu!(test, u64);
+
+pub(crate) const PER_CPU_SYSCALL_TOP_OF_KERNEL_STACK: u64 =
+    offset_of!(PerCPUVars, syscall_top_of_kernel_stack) as u64;
+// get_per_cpu!(syscall_top_of_kernel_stack, u64);
+// set_per_cpu!(syscall_top_of_kernel_stack, u64);
 
 // Useful if we ever want counters. I'm only keeping this around because it took
 // forever to figure out the `inc qword ptr gs:{}` syntax and I don't want to
