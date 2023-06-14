@@ -65,6 +65,8 @@ pub(crate) mod tick;
 pub(crate) mod vfs;
 pub(crate) mod virtio;
 
+use core::sync::atomic::{AtomicU8, Ordering};
+
 use apic::ProcessorID;
 
 pub fn start() -> ! {
@@ -85,7 +87,11 @@ pub fn start() -> ! {
         entry.bootstrap_cpu(bootstrap_secondary_cpu);
     }
 
-    // TODO: Ensure that all CPUs have finished bootstrapping before continuing
+    // Ensure that all CPUs have finished bootstrapping before continuing
+    let cpu_count = boot_info::limine_smp_entries().count() as u8;
+    while NUM_CPUS_BOOTSTRAPPED.load(Ordering::Acquire) < cpu_count {
+        core::hint::spin_loop();
+    }
 
     tick::global_init();
 
@@ -93,6 +99,10 @@ pub fn start() -> ! {
 
     panic!("ERROR: ended multi-tasking");
 }
+
+/// Records how many CPUs have been bootstrapped. Used as a synchronization
+/// point before continuing with init.
+static NUM_CPUS_BOOTSTRAPPED: AtomicU8 = AtomicU8::new(0);
 
 fn early_per_cpu_setup(bootstrap_cpu: bool, processor_id: ProcessorID) {
     if bootstrap_cpu {
@@ -154,6 +164,7 @@ fn global_setup(boot_info_data: &boot_info::BootInfo) {
 fn later_per_cpu_setup() {
     apic::per_cpu_init();
     sched::per_cpu_init();
+    NUM_CPUS_BOOTSTRAPPED.fetch_add(1, Ordering::Release);
 }
 
 extern "C" fn bootstrap_secondary_cpu(info: *const limine::LimineSmpInfo) -> ! {

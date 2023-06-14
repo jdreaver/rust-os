@@ -93,7 +93,6 @@ make test
 
 - Create `InterruptVector` newtype wrapper around `u8`. Way too many `u8`s flying around for interrupt vectors.
 - Multiprocessing (use multiple CPUs). This needs to be done ASAP or it will be very hard to debug in the future.
-  - Ensure all CPUs have bootstrapped before continuing past per CPU bootstrap code. Just use an atomic counter, spin until it equals the number of CPUs, and have `later_per_cpu_setup` increment the counter.
   - Linux has `NR_CPUS` as a config parameter and uses it to pre-populate static arrays. I like that idea. Can we use it to simplify per CPU data structures like the GDT and run queue?
     - We could have a macro to create an array of atomic values `NR_CPUS` in length, and some getter/setter methods based on the current CPU's processor ID.
       - Make sure the array is padded so we don't share cache lines.
@@ -101,7 +100,6 @@ make test
   - Per CPU scheduling:
     - Global run queue, but scheduling runs independently on each CPU. Just need to lock global queue when swapping the running task and getting the next task.
     - Make sure preemption and IRQs are disabled while the scheduler is running on a CPU
-    - Ensure each CPU gets its own tick setup! Can we hook the HPET up to multiple CPUs, or do we need to use LAPIC ticks?
   - Re-enable preempt_count check
     - Currently broken thing is `mount 2` then `ls /`. Problem is `preempt_count` is 2, _and_ we constantly call scheduler over and over super quickly.
       - Maybe we should panic if we try to `go_to_sleep` while we have a spin lock

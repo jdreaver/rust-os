@@ -20,7 +20,10 @@ pub(crate) fn global_init(acpi_info: &ACPIInfo) {
 }
 
 pub(crate) fn per_cpu_init() {
-    LOCAL_APIC.get().expect("Local APIC not initialized").enable();
+    LOCAL_APIC
+        .get()
+        .expect("Local APIC not initialized")
+        .enable();
 }
 
 /// See "11.8.5 Signaling Interrupt Servicing Completion" in the Intel 64 Manual
