@@ -23,6 +23,7 @@ const MAX_CPUS: u8 = 8;
 
 static mut GS_REGISTER_VARS: [GSRegisterVars; MAX_CPUS as usize] = [GSRegisterVars {
     processor_id: 0,
+    needs_reschedule: 0,
     current_task_id: 0,
     idle_task_id: 0,
     preempt_count: 0,
@@ -34,14 +35,26 @@ static mut GS_REGISTER_VARS: [GSRegisterVars; MAX_CPUS as usize] = [GSRegisterVa
 // repr(C) so offsets are stable, align(64) to prevent sharing cache lines
 #[repr(C, align(64))]
 struct GSRegisterVars {
+    /// The processor ID of the current CPU.
     pub(crate) processor_id: u8,
+
+    /// When nonzero, the scheduler needs to run. This is set in contexts that
+    /// can't run the scheduler (like interrupts), or in places that want to
+    /// indicate the scheduler should run, but don't want it to run immediately.
+    pub(crate) needs_reschedule: u8,
+
+    /// The `TaskId` of the currently running task.
     pub(crate) current_task_id: u32,
+
+    /// The `TaskId` for the idle task for the current CPU. Every CPU has its
+    /// own idle task.
     pub(crate) idle_task_id: u32,
 
     /// When preempt_count > 0, preemption is disabled, which means the
     /// scheduler will not switch off the current task.
     pub(crate) preempt_count: i32,
 
+    /// Used during syscalls to store and restore the top of the kernel stack.
     pub(crate) syscall_top_of_kernel_stack: u64,
 }
 
@@ -168,6 +181,9 @@ macro_rules! dec_per_cpu_4 {
 
 get_per_cpu_1!(processor_id, u8);
 set_per_cpu_1!(processor_id, u8);
+
+get_per_cpu_1!(needs_reschedule, u8);
+set_per_cpu_1!(needs_reschedule, u8);
 
 get_per_cpu_4!(current_task_id, u32);
 set_per_cpu_4!(current_task_id, u32);

@@ -97,7 +97,7 @@ make test
       - Make sure the array is padded so we don't share cache lines.
       - Ensure that preemption or scheduling is disabled between fetching the CPU number/variable and when we are done using it
   - Per CPU scheduling:
-    - Global run queue, but scheduling runs per CPU. Only need the run queue lock when
+    - Global run queue, but scheduling runs independently on each CPU. Just need to lock global queue when swapping the running task and getting the next task.
     - Make sure preemption and IRQs are disabled while the scheduler is running on a CPU
     - Ensure each CPU gets its own tick setup! Can we hook the HPET up to multiple CPUs, or do we need to use LAPIC ticks?
   - Re-enable preempt_count check

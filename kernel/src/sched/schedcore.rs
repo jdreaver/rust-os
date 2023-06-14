@@ -31,12 +31,6 @@ pub(super) unsafe fn force_unlock_scheduler() {
     percpu::set_per_cpu_preempt_count(0);
 }
 
-/// If set to true, then the scheduler should run next time it has a chance.
-/// Used after exiting from IRQs and in other contexts that can't run the
-/// scheduler but made a change (like changing a task's desired state) that
-/// would require the scheduler to run.
-static NEEDS_RESCHEDULE: AtomicBool = AtomicBool::new(false);
-
 /// Stores pending tasks that may or may not want to be scheduled.
 pub(crate) struct RunQueue {
     /// All tasks that are not running, except for the idle tasks.
@@ -173,7 +167,7 @@ const DEFAULT_TIME_SLICE: Milliseconds = Milliseconds::new(100);
 
 pub(crate) fn run_scheduler() {
     // Set needs_reschedule to false if it hasn't been set already.
-    NEEDS_RESCHEDULE.store(true, Ordering::Relaxed);
+    percpu::set_per_cpu_needs_reschedule(0);
 
     // Check preempt counter. If it's non-zero, then we're in a critical
     // section and we shouldn't preempt.
@@ -266,7 +260,7 @@ pub(crate) fn run_scheduler() {
 
 /// If the scheduler needs to run, then run it.
 pub(crate) fn run_scheduler_if_needed() {
-    if NEEDS_RESCHEDULE.load(Ordering::Acquire) {
+    if percpu::get_per_cpu_needs_reschedule() > 0 {
         run_scheduler();
     }
 }
@@ -285,7 +279,7 @@ pub(crate) fn scheduler_tick(time_between_ticks: Milliseconds) {
 
     // If the task has run out of time, we need to run the scheduler.
     if slice == Milliseconds::new(0) {
-        NEEDS_RESCHEDULE.store(true, Ordering::Relaxed);
+        percpu::set_per_cpu_needs_reschedule(1);
     }
 }
 
@@ -318,7 +312,7 @@ pub(super) fn kill_current_task(exit_code: TaskExitCode) {
 /// Puts the current task to sleep and returns the current task ID, but does
 /// _not_ run the scheduler.
 fn go_to_sleep_no_run_scheduler() -> TaskId {
-    NEEDS_RESCHEDULE.store(true, Ordering::Relaxed);
+    percpu::set_per_cpu_needs_reschedule(1);
     let current_task = current_task();
     current_task.desired_state.swap(DesiredTaskState::Sleeping);
     current_task.id
@@ -328,7 +322,7 @@ fn go_to_sleep_no_run_scheduler() -> TaskId {
 pub(crate) fn awaken_task(task_id: TaskId) {
     let task = TASKS.lock_disable_interrupts().get_task_assert(task_id);
     task.desired_state.swap(DesiredTaskState::ReadyToRun);
-    NEEDS_RESCHEDULE.store(true, Ordering::Relaxed);
+    percpu::set_per_cpu_needs_reschedule(1);
 }
 
 /// Waits until the given task is finished.
