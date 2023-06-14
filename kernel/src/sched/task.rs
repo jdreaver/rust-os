@@ -6,10 +6,9 @@ use x86_64::PhysAddr;
 
 use crate::hpet::Milliseconds;
 use crate::memory;
-use crate::sched::force_unlock_scheduler;
 use crate::sync::{AtomicEnum, AtomicInt, SpinLock, WaitCell};
 
-use super::schedcore::scheduler_lock;
+use super::schedcore::{force_unlock_scheduler, scheduler_lock};
 use super::stack;
 
 /// All tasks in the system.

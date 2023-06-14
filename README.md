@@ -96,19 +96,17 @@ make test
     - We could have a macro to create an array of atomic values `NR_CPUS` in length, and some getter/setter methods based on the current CPU's processor ID.
       - Make sure the array is padded so we don't share cache lines.
       - Ensure that preemption or scheduling is disabled between fetching the CPU number/variable and when we are done using it
-    - Make sure `NR_CPUS` is a `u8`, or at least matches `ProcessorID`'s underlying size.
-      - In fact, move `ProcessorID` to this file.
-    - Rename the existing `percpu` stuff to like "fast percpu" or "`GS` percpu" and use it to store the processor ID at the very least (I'm sure I'll find other uses for it)
-    - Then the `percpu` stuff that uses `gs` can just be for optimizations. Honestly maybe we don't even need it? I could see an array of atomic values being just as useful. Hmm.
-  - Store current processor ID (which equals LAPIC ID) in `percpu` variable so we don't have to ask LAPIC.
   - Per CPU scheduling:
     - Global run queue, but scheduling runs per CPU. Only need the run queue lock when
     - Make sure preemption and IRQs are disabled while the scheduler is running on a CPU
     - Ensure each CPU gets its own tick setup! Can we hook the HPET up to multiple CPUs, or do we need to use LAPIC ticks?
+  - Fix preempt_count always being 2 for some reason and then reenable `preempt_count` check in scheduler
+    - I think we need to stop wrapping the scheduler in a spin lock first. We are constantly locking an unlocking it and it is hard to reason about.
 - Scheduler refactor:
   - Rename `Scheduler` to `RunQueue`
   - Refactor killing and sleeping so we don't rely on never having spurious wakeups, and so we don't need to rely on `&mut self` for scheduler to immediately run scheduler just once (we should run scheduler in a loop in case of spurious wakeup).
 - Per CPU
+  - Have per CPU macros assert that types are correct.
   - Encapsulation: it would be great to be able to have private per CPU vars. For example, a module could declare a CPU var, and the central `percpu` module ensures space gets allocated for it and it has an offset, but otherwise nothing is allowed to touch it outside of the module it is declared in.
   - Automatic conversion to/from primitive types. Allow loading `TaskId` directly instead of needing to use `u32`.
 - Userspace
@@ -162,7 +160,6 @@ make test
   - Mutex (not spinlock "mutex") that handles sleeping and waking
     - We can use `WaitQueue` along with `send_single_consumer` for wakeups. (The primary lock mechanism is still an atomic bool)
     - I like Linux's mutex where they store the current holder's task ID in an atomic variable
-  - In the future we should disable preemption when spin locks are taken
 - Deadlock debugging: find a way to detect deadlocks and print the locks involved
   - Linux has a neat debugging system for mutexes <https://docs.kernel.org/locking/mutex-design.html#semantics>
   - Should we fail if we are holding a spinlock for too long?

@@ -33,6 +33,7 @@ pub(super) unsafe fn force_unlock_scheduler() {
     // N.B. Ordering is important. Don't re-enable interrupts until the spinlock
     // is released or else we could get an interrupt + a deadlock.
     x86_64::instructions::interrupts::enable();
+    percpu::set_per_cpu_preempt_count(0);
 }
 
 /// If set to true, then the scheduler should run next time it has a chance.
@@ -81,6 +82,22 @@ impl Scheduler {
     pub(crate) fn run_scheduler(&mut self) {
         // Set needs_reschedule to false if it hasn't been set already.
         NEEDS_RESCHEDULE.store(true, Ordering::Relaxed);
+
+        // Check preempt counter. If it's non-zero, then we're in a critical
+        // section and we shouldn't preempt.
+        //
+        // TODO: For now this we compare against 1 because the scheduler is
+        // itself in a spinlock. Once we move it out of a spinlock we should
+        // compare to zero again.
+        let preempt_count = percpu::get_per_cpu_preempt_count();
+        assert!(
+            preempt_count >= 0,
+            "preempt_count is negative! Something bad happened"
+        );
+        // TODO: Re-enable this once preempt count issues are fixed.
+        // if preempt_count > 0 {
+        //     return;
+        // }
 
         // If the previous task still has a time slice left, don't preempt it.
         // (Except for idle task. We don't care if that ran out of time.)

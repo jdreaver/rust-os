@@ -65,11 +65,17 @@ pub(crate) mod tick;
 pub(crate) mod vfs;
 pub(crate) mod virtio;
 
+use apic::ProcessorID;
+
 pub fn start() -> ! {
     logging::init();
 
-    early_per_cpu_setup(true);
-    global_setup();
+    let boot_info_data = boot_info::boot_info();
+    early_per_cpu_setup(
+        true,
+        ProcessorID(boot_info_data.bootstrap_processor_lapic_id as u8),
+    );
+    global_setup(boot_info_data);
 
     // Finish bootstrapping current CPU
     later_per_cpu_setup();
@@ -84,18 +90,17 @@ pub fn start() -> ! {
     panic!("ERROR: ended multi-tasking");
 }
 
-fn early_per_cpu_setup(bootstrap_cpu: bool) {
+fn early_per_cpu_setup(bootstrap_cpu: bool, processor_id: ProcessorID) {
     if bootstrap_cpu {
         gdt::init_bootstrap_gdt();
     } else {
         gdt::init_secondary_cpu_gdt();
     }
     interrupts::init_interrupts();
+    percpu::init_current_cpu(processor_id);
 }
 
-fn global_setup() {
-    let boot_info_data = boot_info::boot_info();
-
+fn global_setup(boot_info_data: &boot_info::BootInfo) {
     // KLUDGE: Limine just doesn't report on memory below 0x1000, so we
     // explicitly mark it as reserved. TODO: Perhaps instead of only reserving
     // reserved regions, we should assume all memory is reserved and instead
@@ -143,14 +148,14 @@ fn global_setup() {
 }
 
 fn later_per_cpu_setup() {
-    percpu::init_current_cpu();
     sched::per_cpu_init();
 }
 
-extern "C" fn bootstrap_secondary_cpu(_info: *const limine::LimineSmpInfo) -> ! {
-    // let info = unsafe { &*info };
+extern "C" fn bootstrap_secondary_cpu(info: *const limine::LimineSmpInfo) -> ! {
+    let info = unsafe { &*info };
+    let processor_id = ProcessorID(info.lapic_id as u8);
     // log::info!("bootstrapping CPU: {info:#x?}");
-    early_per_cpu_setup(false);
+    early_per_cpu_setup(false, processor_id);
     later_per_cpu_setup();
     loop {
         x86_64::instructions::hlt();

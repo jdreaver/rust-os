@@ -22,7 +22,7 @@ pub(crate) struct BootInfo {
     rsdp_address: Option<VirtAddr>,
     pub(crate) framebuffer: &'static mut limine::LimineFramebuffer,
     pub(crate) _x2apic_enabled: bool,
-    pub(crate) _bootstrap_processor_lapic_id: u32,
+    pub(crate) bootstrap_processor_lapic_id: u32,
     pub(crate) _cpu_count: u64,
 }
 
@@ -78,7 +78,7 @@ pub(crate) fn boot_info() -> &'static BootInfo {
             rsdp_address: limine_rsdp_address(),
             framebuffer,
             _x2apic_enabled: smp_info.flags & 1 == 1,
-            _bootstrap_processor_lapic_id: smp_info.bsp_lapic_id,
+            bootstrap_processor_lapic_id: smp_info.bsp_lapic_id,
             _cpu_count: smp_info.cpu_count,
         }
     })
