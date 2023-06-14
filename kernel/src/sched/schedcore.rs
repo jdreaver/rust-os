@@ -240,6 +240,7 @@ pub(crate) fn run_scheduler() {
     // Give the next task some time slice
     next_task.remaining_slice.store(DEFAULT_TIME_SLICE);
 
+    let processor_id = percpu::get_per_cpu_processor_id();
     unsafe {
         if prev_task_id == next_task_id {
             // We're already running the next task, so just return.
@@ -247,13 +248,14 @@ pub(crate) fn run_scheduler() {
             return;
         }
         log::info!(
-                "SCHEDULER: Switching from '{}' {:?} SP: {:x?} (@ {prev_stack_ptr:?}) to '{}' {:?} SP: {next_stack_ptr:x?}",
-                prev_task.name,
-                prev_task.id,
-                *prev_stack_ptr,
-                next_task.name,
-                next_task.id,
-            );
+            "SCHEDULER: (CPU {}) Switching from '{}' {:?} SP: {:x?} (@ {prev_stack_ptr:?}) to '{}' {:?} SP: {next_stack_ptr:x?}",
+            processor_id,
+            prev_task.name,
+            prev_task.id,
+            *prev_stack_ptr,
+            next_task.name,
+            next_task.id,
+        );
         switch_to_task(prev_stack_ptr, next_stack_ptr, next_page_table);
     }
 }

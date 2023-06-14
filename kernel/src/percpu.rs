@@ -70,9 +70,9 @@ pub(crate) fn init_current_cpu(processor_id: ProcessorID) {
                 )
             })
     };
-    vars.processor_id = processor_id.0;
     let addr = VirtAddr::new(vars as *const GSRegisterVars as u64);
     x86_64::registers::model_specific::GsBase::write(addr);
+    set_per_cpu_processor_id(processor_id.0);
 }
 
 macro_rules! get_per_cpu {
