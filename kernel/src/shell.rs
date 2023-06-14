@@ -63,25 +63,26 @@ impl ShellBuffer {
 
 pub(crate) extern "C" fn run_serial_shell(_arg: *const ()) {
     serial_println!("Welcome to Rust OS! Here is a shell for you to use.");
-    let mut buffer = NEXT_COMMAND_BUFFER.lock();
-
     loop {
-        buffer.redraw_buffer();
+        NEXT_COMMAND_BUFFER.lock().redraw_buffer();
         loop {
             let c = serial::serial1_read_byte();
             match c {
                 b'\n' | b'\r' => {
                     serial_println!();
-                    let command = parse_command(&buffer.buffer);
+                    let command = {
+                        let buffer = NEXT_COMMAND_BUFFER.lock();
+                        parse_command(&buffer.buffer)
+                    };
                     if let Some(command) = command {
                         run_command(&command);
                     }
-                    buffer.clear();
+                    NEXT_COMMAND_BUFFER.lock().buffer.clear();
                     break;
                 }
                 // DEL char
                 127 => {
-                    if buffer.delete_char() {
+                    if NEXT_COMMAND_BUFFER.lock().delete_char() {
                         // Send backspace, space, and backspace again
                         serial::serial1_write_byte(8);
                         serial::serial1_write_byte(b' ');
@@ -90,14 +91,14 @@ pub(crate) extern "C" fn run_serial_shell(_arg: *const ()) {
                 }
                 // Printable char range
                 32..=126 => {
-                    if buffer.add_char(c) {
+                    if NEXT_COMMAND_BUFFER.lock().add_char(c) {
                         serial::serial1_write_byte(c);
                     }
                 }
                 // End of text
                 3 => {
                     serial_println!("^C");
-                    buffer.clear();
+                    NEXT_COMMAND_BUFFER.lock().clear();
                     break;
                 }
                 ansiterm::ANSI_ESCAPE => {

@@ -188,6 +188,7 @@ pub(crate) fn run_scheduler() {
     );
     // TODO: Re-enable this once preempt count issues are fixed.
     // if preempt_count > 0 {
+    //     log::warn!("preempt_count is {}, not preempting", preempt_count);
     //     return;
     // }
 

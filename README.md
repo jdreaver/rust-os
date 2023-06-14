@@ -100,8 +100,8 @@ make test
     - Global run queue, but scheduling runs per CPU. Only need the run queue lock when
     - Make sure preemption and IRQs are disabled while the scheduler is running on a CPU
     - Ensure each CPU gets its own tick setup! Can we hook the HPET up to multiple CPUs, or do we need to use LAPIC ticks?
-  - Fix preempt_count always being 2 for some reason and then reenable `preempt_count` check in scheduler
-    - I think we need to stop wrapping the scheduler in a spin lock first. We are constantly locking an unlocking it and it is hard to reason about.
+  - Re-enable preempt_count check
+    - Currently broken thing is `mount 2` then `ls /`. Problem is `preempt_count` is 2, _and_ we constantly call scheduler over and over super quickly.
 - Scheduler refactor:
   - Refactor killing and sleeping so we don't rely on never having spurious wakeups, and so we don't need to rely on `&mut self` for scheduler to immediately run scheduler just once (we should run scheduler in a loop in case of spurious wakeup).
 - Per CPU
