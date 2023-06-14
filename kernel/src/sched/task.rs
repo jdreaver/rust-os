@@ -8,7 +8,7 @@ use crate::hpet::Milliseconds;
 use crate::memory;
 use crate::sync::{AtomicEnum, AtomicInt, SpinLock, WaitCell};
 
-use super::schedcore::{force_unlock_scheduler, scheduler_lock};
+use super::schedcore::{force_unlock_scheduler, kill_current_task};
 use super::stack;
 
 /// All tasks in the system.
@@ -225,7 +225,7 @@ pub(super) extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *cons
 
     task_fn(arg);
 
-    scheduler_lock().kill_current_task(TaskExitCode::ExitSuccess);
+    kill_current_task(TaskExitCode::ExitSuccess);
 
     panic!("somehow returned to task_setup for dead task after running scheduler");
 }

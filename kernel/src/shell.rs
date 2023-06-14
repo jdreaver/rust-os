@@ -559,7 +559,7 @@ fn run_command(command: &Command) {
             );
         }
         Command::Exec => {
-            let task_id = sched::scheduler_lock().new_task(
+            let task_id = sched::new_task(
                 "dummy userspace",
                 sched::task_userspace_setup,
                 core::ptr::null(),
@@ -620,11 +620,11 @@ fn run_command(command: &Command) {
         }
         Command::Sleep(ms) => {
             serial_println!("Sleeping for {ms}");
-            sched::scheduler_lock().sleep_timeout(*ms);
+            sched::sleep_timeout(*ms);
             serial_println!("Slept for {ms}");
         }
         Command::Prime(PrimeCommand { sync, nth_prime }) => {
-            let task_id = sched::scheduler_lock().new_task(
+            let task_id = sched::new_task(
                 "calculate prime",
                 calculate_prime_task,
                 *nth_prime as *const (),
@@ -635,7 +635,7 @@ fn run_command(command: &Command) {
                 serial_println!("Task {task_id:?} finished! Exit code: {exit_code:?}");
             } else {
                 serial_println!("Task {task_id:?} is running in the background");
-                sched::scheduler_lock().run_scheduler();
+                sched::run_scheduler();
             }
         }
     }

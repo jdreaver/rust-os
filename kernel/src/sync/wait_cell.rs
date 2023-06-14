@@ -51,7 +51,7 @@ impl<T: Clone> WaitCell<T> {
             if let Some(message) = message {
                 return message;
             }
-            sched::scheduler_lock().go_to_sleep();
+            sched::go_to_sleep();
         }
     }
 }

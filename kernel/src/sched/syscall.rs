@@ -92,5 +92,5 @@ extern "C" fn syscall_handler_inner(rdi: u64, rsi: u64, rdx: u64, r10: u64, r8: 
     log::warn!("syscall handler! rdi: {rdi:#x}, rsi: {rsi:#x}, rdx: {rdx:#x}, r10: {r10:#x}, r8: {r8:#x}, r9: {r9:#x}");
 
     // Kill the task for now.
-    sched::scheduler_lock().kill_current_task(TaskExitCode::ExitSuccess);
+    sched::kill_current_task(TaskExitCode::ExitSuccess);
 }

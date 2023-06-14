@@ -54,7 +54,7 @@ fn common_external_interrupt_handler(vector: u8) {
 
     // Now that we have signaled the end of the interrupt, we are out of the
     // interrupt context. If we need to call the scheduler, do it.
-    sched::scheduler_lock().run_scheduler_if_needed();
+    sched::run_scheduler_if_needed();
 }
 
 fn default_external_interrupt_handler(vector: u8, interrupt_id: InterruptHandlerID) {
