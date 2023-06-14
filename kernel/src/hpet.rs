@@ -36,7 +36,6 @@ pub(crate) fn enable_periodic_timer_handler(
 #[repr(u8)]
 pub(crate) enum HPETTimerNumber {
     Tick = 0,
-    TestHPET = 1,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

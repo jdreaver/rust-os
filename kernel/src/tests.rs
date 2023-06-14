@@ -5,11 +5,7 @@ use core::fmt::Write;
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 use x86_64::structures::paging::{Size2MiB, Size4KiB};
 
-use crate::{
-    boot_info, hpet,
-    interrupts::{self, InterruptVector},
-    ioapic, memory, serial_println,
-};
+use crate::{boot_info, memory, serial_println};
 
 static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
 
@@ -107,22 +103,4 @@ pub(crate) fn run_misc_tests() {
 
     // Test custom panic handler
     // panic!("Some panic message");
-}
-
-pub(crate) fn test_hpet() {
-    hpet::enable_periodic_timer_handler(
-        123,
-        test_hpet_interrupt_handler,
-        ioapic::IOAPICIRQNumber::TestHPET,
-        hpet::HPETTimerNumber::TestHPET,
-        hpet::Milliseconds::new(1000),
-    );
-}
-
-fn test_hpet_interrupt_handler(
-    _vector: InterruptVector,
-    _handler_id: interrupts::InterruptHandlerID,
-) {
-    let ms_since_boot = hpet::elapsed_milliseconds();
-    serial_println!("Test HPET interrupt fired. Time since boot: {ms_since_boot}");
 }
