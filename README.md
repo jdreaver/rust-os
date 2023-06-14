@@ -102,6 +102,9 @@ make test
     - Ensure each CPU gets its own tick setup! Can we hook the HPET up to multiple CPUs, or do we need to use LAPIC ticks?
   - Re-enable preempt_count check
     - Currently broken thing is `mount 2` then `ls /`. Problem is `preempt_count` is 2, _and_ we constantly call scheduler over and over super quickly.
+      - Maybe we should panic if we try to `go_to_sleep` while we have a spin lock
+      - This is because we take a big lock on the filesystem, and then we take another lock on the `VirtioBlockDevice` driver, and while doing that we call `virtio_block_read(...).wait_sleep()`
+      - Fix here is to have actual Mutexes, not just spinlocks.
 - Scheduler refactor:
   - Refactor killing and sleeping so we don't rely on never having spurious wakeups, and so we don't need to rely on `&mut self` for scheduler to immediately run scheduler just once (we should run scheduler in a loop in case of spurious wakeup).
 - Per CPU
