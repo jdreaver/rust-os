@@ -26,8 +26,21 @@ impl<T> SpinLock<T> {
             _interrupt_guard: InterruptGuard {
                 needs_enabling: false,
             },
-            _preempt_guard: preempt_guard,
+            _preempt_guard: Some(preempt_guard),
         }
+    }
+
+    /// Internal function to take a lock but not mess with the preemption count.
+    /// Used in Mutexes.
+    pub(super) fn try_lock_allow_preempt(&self) -> Option<SpinLockGuard<'_, T>> {
+        let guard = self.mutex.try_lock()?;
+        Some(SpinLockGuard {
+            guard,
+            _interrupt_guard: InterruptGuard {
+                needs_enabling: false,
+            },
+            _preempt_guard: None,
+        })
     }
 
     /// Locks the mutex and disables interrupts while the lock is held. Restores
@@ -50,7 +63,7 @@ impl<T> SpinLock<T> {
             _interrupt_guard: InterruptGuard {
                 needs_enabling: saved_intpt_flag,
             },
-            _preempt_guard: preempt_guard,
+            _preempt_guard: Some(preempt_guard),
         }
     }
 
@@ -68,7 +81,7 @@ pub(crate) struct SpinLockGuard<'a, T: ?Sized + 'a> {
     _interrupt_guard: InterruptGuard,
     // We want to drop preemption after dropping the lock and enabling
     // interrupts.
-    _preempt_guard: PreemptGuard,
+    _preempt_guard: Option<PreemptGuard>,
 }
 
 impl<'a, T> Deref for SpinLockGuard<'a, T> {

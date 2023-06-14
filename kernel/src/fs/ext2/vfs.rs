@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use core::fmt::Debug;
 
 use crate::block::{BlockDevice, BlockDeviceDriver};
-use crate::sync::SpinLock;
+use crate::sync::Mutex;
 use crate::vfs;
 
 use super::file_system::FileSystem;
@@ -16,7 +16,7 @@ use super::superblock::{InodeNumber, OffsetBytes};
 /// VFS interface into an ext2 file system.
 #[derive(Debug)]
 pub(crate) struct VFSFileSystem<D> {
-    reader: Arc<SpinLock<FileSystem<D>>>,
+    reader: Arc<Mutex<FileSystem<D>>>,
 }
 
 unsafe impl<D: BlockDeviceDriver + Send> Send for VFSFileSystem<D> {}
@@ -24,14 +24,14 @@ unsafe impl<D: BlockDeviceDriver + Send> Send for VFSFileSystem<D> {}
 impl<D: BlockDeviceDriver + 'static> VFSFileSystem<D> {
     pub(crate) fn read(device: BlockDevice<D>) -> Self {
         let reader = FileSystem::read(device).expect("couldn't read ext2 filesystem!");
-        let reader = Arc::new(SpinLock::new(reader));
+        let reader = Arc::new(Mutex::new(reader));
         Self { reader }
     }
 }
 
 impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileSystem for VFSFileSystem<D> {
     fn read_root(&mut self) -> vfs::Inode {
-        let (inode, inode_number) = self.reader.lock_disable_interrupts().read_root();
+        let (inode, inode_number) = self.reader.lock().read_root();
         let reader = self.reader.clone();
         let vfs_inode = Box::new(VFSInode {
             reader,
@@ -51,7 +51,7 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileSystem for VFSFileSystem<D
 
 #[derive(Debug)]
 pub(crate) struct VFSInode<D> {
-    reader: Arc<SpinLock<FileSystem<D>>>,
+    reader: Arc<Mutex<FileSystem<D>>>,
     inode_number: InodeNumber,
     inode: Inode,
 }
@@ -64,7 +64,7 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for VFSInode<D> {
             self.inode
         );
 
-        let mut reader = self.reader.lock_disable_interrupts();
+        let mut reader = self.reader.lock();
 
         let block_size = usize::from(u16::from(reader.superblock().block_size()));
         let file_size = reader.superblock().inode_size(&self.inode) as usize;
@@ -90,7 +90,7 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for VFSInode<D> {
             self.inode
         );
 
-        let mut lock = self.reader.lock_disable_interrupts();
+        let mut lock = self.reader.lock();
 
         let mut written_bytes = 0;
         lock.iter_file_blocks(&self.inode, |_, mut block_buf| {
@@ -134,7 +134,7 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::DirectoryInode for VFSInode<D>
 
         let mut entries: Vec<Box<dyn vfs::DirectoryEntry>> = Vec::new();
         self.reader
-            .lock_disable_interrupts()
+            .lock()
             .iter_directory_blocks(&self.inode, |block| {
                 for entry in block.iter() {
                     let reader = self.reader.clone();
@@ -164,7 +164,7 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::DirectoryInode for VFSInode<D>
             self.inode
         );
 
-        let mut lock = self.reader.lock_disable_interrupts();
+        let mut lock = self.reader.lock();
         let (inode, inode_number) = lock.create_file(&self.inode, self.inode_number, name)?;
         let reader = self.reader.clone();
         Some(Box::new(Self {
@@ -177,7 +177,7 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::DirectoryInode for VFSInode<D>
 
 #[derive(Debug)]
 pub(crate) struct EXT2DirectoryEntry<D> {
-    reader: Arc<SpinLock<FileSystem<D>>>,
+    reader: Arc<Mutex<FileSystem<D>>>,
     inode_number: InodeNumber,
     name: String,
     entry_type: vfs::DirectoryEntryType,
@@ -194,7 +194,7 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::DirectoryEntry for EXT2Directo
 
     fn get_inode(&mut self) -> vfs::Inode {
         let inode_number = self.inode_number;
-        let Some(inode) = self.reader.lock_disable_interrupts().read_inode(inode_number) else {
+        let Some(inode) = self.reader.lock().read_inode(inode_number) else {
             panic!("couldn't read inode {inode_number:?} inside EXT2DiretoryEntry::get_inode");
         };
         let reader = self.reader.clone();

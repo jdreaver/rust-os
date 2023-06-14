@@ -4,11 +4,11 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::sync::{SpinLock, SpinLockGuard};
+use crate::sync::{Mutex, MutexGuard};
 
 use super::FilePath;
 
-static MOUNTED_ROOT_FILE_SYSTEM: SpinLock<Option<Box<dyn FileSystem + Send>>> = SpinLock::new(None);
+static MOUNTED_ROOT_FILE_SYSTEM: Mutex<Option<Box<dyn FileSystem + Send>>> = Mutex::new(None);
 
 pub(crate) fn mount_root_filesystem(fs: Box<dyn FileSystem + Send>) {
     MOUNTED_ROOT_FILE_SYSTEM.lock().replace(fs);
@@ -19,7 +19,7 @@ pub(crate) fn unmount_root_filesystem() {
 }
 
 pub(crate) fn root_filesystem_lock(
-) -> SpinLockGuard<'static, Option<Box<dyn FileSystem + Send + 'static>>> {
+) -> MutexGuard<'static, Option<Box<dyn FileSystem + Send + 'static>>> {
     MOUNTED_ROOT_FILE_SYSTEM.lock()
 }
 
