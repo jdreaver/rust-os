@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use x86_64::PhysAddr;
 
 use crate::hpet::Milliseconds;
-use crate::sync::{SpinLock, SpinLockInterruptGuard};
+use crate::sync::{SpinLock, SpinLockGuard};
 use crate::{percpu, tick};
 
 use super::task::{
@@ -21,7 +21,7 @@ static SCHEDULER: SpinLock<Scheduler> = SpinLock::new(Scheduler::new());
 static MULTITASKING_STARTED: AtomicBool = AtomicBool::new(false);
 
 /// Locks the scheduler and disables interrupts.
-pub(crate) fn scheduler_lock() -> SpinLockInterruptGuard<'static, Scheduler> {
+pub(crate) fn scheduler_lock() -> SpinLockGuard<'static, Scheduler> {
     SCHEDULER.lock_disable_interrupts()
 }
 
