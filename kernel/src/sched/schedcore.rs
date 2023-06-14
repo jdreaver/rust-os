@@ -82,6 +82,7 @@ impl RunQueue {
 
 extern "C" fn idle_task_start(_arg: *const ()) {
     loop {
+        run_scheduler_if_needed();
         x86_64::instructions::hlt();
     }
 }
