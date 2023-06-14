@@ -3,6 +3,7 @@ use core::fmt;
 use bitfield_struct::bitfield;
 
 use crate::acpi::ACPIInfo;
+use crate::interrupts::InterruptVector;
 use crate::register_struct;
 use crate::registers::RegisterRW;
 use crate::sync::InitCell;
@@ -14,13 +15,13 @@ pub(crate) fn init(acpi_info: &ACPIInfo) {
     IOAPIC.init(ioapic);
 }
 
-pub(crate) fn install_irq(interrupt_vector: u8, irq_entry: IOAPICIRQNumber) {
+pub(crate) fn install_irq(interrupt_vector: InterruptVector, irq_entry: IOAPICIRQNumber) {
     let ioapic = IOAPIC.get().expect("IOAPIC not initialized!");
 
     ioapic.write_ioredtbl(
         irq_entry as u8,
         IOAPICRedirectionTableRegister::new()
-            .with_interrupt_vector(interrupt_vector)
+            .with_interrupt_vector(interrupt_vector.0)
             .with_interrupt_mask(false)
             .with_delivery_mode(0) // Fixed
             .with_destination_mode(false) // Physical

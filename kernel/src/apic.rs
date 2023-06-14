@@ -1,7 +1,7 @@
 use bitfield_struct::bitfield;
 
 use crate::acpi::ACPIInfo;
-use crate::interrupts::SPURIOUS_INTERRUPT_VECTOR_INDEX;
+use crate::interrupts::{InterruptVector, SPURIOUS_INTERRUPT_VECTOR_INDEX};
 use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW, RegisterWO};
 use crate::sync::InitCell;
@@ -51,7 +51,7 @@ pub(crate) fn lapic_id() -> ProcessorID {
 /// Broadcast an interprocessor interrupt (IPI) to all processors.
 ///
 /// See "11.6 ISSUING INTERPROCESSOR INTERRUPTS"
-pub(crate) fn send_ipi_all_cpus(vector: u8) {
+pub(crate) fn send_ipi_all_cpus(vector: InterruptVector) {
     LOCAL_APIC
         .get()
         .expect("Local APIC not initialized")
@@ -63,7 +63,7 @@ pub(crate) fn send_ipi_all_cpus(vector: u8) {
                 .with_destination_mode(InterruptCommandDestinationMode::Logical)
                 .with_destination_shorthand(InterruptCommandDestinationShorthand::AllIncludingSelf)
                 .with_level(InterruptCommandLevel::Assert)
-                .with_vector(vector),
+                .with_vector(vector.0),
         );
 }
 

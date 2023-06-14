@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use bitflags::bitflags;
 
 use crate::apic::ProcessorID;
-use crate::interrupts::InterruptHandlerID;
+use crate::interrupts::{InterruptHandlerID, InterruptVector};
 use crate::memory::PhysicalBuffer;
 use crate::sync::{once_channel, OnceReceiver, OnceSender, SpinLock};
 
@@ -121,7 +121,7 @@ struct VirtIORNGRequest {
     sender: OnceSender<Vec<u8>>,
 }
 
-fn virtio_rng_interrupt(_vector: u8, _handler_id: InterruptHandlerID) {
+fn virtio_rng_interrupt(_vector: InterruptVector, _handler_id: InterruptHandlerID) {
     let mut lock = VIRTIO_RNG.lock_disable_interrupts();
     let rng = lock.as_mut().expect("VirtIO RNG not initialized");
 

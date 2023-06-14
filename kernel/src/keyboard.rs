@@ -2,7 +2,7 @@ use lazy_static::lazy_static;
 use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
 use x86_64::instructions::port::Port;
 
-use crate::interrupts::InterruptHandlerID;
+use crate::interrupts::{InterruptHandlerID, InterruptVector};
 use crate::sync::SpinLock;
 use crate::{interrupts, ioapic};
 
@@ -11,7 +11,7 @@ pub(crate) fn init_keyboard() {
     ioapic::install_irq(interrupt_vector, ioapic::IOAPICIRQNumber::Keyboard);
 }
 
-fn keyboard_interrupt_handler(_vector: u8, _handler_id: InterruptHandlerID) {
+fn keyboard_interrupt_handler(_vector: InterruptVector, _handler_id: InterruptHandlerID) {
     // https://wiki.osdev.org/%228042%22_PS/2_Controller#PS.2F2_Controller_IO_Ports
     const KEYBOARD_PORT: u16 = 0x60;
 

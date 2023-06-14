@@ -5,7 +5,7 @@ use core::mem;
 use spin::RwLock;
 
 use crate::apic::ProcessorID;
-use crate::interrupts::InterruptHandlerID;
+use crate::interrupts::{InterruptHandlerID, InterruptVector};
 use crate::memory::PhysicalBuffer;
 use crate::registers::RegisterRO;
 use crate::sync::{once_channel, OnceReceiver, OnceSender, SpinLock};
@@ -97,7 +97,7 @@ pub(crate) fn virtio_block_write(
     device.add_request(&BlockRequest::Write { sector, data_len }, Some(data))
 }
 
-fn virtio_block_interrupt(_vector: u8, handler_id: InterruptHandlerID) {
+fn virtio_block_interrupt(_vector: InterruptVector, handler_id: InterruptHandlerID) {
     let devices_lock = VIRTIO_BLOCK.read();
     let device: &mut VirtIOBlockDevice = &mut devices_lock
         .get(handler_id as usize)

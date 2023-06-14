@@ -3,6 +3,7 @@ use core::fmt;
 use bitfield_struct::bitfield;
 
 use crate::apic::ProcessorID;
+use crate::interrupts::InterruptVector;
 use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW};
 
@@ -230,13 +231,13 @@ impl MSIXTable {
 pub(crate) struct MSIXTableEntry(RawMSIXTableEntry);
 
 impl MSIXTableEntry {
-    pub(crate) fn set_interrupt_vector(self, processor_id: ProcessorID, vector: u8) {
+    pub(crate) fn set_interrupt_vector(self, processor_id: ProcessorID, vector: InterruptVector) {
         self.0
             .message_address()
             .write(MSIXMessageAddress::new(processor_id));
         self.0
             .message_data()
-            .write(MSIXMessageData::new().with_vector(vector));
+            .write(MSIXMessageData::new().with_vector(vector.0));
 
         // Un-mask the entry (default is masked!)
         self.0.vector_control().modify_mut(|vec| {

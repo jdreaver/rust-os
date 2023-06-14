@@ -91,7 +91,6 @@ make test
 
 ## TODO
 
-- Create `InterruptVector` newtype wrapper around `u8`. Way too many `u8`s flying around for interrupt vectors.
 - Multiprocessing (use multiple CPUs). This needs to be done ASAP or it will be very hard to debug in the future.
   - Linux has `NR_CPUS` as a config parameter and uses it to pre-populate static arrays. I like that idea. Can we use it to simplify per CPU data structures like the GDT and run queue?
     - We could have a macro to create an array of atomic values `NR_CPUS` in length, and some getter/setter methods based on the current CPU's processor ID.
@@ -109,6 +108,11 @@ make test
   - Refactor killing and sleeping so we don't rely on never having spurious wakeups, and so we don't need to rely on `&mut self` for scheduler to immediately run scheduler just once (we should run scheduler in a loop in case of spurious wakeup).
 - Per CPU
   - Have per CPU macros assert that types are correct.
+  - Arrays: have a helper macro to create a `MAX_CPUS`-sized array
+    - Have getter function that (in this order): disables preemption, gets current processor ID, gets the value in the array, and wraps it in a guard that will decrement preemption count when dropped.
+    - Ensure the guard function is not `Send` so it can't be sent across threads to another CPU on accident.
+    - Maybe have a helper to take locks for multiple CPUs in a consistent way to prevent deadlocks, like ordering by processor ID. (Linux scheduler code does this for per CPU run queues)
+    - Ensure array elements are cache aligned! We can use `#[repr(align(64))]` and just assert the alignment is >= 64 in the macros.
   - Encapsulation: it would be great to be able to have private per CPU vars. For example, a module could declare a CPU var, and the central `percpu` module ensures space gets allocated for it and it has an offset, but otherwise nothing is allowed to touch it outside of the module it is declared in.
   - Automatic conversion to/from primitive types. Allow loading `TaskId` directly instead of needing to use `u32`.
 - Userspace

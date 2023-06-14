@@ -15,19 +15,9 @@ const FIRST_EXTERNAL_INTERRUPT_VECTOR: usize = 32;
 /// This is how many interrupt vectors we have available in the IDT on x86 systems.
 const NUM_INTERRUPT_VECTORS: usize = 256;
 
-/// Macro to generate a stub interrupt handler for external interrupts that just
-/// calls the common interrupt handler with the vector.
-macro_rules! external_stub_interrupt_handler {
-    ($idt:ident $vector:literal) => {
-        paste! {
-            extern "x86-interrupt" fn [<_idt_entry_ $vector>](_: InterruptStackFrame) {
-                common_external_interrupt_handler($vector);
-            }
-
-            $idt[$vector].set_handler_fn([<_idt_entry_ $vector>]);
-        }
-    };
-}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub(crate) struct InterruptVector(pub(crate) u8);
 
 /// Common entrypoint to all external interrupts. The kernel creates stub
 /// handlers using `external_stub_interrupt_handler!` for every external
@@ -44,10 +34,10 @@ macro_rules! external_stub_interrupt_handler {
 /// - [Definition for `common_interrupt`](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/kernel/irq.c#L240)
 ///   - [`DEFINE_IDTENTRY_IRQ` def](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/include/asm/idtentry.h#L191)
 ///
-fn common_external_interrupt_handler(vector: u8) {
+fn common_external_interrupt_handler(vector: InterruptVector) {
     let &(interrupt_id, handler) = EXTERNAL_INTERRUPT_HANDLERS
         .lock()
-        .get(vector as usize)
+        .get(vector.0 as usize)
         .expect("Invalid interrupt vector");
     handler(vector, interrupt_id);
     apic::end_of_interrupt();
@@ -57,8 +47,8 @@ fn common_external_interrupt_handler(vector: u8) {
     sched::run_scheduler_if_needed();
 }
 
-fn default_external_interrupt_handler(vector: u8, interrupt_id: InterruptHandlerID) {
-    panic!("Unhandled external interrupt: vector: {vector}, interrupt_id: {interrupt_id}");
+fn default_external_interrupt_handler(vector: InterruptVector, interrupt_id: InterruptHandlerID) {
+    panic!("Unhandled external interrupt: {vector:?}, interrupt_id: {interrupt_id}");
 }
 
 /// This is passed to interrupt handler functions to disambiguate multiple IRQs
@@ -67,7 +57,7 @@ pub(crate) type InterruptHandlerID = u32;
 
 /// Function called by `common_external_interrupt_handler`. Installed with
 /// `install_interrupt`.
-pub(crate) type InterruptHandler = fn(vector: u8, InterruptHandlerID);
+pub(crate) type InterruptHandler = fn(vector: InterruptVector, InterruptHandlerID);
 
 /// Holds the interrupt handlers for external interrupts. This is a static
 /// because we need to be able to access it from the interrupt handlers, which
@@ -75,6 +65,20 @@ pub(crate) type InterruptHandler = fn(vector: u8, InterruptHandlerID);
 static EXTERNAL_INTERRUPT_HANDLERS: SpinLock<
     [(InterruptHandlerID, InterruptHandler); NUM_INTERRUPT_VECTORS],
 > = SpinLock::new([(0, default_external_interrupt_handler); NUM_INTERRUPT_VECTORS]);
+
+/// Macro to generate a stub interrupt handler for external interrupts that just
+/// calls the common interrupt handler with the vector.
+macro_rules! external_stub_interrupt_handler {
+    ($idt:ident $vector:literal) => {
+        paste! {
+            extern "x86-interrupt" fn [<_idt_entry_ $vector>](_: InterruptStackFrame) {
+                common_external_interrupt_handler(InterruptVector($vector));
+            }
+
+            $idt[$vector].set_handler_fn([<_idt_entry_ $vector>]);
+        }
+    };
+}
 
 lazy_static!(
     static ref IDT: InterruptDescriptorTable = {
@@ -161,7 +165,7 @@ pub(crate) const SPURIOUS_INTERRUPT_VECTOR_INDEX: u8 = 0xFF;
 /// interrupts need to be consistent across CPUs.
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
-pub(crate) enum ReservedInterruptVectors {
+enum ReservedInterruptVectors {
     /// Used for the timer interrupt on all CPUs,
     CPUTick = APIC_INTERRUPT_START_OFFSET,
 
@@ -169,26 +173,30 @@ pub(crate) enum ReservedInterruptVectors {
     LastReserved,
 }
 
+pub(crate) const CPU_TICK_INTERRUPT_VECTOR: InterruptVector =
+    InterruptVector(ReservedInterruptVectors::CPUTick as u8);
+
 static NEXT_OPEN_INTERRUPT_INDEX: AtomicU8 =
     AtomicU8::new(ReservedInterruptVectors::LastReserved as u8);
 
 /// Install an interrupt handler in the IDT. Uses the next open interrupt index
 /// and returns the used index.
 pub(crate) fn install_interrupt(
-    interrupt_index: Option<u8>,
+    interrupt_vector: Option<InterruptVector>,
     interrupt_id: InterruptHandlerID,
     handler: InterruptHandler,
-) -> u8 {
-    let interrupt_index = interrupt_index
-        .unwrap_or_else(|| NEXT_OPEN_INTERRUPT_INDEX.fetch_add(1, Ordering::Relaxed));
+) -> InterruptVector {
+    let interrupt_vector = interrupt_vector.unwrap_or_else(|| {
+        InterruptVector(NEXT_OPEN_INTERRUPT_INDEX.fetch_add(1, Ordering::Relaxed))
+    });
     assert!(
-        interrupt_index < SPURIOUS_INTERRUPT_VECTOR_INDEX,
+        interrupt_vector.0 < SPURIOUS_INTERRUPT_VECTOR_INDEX,
         "Ran out of interrupt vectors"
     );
 
-    EXTERNAL_INTERRUPT_HANDLERS.lock()[interrupt_index as usize] = (interrupt_id, handler);
+    EXTERNAL_INTERRUPT_HANDLERS.lock()[interrupt_vector.0 as usize] = (interrupt_id, handler);
 
-    interrupt_index
+    interrupt_vector
 }
 
 extern "x86-interrupt" fn divide_error_handler(stack_frame: InterruptStackFrame) {

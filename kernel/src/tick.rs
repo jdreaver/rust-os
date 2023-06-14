@@ -4,7 +4,7 @@ use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 
 use crate::hpet::Milliseconds;
-use crate::interrupts::ReservedInterruptVectors;
+use crate::interrupts::{InterruptVector, CPU_TICK_INTERRUPT_VECTOR};
 use crate::sync::SpinLock;
 use crate::{apic, hpet, interrupts, ioapic, sched};
 
@@ -33,15 +33,11 @@ pub(crate) fn global_init() {
 }
 
 pub(crate) fn per_cpu_init() {
-    interrupts::install_interrupt(
-        Some(ReservedInterruptVectors::CPUTick as u8),
-        0,
-        cpu_tick_handler,
-    );
+    interrupts::install_interrupt(Some(CPU_TICK_INTERRUPT_VECTOR), 0, cpu_tick_handler);
 }
 
 /// Handler for tick from the HPET. Broadcasts to all CPUs.
-fn tick_broadcast_handler(_vector: u8, _handler_id: interrupts::InterruptHandlerID) {
+fn tick_broadcast_handler(_vector: InterruptVector, _handler_id: interrupts::InterruptHandlerID) {
     // Iterate through all timers and fire off + remove ones that expired.
     TIMERS.lock().retain_mut(|timer| {
         if timer.expiration <= hpet::elapsed_milliseconds() {
@@ -53,10 +49,10 @@ fn tick_broadcast_handler(_vector: u8, _handler_id: interrupts::InterruptHandler
     });
 
     // Send a tick to all CPUs
-    apic::send_ipi_all_cpus(ReservedInterruptVectors::CPUTick as u8);
+    apic::send_ipi_all_cpus(CPU_TICK_INTERRUPT_VECTOR);
 }
 
-fn cpu_tick_handler(_vector: u8, _handler_id: interrupts::InterruptHandlerID) {
+fn cpu_tick_handler(_vector: InterruptVector, _handler_id: interrupts::InterruptHandlerID) {
     // Let the scheduler do accounting
     sched::scheduler_tick(TICK_MILLIS);
 }
