@@ -160,25 +160,25 @@ pub(crate) fn run_scheduler() {
 
     // Check preempt counter. If it's non-zero, then we're in a critical
     // section and we shouldn't preempt.
-    //
-    // TODO: For now this we compare against 1 because the scheduler is
-    // itself in a spinlock. Once we move it out of a spinlock we should
-    // compare to zero again.
     let preempt_count = percpu::get_per_cpu_preempt_count();
+    let current_task = current_task();
+    let task_id = current_task.id;
+    let processor_id = percpu::get_per_cpu_processor_id();
     assert!(
         preempt_count >= 0,
         "preempt_count is negative! Something bad happened"
     );
-    // TODO: Re-enable this once preempt count issues are fixed.
-    // if preempt_count > 0 {
-    //     log::warn!("preempt_count is {}, not preempting", preempt_count);
-    //     return;
-    // }
+    if preempt_count > 0 {
+        log::warn!(
+            "CPU {processor_id}: {task_id:?} preempt_count is {}, not preempting",
+            preempt_count
+        );
+        return;
+    }
 
     // If the previous task still has a time slice left, don't preempt it.
     // (Except for idle task. We don't care if that ran out of time.)
     let idle_task_id = TaskId(percpu::get_per_cpu_idle_task_id());
-    let current_task = current_task();
 
     let is_idle = current_task.id == idle_task_id;
     let is_ready = current_task.desired_state.load() == DesiredTaskState::ReadyToRun;

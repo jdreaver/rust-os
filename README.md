@@ -91,19 +91,6 @@ make test
 
 ## TODO
 
-- Multiprocessing (use multiple CPUs). This needs to be done ASAP or it will be very hard to debug in the future.
-  - Linux has `NR_CPUS` as a config parameter and uses it to pre-populate static arrays. I like that idea. Can we use it to simplify per CPU data structures like the GDT and run queue?
-    - We could have a macro to create an array of atomic values `NR_CPUS` in length, and some getter/setter methods based on the current CPU's processor ID.
-      - Make sure the array is padded so we don't share cache lines.
-      - Ensure that preemption or scheduling is disabled between fetching the CPU number/variable and when we are done using it
-  - Per CPU scheduling:
-    - Global run queue, but scheduling runs independently on each CPU. Just need to lock global queue when swapping the running task and getting the next task.
-    - Make sure preemption and IRQs are disabled while the scheduler is running on a CPU
-  - Re-enable preempt_count check
-    - Currently broken thing is `mount 2` then `ls /`. Problem is `preempt_count` is 2, _and_ we constantly call scheduler over and over super quickly.
-      - Maybe we should panic if we try to `go_to_sleep` while we have a spin lock
-      - This is because we take a big lock on the filesystem, and then we take another lock on the `VirtioBlockDevice` driver, and while doing that we call `virtio_block_read(...).wait_sleep()`
-      - Fix here is to have actual Mutexes, not just spinlocks.
 - Scheduler refactor:
   - Refactor killing and sleeping so we don't rely on never having spurious wakeups, and so we don't need to rely on `&mut self` for scheduler to immediately run scheduler just once (we should run scheduler in a loop in case of spurious wakeup).
 - Per CPU
