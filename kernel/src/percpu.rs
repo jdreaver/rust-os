@@ -76,9 +76,9 @@ pub(crate) fn init_current_cpu(processor_id: ProcessorID) {
 }
 
 macro_rules! get_per_cpu {
-    ($field:ident, $size:literal, $reg_class:ident, $type:ty) => {
+    ($vis:vis, $field:ident, $size:literal, $reg_class:ident, $type:ty) => {
         paste! {
-            pub(crate) fn [<get_per_cpu_ $field>]() -> $type {
+            $vis fn [<get_per_cpu_ $field>]() -> $type {
                 let field: $type;
                 unsafe {
                     asm!(
@@ -95,9 +95,9 @@ macro_rules! get_per_cpu {
 }
 
 macro_rules! set_per_cpu {
-    ($field:ident, $size:literal, $reg_class:ident, $type:ty) => {
+    ($vis:vis, $field:ident, $size:literal, $reg_class:ident, $type:ty) => {
         paste! {
-            pub(crate) fn [<set_per_cpu_ $field>](x: $type) {
+            $vis fn [<set_per_cpu_ $field>](x: $type) {
                 unsafe {
                     asm!(
                         concat!("mov gs:{0}, {1:", $size, "}"),
@@ -112,9 +112,9 @@ macro_rules! set_per_cpu {
 }
 
 macro_rules! inc_per_cpu {
-    ($field:ident, $size:literal, $type:ty) => {
+    ($vis:vis, $field:ident, $size:literal, $type:ty) => {
         paste! {
-            pub(crate) fn [<inc_per_cpu_ $field>]() {
+            $vis fn [<inc_per_cpu_ $field>]() {
                 unsafe {
                     asm!(
                         concat!("inc ", $size, " ptr gs:{}"),
@@ -128,9 +128,9 @@ macro_rules! inc_per_cpu {
 }
 
 macro_rules! dec_per_cpu {
-    ($field:ident, $size:literal, $type:ty) => {
+    ($vis:vis, $field:ident, $size:literal, $type:ty) => {
         paste! {
-            pub(crate) fn [<dec_per_cpu_ $field>]() {
+            $vis fn [<dec_per_cpu_ $field>]() {
                 unsafe {
                     asm!(
                         concat!("dec ", $size, " ptr gs:{}"),
@@ -144,57 +144,57 @@ macro_rules! dec_per_cpu {
 }
 
 macro_rules! get_per_cpu_1 {
-    ($field:ident, $type:ty) => {
-        get_per_cpu!($field, "", reg_byte, $type);
+    ($vis:vis, $field:ident, $type:ty) => {
+        get_per_cpu!($vis, $field, "", reg_byte, $type);
     };
 }
 
 macro_rules! set_per_cpu_1 {
-    ($field:ident, $type:ty) => {
-        set_per_cpu!($field, "", reg_byte, $type);
+    ($vis:vis, $field:ident, $type:ty) => {
+        set_per_cpu!($vis, $field, "", reg_byte, $type);
     };
 }
 
 macro_rules! get_per_cpu_4 {
-    ($field:ident, $type:ty) => {
-        get_per_cpu!($field, "e", reg, $type);
+    ($vis:vis, $field:ident, $type:ty) => {
+        get_per_cpu!($vis, $field, "e", reg, $type);
     };
 }
 
 macro_rules! set_per_cpu_4 {
-    ($field:ident, $type:ty) => {
-        set_per_cpu!($field, "e", reg, $type);
+    ($vis:vis, $field:ident, $type:ty) => {
+        set_per_cpu!($vis, $field, "e", reg, $type);
     };
 }
 
 macro_rules! inc_per_cpu_4 {
-    ($field:ident, $type:ty) => {
-        inc_per_cpu!($field, "dword", $type);
+    ($vis:vis, $field:ident, $type:ty) => {
+        inc_per_cpu!($vis, $field, "dword", $type);
     };
 }
 
 macro_rules! dec_per_cpu_4 {
-    ($field:ident, $type:ty) => {
-        dec_per_cpu!($field, "dword", $type);
+    ($vis:vis, $field:ident, $type:ty) => {
+        dec_per_cpu!($vis, $field, "dword", $type);
     };
 }
 
-get_per_cpu_1!(processor_id, u8);
-set_per_cpu_1!(processor_id, u8);
+get_per_cpu_1!(pub(crate), processor_id, u8);
+set_per_cpu_1!(pub(crate), processor_id, u8);
 
-get_per_cpu_1!(needs_reschedule, u8);
-set_per_cpu_1!(needs_reschedule, u8);
+get_per_cpu_1!(pub(crate), needs_reschedule, u8);
+set_per_cpu_1!(pub(crate), needs_reschedule, u8);
 
-get_per_cpu_4!(current_task_id, u32);
-set_per_cpu_4!(current_task_id, u32);
+get_per_cpu_4!(pub(crate), current_task_id, u32);
+set_per_cpu_4!(pub(crate), current_task_id, u32);
 
-get_per_cpu_4!(idle_task_id, u32);
-set_per_cpu_4!(idle_task_id, u32);
+get_per_cpu_4!(pub(crate), idle_task_id, u32);
+set_per_cpu_4!(pub(crate), idle_task_id, u32);
 
-get_per_cpu_4!(preempt_count, i32);
-set_per_cpu_4!(preempt_count, i32);
-inc_per_cpu_4!(preempt_count, i32);
-dec_per_cpu_4!(preempt_count, i32);
+get_per_cpu_4!(pub(crate), preempt_count, i32);
+set_per_cpu_4!(pub(crate), preempt_count, i32);
+inc_per_cpu_4!(pub(crate), preempt_count, i32);
+dec_per_cpu_4!(pub(crate), preempt_count, i32);
 
 /// Simple type that disables preemption while it is alive, and re-enables it
 /// when dropped.

@@ -91,8 +91,6 @@ make test
 
 ## TODO
 
-- Scheduler refactor:
-  - Refactor killing and sleeping so we don't rely on never having spurious wakeups, and so we don't need to rely on `&mut self` for scheduler to immediately run scheduler just once (we should run scheduler in a loop in case of spurious wakeup).
 - Per CPU
   - Have per CPU macros assert that types are correct.
   - Arrays: have a helper macro to create a `MAX_CPUS`-sized array
@@ -101,6 +99,7 @@ make test
     - Maybe have a helper to take locks for multiple CPUs in a consistent way to prevent deadlocks, like ordering by processor ID. (Linux scheduler code does this for per CPU run queues)
     - Ensure array elements are cache aligned! We can use `#[repr(align(64))]` and just assert the alignment is >= 64 in the macros.
   - Encapsulation: it would be great to be able to have private per CPU vars. For example, a module could declare a CPU var, and the central `percpu` module ensures space gets allocated for it and it has an offset, but otherwise nothing is allowed to touch it outside of the module it is declared in.
+    - Idea that might make this easier: all variables could take up 8 byte "slots" (they can't exceed 8 bytes of course). Then we just need to statically have slot offsets, which could be done in an enum, but we could codegen all of the getters/setters/inc/dec function in a module somewhere else.
   - Automatic conversion to/from primitive types. Allow loading `TaskId` directly instead of needing to use `u32`.
 - Userspace
   - Kernel stack swapping: ensure storing kernel stack is sound in the face of multiple CPUs. What if we store the kernel stack in GS, but while we are in userspace we get rescheduled to a different CPU? I think we need to always ensure the top of stack per CPU var is set before returning to userspace. Or maybe is needs to be set in scheduler?
@@ -137,6 +136,7 @@ make test
 - Serial port:
   - find a way to implement using `&mut` and locking without deadlocks from e.g. non-maskable interrupts, holding the lock in the shell while trying to debug print inside kernel code, etc.
   - Consider multiple serial ports: one that spits out logs from the kernel, and one dedicated to the shell.
+- Spurious wakeups: refactor killing and sleeping so we don't rely on never having spurious wakeups, and so we don't need to rely on `&mut self` for scheduler to immediately run scheduler just once (we should run scheduler in a loop in case of spurious wakeup).
 - ansiterm: move this to a separate crate with tests?
 - Task struct access: investigate not hiding all tasks (or just the current tasks) inside the big scheduler lock. Are there situations where it is okay to modify a task if the scheduler is running concurrently? Can we lock individual tasks? Is this inviting a deadlock?
   - For example, putting a task to sleep or waking it up. Is this bad to do concurrently with the scheduler? Maybe instead of calling this the "state" it can be thought of as a "state intent", which the scheduler should action next time it changes the task's scheduling. Wait queues and channels do this, but they need a scheduler lock under the hood.
