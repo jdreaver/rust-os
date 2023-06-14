@@ -7,7 +7,7 @@ use crate::sync::SpinLock;
 use crate::{interrupts, ioapic};
 
 pub(crate) fn init_keyboard() {
-    let interrupt_vector = interrupts::install_interrupt(1, keyboard_interrupt_handler);
+    let interrupt_vector = interrupts::install_interrupt(None, 1, keyboard_interrupt_handler);
     ioapic::install_irq(interrupt_vector, ioapic::IOAPICIRQNumber::Keyboard);
 }
 

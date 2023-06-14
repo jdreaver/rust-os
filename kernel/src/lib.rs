@@ -80,14 +80,14 @@ pub fn start() -> ! {
     // Finish bootstrapping current CPU
     later_per_cpu_setup();
 
-    // TODO: For now tick is just on the bootstrap CPU because it uses the HPET.
-    // Use LAPIC timers on each CPU instead.
-    tick::init();
-
     // Bootstrap other CPUs
     for mut entry in boot_info::limine_smp_entries() {
         entry.bootstrap_cpu(bootstrap_secondary_cpu);
     }
+
+    // TODO: Ensure that all CPUs have finished bootstrapping before continuing
+
+    tick::global_init();
 
     sched::start_multitasking("shell", shell::run_serial_shell, core::ptr::null::<()>());
 
@@ -102,6 +102,7 @@ fn early_per_cpu_setup(bootstrap_cpu: bool, processor_id: ProcessorID) {
     }
     interrupts::init_interrupts();
     percpu::init_current_cpu(processor_id);
+    tick::per_cpu_init();
 }
 
 fn global_setup(boot_info_data: &boot_info::BootInfo) {
@@ -131,7 +132,7 @@ fn global_setup(boot_info_data: &boot_info::BootInfo) {
     unsafe { acpi::init(boot_info_data.rsdp_physical_addr()) };
 
     let acpi_info = acpi::acpi_info();
-    apic::init_local_apic(acpi_info);
+    apic::global_init(acpi_info);
     ioapic::init(acpi_info);
     sched::global_init();
 
@@ -151,6 +152,7 @@ fn global_setup(boot_info_data: &boot_info::BootInfo) {
 }
 
 fn later_per_cpu_setup() {
+    apic::per_cpu_init();
     sched::per_cpu_init();
 }
 

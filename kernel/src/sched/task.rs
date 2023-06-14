@@ -54,10 +54,7 @@ impl Tasks {
 
     pub(crate) fn get_task_assert(&self, id: TaskId) -> Arc<Task> {
         self.get_task(id).map_or_else(
-            || {
-                log::warn!("here");
-                panic!("tried to fetch task ID {id:?} but it does not exist");
-            },
+            || panic!("tried to fetch task ID {id:?} but it does not exist"),
             |task| task,
         )
     }

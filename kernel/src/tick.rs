@@ -4,8 +4,9 @@ use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 
 use crate::hpet::Milliseconds;
+use crate::interrupts::ReservedInterruptVectors;
 use crate::sync::SpinLock;
-use crate::{hpet, interrupts, ioapic, sched};
+use crate::{apic, hpet, interrupts, ioapic, sched};
 
 /// Frequency of the global tick system.
 const TICK_HZ: u64 = 20;
@@ -16,7 +17,7 @@ const TICK_MILLIS: Milliseconds = Milliseconds::new(1000 / TICK_HZ);
 static TIMERS: SpinLock<VecDeque<Timer>> = SpinLock::new(VecDeque::new());
 
 #[allow(clippy::assertions_on_constants)]
-pub(crate) fn init() {
+pub(crate) fn global_init() {
     assert!(
         1000 % TICK_HZ == 0,
         "TICK_HZ must be a divisor of 1000 so we can evenly divide milliseconds into ticks"
@@ -24,14 +25,23 @@ pub(crate) fn init() {
 
     hpet::enable_periodic_timer_handler(
         0,
-        tick_handler,
+        tick_broadcast_handler,
         ioapic::IOAPICIRQNumber::Tick,
         hpet::HPETTimerNumber::Tick,
         TICK_MILLIS,
     );
 }
 
-fn tick_handler(_vector: u8, _handler_id: interrupts::InterruptHandlerID) {
+pub(crate) fn per_cpu_init() {
+    interrupts::install_interrupt(
+        Some(ReservedInterruptVectors::CPUTick as u8),
+        0,
+        cpu_tick_handler,
+    );
+}
+
+/// Handler for tick from the HPET. Broadcasts to all CPUs.
+fn tick_broadcast_handler(_vector: u8, _handler_id: interrupts::InterruptHandlerID) {
     // Iterate through all timers and fire off + remove ones that expired.
     TIMERS.lock().retain_mut(|timer| {
         if timer.expiration <= hpet::elapsed_milliseconds() {
@@ -42,6 +52,11 @@ fn tick_handler(_vector: u8, _handler_id: interrupts::InterruptHandlerID) {
         }
     });
 
+    // Send a tick to all CPUs
+    apic::send_ipi_all_cpus(ReservedInterruptVectors::CPUTick as u8);
+}
+
+fn cpu_tick_handler(_vector: u8, _handler_id: interrupts::InterruptHandlerID) {
     // Let the scheduler do accounting
     sched::scheduler_tick(TICK_MILLIS);
 }
