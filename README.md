@@ -92,6 +92,8 @@ make test
 ## TODO
 
 - Multiprocessing (use multiple CPUs). This needs to be done ASAP or it will be very hard to debug in the future.
+  - HPET/APIC: Use HPET to calibrate per CPU APIC timers, then use APIC timers for tick system (maybe for other timers too?)
+    - Or, in the short term, use the HPET tick to trigger all CPU ticks
   - Linux has `NR_CPUS` as a config parameter and uses it to pre-populate static arrays. I like that idea. Can we use it to simplify per CPU data structures like the GDT and run queue?
     - We could have a macro to create an array of atomic values `NR_CPUS` in length, and some getter/setter methods based on the current CPU's processor ID.
       - Make sure the array is padded so we don't share cache lines.

@@ -1,7 +1,6 @@
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::arch::asm;
-use core::sync::atomic::{AtomicBool, Ordering};
 use x86_64::PhysAddr;
 
 use crate::hpet::Milliseconds;
@@ -15,10 +14,6 @@ use super::task::{
 use super::{stack, syscall};
 
 static RUN_QUEUE: SpinLock<RunQueue> = SpinLock::new(RunQueue::new());
-
-/// Used to protect against accidentally calling scheduling functions that
-/// require a task context before we've started running tasks.
-static MULTITASKING_STARTED: AtomicBool = AtomicBool::new(false);
 
 /// Force unlocks the scheduler and re-enables interrupts. This is necessary in
 /// contexts where we switched to a task in the scheduler but we can't release
@@ -126,8 +121,6 @@ pub(crate) fn start_multitasking(
     init_task_start_fn: KernelTaskStartFunction,
     init_task_arg: *const (),
 ) {
-    MULTITASKING_STARTED.store(true, Ordering::Release);
-
     new_task(init_task_name, init_task_start_fn, init_task_arg);
 
     // Just a dummy location for switch_to_task to store the previous stack
@@ -147,11 +140,6 @@ pub(crate) fn new_task(
     start_fn: KernelTaskStartFunction,
     arg: *const (),
 ) -> TaskId {
-    assert!(
-        MULTITASKING_STARTED.load(Ordering::Relaxed),
-        "multi-tasking not initialized, but tasks_lock called"
-    );
-
     let id = TASKS
         .lock_disable_interrupts()
         .new_task(name, start_fn, arg);
@@ -269,10 +257,6 @@ pub(crate) fn run_scheduler_if_needed() {
 
 /// Function to run every time the kernel tick system ticks.
 pub(crate) fn scheduler_tick(time_between_ticks: Milliseconds) {
-    if !MULTITASKING_STARTED.load(Ordering::Acquire) {
-        return;
-    }
-
     // Deduct time from the currently running task's time slice.
     let current_task = current_task();
     let slice = current_task.remaining_slice.load();

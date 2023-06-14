@@ -80,6 +80,10 @@ pub fn start() -> ! {
     // Finish bootstrapping current CPU
     later_per_cpu_setup();
 
+    // TODO: For now tick is just on the bootstrap CPU because it uses the HPET.
+    // Use LAPIC timers on each CPU instead.
+    tick::init();
+
     // Bootstrap other CPUs
     for mut entry in boot_info::limine_smp_entries() {
         entry.bootstrap_cpu(bootstrap_secondary_cpu);
@@ -135,7 +139,6 @@ fn global_setup(boot_info_data: &boot_info::BootInfo) {
         hpet::init(acpi_info.hpet_info().base_address);
     };
 
-    tick::init();
     keyboard::init_keyboard();
 
     // Initialize VirtIO devices
