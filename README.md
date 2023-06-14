@@ -95,14 +95,16 @@ make test
   - Linux has `NR_CPUS` as a config parameter and uses it to pre-populate static arrays. I like that idea. Can we use it to simplify per CPU data structures like the GDT and run queue?
     - We could have a macro to create an array of atomic values `NR_CPUS` in length, and some getter/setter methods based on the current CPU's processor ID.
       - Make sure the array is padded so we don't share cache lines.
+      - Ensure that preemption or scheduling is disabled between fetching the CPU number/variable and when we are done using it
     - Make sure `NR_CPUS` is a `u8`, or at least matches `ProcessorID`'s underlying size.
       - In fact, move `ProcessorID` to this file.
     - Rename the existing `percpu` stuff to like "fast percpu" or "`GS` percpu" and use it to store the processor ID at the very least (I'm sure I'll find other uses for it)
     - Then the `percpu` stuff that uses `gs` can just be for optimizations. Honestly maybe we don't even need it? I could see an array of atomic values being just as useful. Hmm.
-  - Store current processor ID and maybe LAPIC ID in `percpu` variable so we don't have to ask LAPIC.
+  - Store current processor ID (which equals LAPIC ID) in `percpu` variable so we don't have to ask LAPIC.
   - Per CPU scheduling:
-    - Should each runqueue be a percpu var?
-    - Ensure each CPU gets its own tick
+    - Global run queue, but scheduling runs per CPU. Only need the run queue lock when
+    - Make sure preemption and IRQs are disabled while the scheduler is running on a CPU
+    - Ensure each CPU gets its own tick setup! Can we hook the HPET up to multiple CPUs, or do we need to use LAPIC ticks?
 - Scheduler refactor:
   - Rename `Scheduler` to `RunQueue`
   - Refactor killing and sleeping so we don't rely on never having spurious wakeups, and so we don't need to rely on `&mut self` for scheduler to immediately run scheduler just once (we should run scheduler in a loop in case of spurious wakeup).

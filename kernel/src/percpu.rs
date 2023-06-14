@@ -13,10 +13,11 @@ use core::mem::offset_of;
 use paste::paste;
 use x86_64::VirtAddr;
 
+/// Variables that are stored on the GS register.
 #[derive(Debug)]
 // repr(C) so offsets are stable, align(64) to prevent sharing cache lines
 #[repr(C, align(64))]
-pub(crate) struct PerCPUVars {
+struct GSRegisterVars {
     pub(crate) current_task_id: u32,
     pub(crate) idle_task_id: u32,
     pub(crate) syscall_top_of_kernel_stack: u64,
@@ -24,12 +25,12 @@ pub(crate) struct PerCPUVars {
 
 /// Initializes per CPU storage on the current CPU.
 pub(crate) fn init_current_cpu() {
-    let vars = Box::new(PerCPUVars {
+    let vars = Box::new(GSRegisterVars {
         current_task_id: 0,
         idle_task_id: 0,
         syscall_top_of_kernel_stack: 0,
     });
-    let addr = VirtAddr::new(Box::leak(vars) as *mut PerCPUVars as u64);
+    let addr = VirtAddr::new(Box::leak(vars) as *mut GSRegisterVars as u64);
     x86_64::registers::model_specific::GsBase::write(addr);
 }
 
@@ -42,7 +43,7 @@ macro_rules! get_per_cpu {
                     asm!(
                         concat!("mov {0:", $size, "}, gs:{1}"),
                         out(reg) field,
-                        const offset_of!(PerCPUVars, $field),
+                        const offset_of!(GSRegisterVars, $field),
                         options(nomem, nostack, preserves_flags),
                     );
                 }
@@ -59,7 +60,7 @@ macro_rules! set_per_cpu {
                 unsafe {
                     asm!(
                         concat!("mov gs:{0}, {1:", $size, "}"),
-                        const offset_of!(PerCPUVars, $field),
+                        const offset_of!(GSRegisterVars, $field),
                         in(reg) x,
                         options(nomem, nostack, preserves_flags),
                     );
@@ -88,7 +89,7 @@ get_per_cpu_4!(idle_task_id, u32);
 set_per_cpu_4!(idle_task_id, u32);
 
 pub(crate) const PER_CPU_SYSCALL_TOP_OF_KERNEL_STACK: u64 =
-    offset_of!(PerCPUVars, syscall_top_of_kernel_stack) as u64;
+    offset_of!(GSRegisterVars, syscall_top_of_kernel_stack) as u64;
 // get_per_cpu!(syscall_top_of_kernel_stack, u64);
 // set_per_cpu!(syscall_top_of_kernel_stack, u64);
 
@@ -100,7 +101,7 @@ pub(crate) const PER_CPU_SYSCALL_TOP_OF_KERNEL_STACK: u64 =
 //     unsafe {
 //         asm!(
 //             "inc qword ptr gs:{}",
-//             const offset_of!(PerCPUVars, test),
+//             const offset_of!(GSRegisterVars, test),
 //             options(nomem, nostack, preserves_flags),
 //         );
 //     }
