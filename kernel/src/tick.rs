@@ -4,7 +4,7 @@ use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 
 use crate::hpet::Milliseconds;
-use crate::interrupts::{InterruptVector, CPU_TICK_INTERRUPT_VECTOR};
+use crate::interrupts::{InterruptVector, ReservedInterruptVector};
 use crate::sync::SpinLock;
 use crate::{apic, hpet, interrupts, ioapic, sched};
 
@@ -33,7 +33,11 @@ pub(crate) fn global_init() {
 }
 
 pub(crate) fn per_cpu_init() {
-    interrupts::install_interrupt(Some(CPU_TICK_INTERRUPT_VECTOR), 0, cpu_tick_handler);
+    interrupts::install_interrupt_reserved_vector(
+        ReservedInterruptVector::CPUTick,
+        0,
+        cpu_tick_handler,
+    );
 }
 
 /// Handler for tick from the HPET. Broadcasts to all CPUs.
@@ -49,7 +53,7 @@ fn tick_broadcast_handler(_vector: InterruptVector, _handler_id: interrupts::Int
     });
 
     // Send a tick to all CPUs
-    apic::send_ipi_all_cpus(CPU_TICK_INTERRUPT_VECTOR);
+    apic::send_ipi_all_cpus(InterruptVector(ReservedInterruptVector::CPUTick as u8));
 }
 
 fn cpu_tick_handler(_vector: InterruptVector, _handler_id: interrupts::InterruptHandlerID) {

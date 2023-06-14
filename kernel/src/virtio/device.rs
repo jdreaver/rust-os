@@ -182,7 +182,7 @@ where
             .pci_type0_config()
             .msix_config()
             .expect("failed to get MSIX config for VirtIO device");
-        let interrupt_vector = interrupts::install_interrupt(None, handler_id, handler);
+        let interrupt_vector = interrupts::install_interrupt_next_vector(handler_id, handler);
         let table_entry = msix.table_entry(msix_table_index as usize);
         table_entry.set_interrupt_vector(processor_id, interrupt_vector);
         msix.enable();

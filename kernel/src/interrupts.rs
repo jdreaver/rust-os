@@ -165,7 +165,7 @@ pub(crate) const SPURIOUS_INTERRUPT_VECTOR_INDEX: u8 = 0xFF;
 /// interrupts need to be consistent across CPUs.
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
-enum ReservedInterruptVectors {
+pub(crate) enum ReservedInterruptVector {
     /// Used for the timer interrupt on all CPUs,
     CPUTick = APIC_INTERRUPT_START_OFFSET,
 
@@ -173,15 +173,12 @@ enum ReservedInterruptVectors {
     LastReserved,
 }
 
-pub(crate) const CPU_TICK_INTERRUPT_VECTOR: InterruptVector =
-    InterruptVector(ReservedInterruptVectors::CPUTick as u8);
-
 static NEXT_OPEN_INTERRUPT_INDEX: AtomicU8 =
-    AtomicU8::new(ReservedInterruptVectors::LastReserved as u8);
+    AtomicU8::new(ReservedInterruptVector::LastReserved as u8);
 
 /// Install an interrupt handler in the IDT. Uses the next open interrupt index
 /// and returns the used index.
-pub(crate) fn install_interrupt(
+fn install_interrupt(
     interrupt_vector: Option<InterruptVector>,
     interrupt_id: InterruptHandlerID,
     handler: InterruptHandler,
@@ -197,6 +194,25 @@ pub(crate) fn install_interrupt(
     EXTERNAL_INTERRUPT_HANDLERS.lock()[interrupt_vector.0 as usize] = (interrupt_id, handler);
 
     interrupt_vector
+}
+
+pub(crate) fn install_interrupt_next_vector(
+    interrupt_id: InterruptHandlerID,
+    handler: InterruptHandler,
+) -> InterruptVector {
+    install_interrupt(None, interrupt_id, handler)
+}
+
+pub(crate) fn install_interrupt_reserved_vector(
+    interrupt_vector: ReservedInterruptVector,
+    interrupt_id: InterruptHandlerID,
+    handler: InterruptHandler,
+) {
+    install_interrupt(
+        Some(InterruptVector(interrupt_vector as u8)),
+        interrupt_id,
+        handler,
+    );
 }
 
 extern "x86-interrupt" fn divide_error_handler(stack_frame: InterruptStackFrame) {

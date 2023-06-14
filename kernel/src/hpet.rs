@@ -22,7 +22,7 @@ pub(crate) fn enable_periodic_timer_handler(
     timer_number: HPETTimerNumber,
     interval: Milliseconds,
 ) {
-    let interrupt_vector = interrupts::install_interrupt(None, handler_id, handler);
+    let interrupt_vector = interrupts::install_interrupt_next_vector(handler_id, handler);
     ioapic::install_irq(interrupt_vector, ioapic_irq_number);
 
     let hpet = HPET.get().expect("HPET not initialized");
