@@ -91,6 +91,15 @@ make test
 
 ## TODO
 
+- Memory management
+  - Split up `memory.rs` into `physical`, `heap`, and `paging`
+  - Replace `x86_64` crate page table management with our own
+    - Make a doc like <https://www.kernel.org/doc/Documentation/x86/x86_64/mm.txt>, and perhaps a static array of regions that other modules use
+    - Hard-code the expected kernel offset and direct map memory offset from limine and assert it is what we expect
+    - Abandon the default limine memory mapping and making our own
+    - Map all physical memory starting at `0xffff_8000_0000_0000`. Limine just does 4 GiB, but make sure to do it all.
+    - Consider a `KernelAddress` that wraps `VirtAddr` and can be converted to `PhysAddr` by just subtracting hard-coded offset (`0xffff_8000_0000_0000`)
+  - Make it trivial to create a userspace page table. Ensure the entire top half of kernel page table is filled (or at least all memory areas we care about!), clone the whole thing, and then zero out bottom half. Then fill in with userspace segments.
 - Userspace
   - Set up and execute ELF for real in `task_userspace_setup`. Map segments to memory, make a stack, use real start location, etc.
     - Use a fresh page table!
@@ -153,12 +162,6 @@ make test
   - Consider using per CPU for storing the currently running task instead of having a Vec of those in `Scheduler`
     - The "current task" is only valid in the current thread. We need to wrap it in a type that is not `Send` or `Sync`; we can't just return a `&'static` ref (or maybe we can if we make sa
 - Stack size: figure out why stacks need to be so large when compiling in debug mode. Is Rust putting a ton of debug info on the stack?
-- Memory mapping
-  - Make a doc like <https://www.kernel.org/doc/Documentation/x86/x86_64/mm.txt>, and perhaps a static array of regions that other modules use
-  - Hard-code the expected kernel offset and direct map memory offset from limine and assert it is what we expect
-  - Consider abandoning the default limine memory mapping and making our own.
-  - Map all physical memory starting at `0xffff_8000_0000_0000`. Limine just does 4 GiB, but make sure to do it all
-  - Consider a `KernelAddress` that wraps `VirtAddr` and can be converted to `PhysAddr` by just subtracting
 - Synchronization primitives
   - Mutex (not spinlock "mutex") that handles sleeping and waking
     - We can use `WaitQueue` along with `send_single_consumer` for wakeups. (The primary lock mechanism is still an atomic bool)

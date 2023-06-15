@@ -4,8 +4,8 @@ use core::ptr;
 use bitmap_alloc::{bootstrap_allocator, BitmapAllocator, MemoryRegion};
 use x86_64::structures::paging::mapper::{MapToError, Translate, UnmapError};
 use x86_64::structures::paging::{
-    FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTable, PageTableFlags, PhysFrame,
-    Size4KiB,
+    FrameAllocator, FrameDeallocator, Mapper, OffsetPageTable, Page, PageSize, PageTable,
+    PageTableFlags, PhysFrame, Size4KiB,
 };
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -206,6 +206,21 @@ unsafe impl<S: PageSize> FrameAllocator<S> for PhysicalMemoryAllocator<'_> {
         let frame_address = PhysAddr::new(frame_page as u64 * PAGE_SIZE as u64);
         let frame: PhysFrame<S> = PhysFrame::containing_address(frame_address);
         Some(frame)
+    }
+}
+
+impl<S: PageSize> FrameDeallocator<S> for PhysicalMemoryAllocator<'_> {
+    unsafe fn deallocate_frame(&mut self, frame: PhysFrame<S>) {
+        assert!(
+            S::SIZE as usize % PAGE_SIZE == 0,
+            "frame size {:?} must be a multiple of page size {}",
+            S::SIZE,
+            PAGE_SIZE
+        );
+        let num_pages = S::SIZE as usize / PAGE_SIZE;
+        let frame_page = frame.start_address().as_u64() / PAGE_SIZE as u64;
+        self.allocator
+            .free_contiguous(frame_page as usize, num_pages);
     }
 }
 
