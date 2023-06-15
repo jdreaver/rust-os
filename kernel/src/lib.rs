@@ -68,6 +68,7 @@ pub(crate) mod virtio;
 
 use core::sync::atomic::{AtomicU8, Ordering};
 
+use alloc::string::String;
 use apic::ProcessorID;
 
 pub fn start() -> ! {
@@ -96,7 +97,11 @@ pub fn start() -> ! {
 
     tick::global_init();
 
-    sched::start_multitasking("shell", shell::run_serial_shell, core::ptr::null::<()>());
+    sched::start_multitasking(
+        String::from("shell"),
+        shell::run_serial_shell,
+        core::ptr::null::<()>(),
+    );
 
     panic!("ERROR: ended multi-tasking");
 }

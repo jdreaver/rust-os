@@ -539,7 +539,7 @@ fn run_command(command: &Command) {
         }
         Command::Exec => {
             let task_id = sched::new_task(
-                "dummy userspace",
+                String::from("dummy userspace"),
                 sched::task_userspace_setup,
                 core::ptr::null(),
             );
@@ -604,7 +604,7 @@ fn run_command(command: &Command) {
         }
         Command::Prime(PrimeCommand::Sync { nth_prime }) => {
             let task_id = sched::new_task(
-                "calculate prime",
+                format!("prime sync {nth_prime}"),
                 calculate_prime_task,
                 *nth_prime as *const (),
             );
@@ -617,9 +617,9 @@ fn run_command(command: &Command) {
             num_processes,
         }) => {
             serial_println!("spawning {num_processes} processes to calculate {nth_prime}th prime");
-            for _ in 0..*num_processes {
+            for i in 0..*num_processes {
                 sched::new_task(
-                    "calculate prime",
+                    format!("prime async {nth_prime} {i}"),
                     calculate_prime_task,
                     *nth_prime as *const (),
                 );

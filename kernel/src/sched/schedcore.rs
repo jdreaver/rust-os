@@ -1,4 +1,5 @@
 use alloc::collections::VecDeque;
+use alloc::string::String;
 use alloc::sync::Arc;
 use core::arch::asm;
 use x86_64::PhysAddr;
@@ -95,8 +96,9 @@ pub(crate) fn per_cpu_init() {
     syscall::syscall_init();
 
     // Set the current CPU's idle task.
+    let processor_id = percpu::get_per_cpu_processor_id();
     let idle_task_id = TASKS.lock_disable_interrupts().new_task(
-        "__IDLE_TASK__",
+        format!("CPU {processor_id} __IDLE_TASK__"),
         idle_task_start,
         core::ptr::null(),
     );
@@ -118,7 +120,7 @@ pub(crate) fn current_task() -> Arc<Task> {
 /// Switches from the bootstrap code, which isn't a task, to the first actual
 /// kernel task.
 pub(crate) fn start_multitasking(
-    init_task_name: &'static str,
+    init_task_name: String,
     init_task_start_fn: KernelTaskStartFunction,
     init_task_arg: *const (),
 ) {
@@ -141,11 +143,7 @@ pub(crate) fn start_multitasking(
     }
 }
 
-pub(crate) fn new_task(
-    name: &'static str,
-    start_fn: KernelTaskStartFunction,
-    arg: *const (),
-) -> TaskId {
+pub(crate) fn new_task(name: String, start_fn: KernelTaskStartFunction, arg: *const ()) -> TaskId {
     let id = TASKS
         .lock_disable_interrupts()
         .new_task(name, start_fn, arg);

@@ -1,4 +1,5 @@
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -31,7 +32,7 @@ impl Tasks {
 
     pub(super) fn new_task(
         &mut self,
-        name: &'static str,
+        name: String,
         start_fn: KernelTaskStartFunction,
         arg: *const (),
     ) -> TaskId {
@@ -77,7 +78,7 @@ impl Tasks {
 #[derive(Debug)]
 pub(crate) struct Task {
     pub(super) id: TaskId,
-    pub(super) name: &'static str,
+    pub(super) name: String,
     pub(super) kernel_stack_pointer: TaskKernelStackPointer,
     pub(super) desired_state: AtomicEnum<u8, DesiredTaskState>,
     pub(super) exit_wait_cell: WaitCell<TaskExitCode>,
@@ -111,7 +112,7 @@ impl Task {
     /// Create a new task with the given ID and kernel stack pointer.
     pub(super) fn new(
         id: TaskId,
-        name: &'static str,
+        name: String,
         start_fn: KernelTaskStartFunction,
         arg: *const (),
     ) -> Self {
