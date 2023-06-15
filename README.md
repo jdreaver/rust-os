@@ -93,7 +93,7 @@ make test
 
 - Arc memory leak detection:
   - Calling `run_scheduler()` (or more specifically `switch_to_task`) while holding an `Arc` reference (especially `Arc<Task>`) can cause a memory leak because we might switch away from the given task forever. Currently I manually `drop` things before calling these functions. Is there a way I could make calling `run_scheduler` basically impossible?
-  - Is there a way I can assert that an `Arc<Task>` was really dropped? I tried adding an assert in `delete_task` but apparently there was a legitimate holder of the task left. Maybe try again and hunt that holder down?
+  - Find a way to detect leaked tasks, or maybe debug `Arc` leaks in general.
 - Per CPU
   - Have per CPU macros assert that types are correct.
   - Arrays: have a helper macro to create a `MAX_CPUS`-sized array

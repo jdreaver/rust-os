@@ -66,7 +66,10 @@ impl Tasks {
     }
 
     pub(super) fn delete_task(&mut self, id: TaskId) {
-        self.tasks.remove(&id);
+        assert!(
+            self.tasks.remove(&id).is_some(),
+            "tried to delete task ID {id:?} but it does not exist"
+        );
     }
 }
 
