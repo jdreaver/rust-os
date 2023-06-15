@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use core::arch::asm;
 
 use x86_64::registers::rflags::RFlags;
@@ -5,14 +6,39 @@ use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::{Page, PageTableFlags, PhysFrame};
 use x86_64::VirtAddr;
 
-use crate::{gdt, memory, percpu};
+use crate::{elf, gdt, memory, percpu, vfs};
 
 static DUMMY_USERSPACE_STACK: &[u8] = &[0; 4096];
 
 /// Kernel function that is called when we are starting a userspace task. This
 /// is the "entrypoint" to a userspace task, and performs some setup before
 /// actually jumping to userspace.
-pub(crate) extern "C" fn task_userspace_setup(_arg: *const ()) {
+pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
+    let path: Box<vfs::FilePath> = unsafe { Box::from_raw(arg as *mut vfs::FilePath) };
+
+    let inode = match vfs::get_path_inode(&path) {
+        Ok(inode) => inode,
+        Err(e) => {
+            log::warn!("Failed to get inode for path: {e:?}");
+            return;
+        }
+    };
+
+    let vfs::InodeType::File(mut file) = inode.inode_type else {
+        log::warn!("Path {path} not a file");
+        return;
+    };
+
+    let bytes = file.read();
+    let elf_exe = match elf::ElfExecutableHeader::parse(&bytes) {
+        Ok(exe) => exe,
+        Err(e) => {
+            log::warn!("Failed to parse ELF: {e:?}");
+            return;
+        }
+    };
+    log::info!("ELF header: {:#?}", elf_exe);
+
     // TODO: This is currently a big fat hack
 
     let instruction_ptr = dummy_hacky_userspace_task as usize;

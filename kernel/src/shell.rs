@@ -6,7 +6,6 @@ use core::fmt;
 use uefi::table::{Runtime, SystemTable};
 
 use crate::block;
-use crate::elf;
 use crate::fs::{ext2, sysfs};
 use crate::hpet::Milliseconds;
 use crate::sync::SpinLock;
@@ -144,8 +143,7 @@ enum Command {
     Unmount,
     Ls(FilePath),
     Cat(FilePath),
-    Elf(FilePath),
-    Exec,
+    Exec(FilePath),
     WriteToFile { path: FilePath, content: String },
     FATBIOS { device_id: usize },
     Timer(Milliseconds),
@@ -268,11 +266,10 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
             let path = parse_next_word(&mut words, "path", "cat <path>")?;
             Some(Command::Cat(path))
         }
-        "elf" => {
-            let path = parse_next_word(&mut words, "path", "elf <path>")?;
-            Some(Command::Elf(path))
+        "exec" => {
+            let path = parse_next_word(&mut words, "path", "exec <path>")?;
+            Some(Command::Exec(path))
         }
-        "exec" => Some(Command::Exec),
         "write-to-file" => {
             let path = parse_next_word(&mut words, "path", "write-to-file <path> <content>")?;
             let content = parse_next_word(&mut words, "content", "write-to-file <path> <content>")?;
@@ -490,7 +487,13 @@ fn run_command(command: &Command) {
         }
         Command::Ls(path) => {
             serial_println!("ls: {path:?}");
-            let Some(inode) = get_path_inode(path) else { return; };
+            let inode = match vfs::get_path_inode(path) {
+                Ok(inode) => inode,
+                Err(e) => {
+                    log::warn!("Failed to get inode for path: {e:?}");
+                    return;
+                }
+            };
 
             let vfs::InodeType::Directory(mut dir) = inode.inode_type else {
                 serial_println!("Not a directory");
@@ -508,7 +511,13 @@ fn run_command(command: &Command) {
         }
         Command::Cat(path) => {
             serial_println!("cat: {path:?}");
-            let Some(inode) = get_path_inode(path) else { return; };
+            let inode = match vfs::get_path_inode(path) {
+                Ok(inode) => inode,
+                Err(e) => {
+                    log::warn!("Failed to get inode for path: {e:?}");
+                    return;
+                }
+            };
 
             let vfs::InodeType::File(mut file) = inode.inode_type else {
                 serial_println!("Not a file");
@@ -518,37 +527,19 @@ fn run_command(command: &Command) {
             let bytes = file.read();
             serial_println!("{}", String::from_utf8_lossy(&bytes));
         }
-        Command::Elf(path) => {
-            serial_println!("elf: {path:?}");
-            let Some(inode) = get_path_inode(path) else { return; };
-
-            let vfs::InodeType::File(mut file) = inode.inode_type else {
-                serial_println!("Not a file");
-                return;
-            };
-
-            let bytes = file.read();
-            let elf_exe = match elf::ElfExecutableHeader::parse(&bytes) {
-                Ok(exe) => exe,
-                Err(e) => {
-                    serial_println!("Failed to parse ELF: {e:?}");
-                    return;
-                }
-            };
-            serial_println!("ELF header: {:#?}", elf_exe);
-        }
-        Command::Exec => {
+        Command::Exec(path) => {
+            let path_ptr: *mut FilePath = Box::into_raw(Box::new(path.clone()));
             let task_id = sched::new_task(
                 String::from("dummy userspace"),
                 sched::task_userspace_setup,
-                core::ptr::null(),
+                path_ptr as *const (),
             );
             serial_println!("Waiting for userspace task {task_id:?} to finish...");
             let exit_code = sched::wait_on_task(task_id);
             serial_println!("Task {task_id:?} finished! Exit code: {exit_code:?}");
         }
         Command::WriteToFile { path, content } => {
-            let mut file = if let Some(inode) = get_path_inode(path) {
+            let mut file = if let Ok(inode) = vfs::get_path_inode(path) {
                 let vfs::InodeType::File(file) = inode.inode_type else {
                     serial_println!("Not a file");
                     return;
@@ -561,9 +552,12 @@ fn run_command(command: &Command) {
                     return;
                 };
 
-                let Some(parent_inode) = get_path_inode(&parent_path)  else {
-                    serial_println!("Parent directory '{parent_path}' not found");
-                    return;
+                let parent_inode = match vfs::get_path_inode(path) {
+                    Ok(inode) => inode,
+                    Err(e) => {
+                        log::warn!("Parent directory '{parent_path}' not found: {e:?}");
+                        return;
+                    }
                 };
 
                 let vfs::InodeType::Directory(mut parent_dir) = parent_inode.inode_type else {
@@ -656,22 +650,4 @@ fn naive_nth_prime(n: usize) -> usize {
             }
         }
     }
-}
-
-fn get_path_inode(path: &vfs::FilePath) -> Option<vfs::Inode> {
-    let mut lock = vfs::root_filesystem_lock();
-    let Some(filesystem) = lock.as_mut() else {
-        serial_println!("No filesystem mounted. Run 'mount <device_id>' first.");
-        return None;
-    };
-    if !path.absolute {
-        serial_println!("Path must be absolute. Got {}", path);
-        return None;
-    }
-
-    let Some(inode) = filesystem.traverse_path(path) else {
-        serial_println!("No such file or directory: {}", path);
-        return None;
-    };
-    Some(inode)
 }

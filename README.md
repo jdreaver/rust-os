@@ -91,9 +91,24 @@ make test
 
 ## TODO
 
-- Arc memory leak detection:
-  - Calling `run_scheduler()` (or more specifically `switch_to_task`) while holding an `Arc` reference (especially `Arc<Task>`) can cause a memory leak because we might switch away from the given task forever. Currently I manually `drop` things before calling these functions. Is there a way I could make calling `run_scheduler` basically impossible?
-  - Find a way to detect leaked tasks, or maybe debug `Arc` leaks in general.
+- Userspace
+  - Set up and execute ELF for real in `task_userspace_setup`. Map segments to memory, make a stack, use real start location, etc.
+    - Use a fresh page table!
+      - Copy all of the higher half entries for the kernel page table.
+      - Make a TODO to ensure this is robust. Perhaps we need at least some dummy entries for the higher half so when they _do_ get mapped all of the process page table higher halfs point to the same L3 tables
+    - Drop any memory we allocated for task, like task segments
+      - Also drop any intermediate page tables we created.
+        - <https://docs.rs/x86_64/0.14.10/x86_64/structures/paging/mapper/trait.CleanUp.html#tymethod.clean_up_addr_range>
+      - Would it be easier to create an arena holding a process's memory so we could drop it all?
+  - Ensure that _every_ time we go to userspace, especially if we get rescheduled to another CPU, we store the kernel stack in the GS register. Do we need to add something to when we exit interrupt handlers, like a `return_to_userspace`?
+  - Re-enable interrupts while handling syscalls (or don't? at least be explicit)
+    - If we expect interrupts to be disabled, make a comment where we disabled and where we do e.g. `swapgs` or something else that expects interrupts disabled
+  - Figure out how to get to userspace for the first time with sysretq instead of iretq
+  - Define actual system calls
+  - Segfault a user process and kill it instead of panicking and crashing the kernel
+    - Be careful about locking the scheduler in the page fault handler. It is possible a spin lock was already taken on the scheduler and we'll deadlock (all though that shouldn't happen on the current CPU. Hmm)
+  - Create a type showing the intended memory mapping of a process and turn that into a page table. This should make it easier to reason about the memory map.
+- Ensure kernel pages are not marked as `USER_ACCESSIBLE`. I think the `x86_64` allocator, or limine, is doing it by default
 - Per CPU
   - Have per CPU macros assert that types are correct.
   - Arrays: have a helper macro to create a `MAX_CPUS`-sized array
@@ -104,16 +119,10 @@ make test
   - Encapsulation: it would be great to be able to have private per CPU vars. For example, a module could declare a CPU var, and the central `percpu` module ensures space gets allocated for it and it has an offset, but otherwise nothing is allowed to touch it outside of the module it is declared in.
     - Idea that might make this easier: all variables could take up 8 byte "slots" (they can't exceed 8 bytes of course). Then we just need to statically have slot offsets, which could be done in an enum, but we could codegen all of the getters/setters/inc/dec function in a module somewhere else.
   - Automatic conversion to/from primitive types. Allow loading `TaskId` directly instead of needing to use `u32`.
-- Userspace
-  - Create a kernel task start function called `task_userspace_setup` that accepts a file path and sets up ELF stuff, page table, (anything else?), and calls `jump_to_userspace`
-  - Ensure that _every_ time we go to userspace, especially if we get rescheduled to another CPU, we store the kernel stack in the GS register. Do we need to add something to when we exit interrupt handlers, like a `return_to_userspace`?
-  - Re-enable interrupts while handling syscalls (or don't? at least be explicit)
-    - If we expect interrupts to be disabled, make a comment where we disabled and where we do e.g. `swapgs` or something else that expects interrupts disabled
-  - Figure out how to get to userspace for the first time with sysretq instead of iretq
-  - Define actual system calls
-  - Segfault a user process and kill it instead of panicking and crashing the kernel
-    - Be careful about locking the scheduler in the page fault handler. It is possible a spin lock was already taken on the scheduler and we'll deadlock (all though that shouldn't happen on the current CPU. Hmm)
-  - Create a type showing the intended memory mapping of a process and turn that into a page table. This should make it easier to reason about the memory map.
+- Task start safety: find a way to make casting the `arg: *const ()` pointer way safer. It is easy to mess up.
+- Arc memory leak detection:
+  - Calling `run_scheduler()` (or more specifically `switch_to_task`) while holding an `Arc` reference (especially `Arc<Task>`) can cause a memory leak because we might switch away from the given task forever. Currently I manually `drop` things before calling these functions. Is there a way I could make calling `run_scheduler` basically impossible?
+  - Find a way to detect leaked tasks, or maybe debug `Arc` leaks in general.
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - Consider a way to run tests on boot and return the QEMU exit code with the result
 - Networking

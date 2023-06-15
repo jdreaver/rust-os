@@ -85,3 +85,18 @@ pub(crate) enum DirectoryEntryType {
     File,
     Directory,
 }
+
+pub(crate) fn get_path_inode(path: &FilePath) -> Result<Inode, String> {
+    let mut lock = root_filesystem_lock();
+    let Some(filesystem) = lock.as_mut() else {
+        return Err(String::from("No filesystem mounted. Run 'mount <device_id>' first."));
+    };
+    if !path.absolute {
+        return Err(format!("Path must be absolute. Got {path}"));
+    }
+
+    let Some(inode) = filesystem.traverse_path(path) else {
+        return Err(format!("No such file or directory: {path}"));
+    };
+    Ok(inode)
+}
