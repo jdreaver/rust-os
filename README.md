@@ -102,8 +102,8 @@ make test
     - Idea that might make this easier: all variables could take up 8 byte "slots" (they can't exceed 8 bytes of course). Then we just need to statically have slot offsets, which could be done in an enum, but we could codegen all of the getters/setters/inc/dec function in a module somewhere else.
   - Automatic conversion to/from primitive types. Allow loading `TaskId` directly instead of needing to use `u32`.
 - Userspace
-  - Kernel stack swapping: ensure storing kernel stack is sound in the face of multiple CPUs. What if we store the kernel stack in GS, but while we are in userspace we get rescheduled to a different CPU? I think we need to always ensure the top of stack per CPU var is set before returning to userspace. Or maybe is needs to be set in scheduler?
-    - Should we just be using the kernel stack top in the task struct? Why does Linux have a separate per CPU var outside of the task struct?
+  - Create a kernel task start function called `task_userspace_setup` that accepts a file path and sets up ELF stuff, page table, (anything else?), and calls `jump_to_userspace`
+  - Ensure that _every_ time we go to userspace, especially if we get rescheduled to another CPU, we store the kernel stack in the GS register. Do we need to add something to when we exit interrupt handlers, like a `return_to_userspace`?
   - Re-enable interrupts while handling syscalls (or don't? at least be explicit)
     - If we expect interrupts to be disabled, make a comment where we disabled and where we do e.g. `swapgs` or something else that expects interrupts disabled
   - Figure out how to get to userspace for the first time with sysretq instead of iretq
@@ -111,8 +111,6 @@ make test
   - Segfault a user process and kill it instead of panicking and crashing the kernel
     - Be careful about locking the scheduler in the page fault handler. It is possible a spin lock was already taken on the scheduler and we'll deadlock (all though that shouldn't happen on the current CPU. Hmm)
   - Create a type showing the intended memory mapping of a process and turn that into a page table. This should make it easier to reason about the memory map.
-  - Create a kernel task start function called `task_userspace_setup` that is used to set up ELF stuff, page table, (anything else?), and call `jump_to_userspace`
-  - Parse ELF better (maybe in our own `elf` module) so it is clear what bits need loading from file and where they need to be mapped
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - Consider a way to run tests on boot and return the QEMU exit code with the result
 - Networking

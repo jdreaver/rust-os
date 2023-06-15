@@ -3,11 +3,10 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
-use elf::endian::AnyEndian;
-use elf::ElfBytes;
 use uefi::table::{Runtime, SystemTable};
 
 use crate::block;
+use crate::elf;
 use crate::fs::{ext2, sysfs};
 use crate::hpet::Milliseconds;
 use crate::sync::SpinLock;
@@ -512,47 +511,14 @@ fn run_command(command: &Command) {
             };
 
             let bytes = file.read();
-            let elf = match ElfBytes::<AnyEndian>::minimal_parse(&bytes) {
-                Ok(elf) => elf,
+            let elf_exe = match elf::ElfExecutableHeader::parse(&bytes) {
+                Ok(exe) => exe,
                 Err(e) => {
-                    serial_println!("Failed to parse ELF: {e}");
+                    serial_println!("Failed to parse ELF: {e:?}");
                     return;
                 }
             };
-
-            serial_println!("ELF header: {:#x?}", elf.ehdr);
-
-            let Some(segments) = elf.segments() else {
-                serial_println!("Failed to get ELF segments");
-                return;
-            };
-            serial_println!("segments: {:?}", segments.iter().collect::<Vec<_>>());
-
-            let Some(section_headers) = elf.section_headers() else {
-                serial_println!("Failed to get ELF section_headers");
-                return;
-            };
-            serial_println!(
-                "section_headers: {:?}",
-                section_headers.iter().collect::<Vec<_>>()
-            );
-
-            let symbol_table = match elf.symbol_table() {
-                Ok(symbol_table) => symbol_table,
-                Err(e) => {
-                    serial_println!("Failed to get ELF symbol table: {e}");
-                    return;
-                }
-            };
-            let Some((symbol_table, _)) = symbol_table else {
-                serial_println!("Failed to get ELF symbol table");
-                return;
-            };
-            let symbol_table = symbol_table.iter().collect::<Vec<_>>();
-            serial_println!(
-                "symbol table: {:?}",
-                symbol_table.iter().collect::<Vec<_>>()
-            );
+            serial_println!("ELF header: {:#?}", elf_exe);
         }
         Command::Exec => {
             let task_id = sched::new_task(
