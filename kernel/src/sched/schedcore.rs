@@ -128,8 +128,10 @@ pub(crate) fn start_multitasking(
     // pointer.
     let dummy_stack_ptr = TaskKernelStackPointer(0);
     let prev_stack_ptr = core::ptr::addr_of!(dummy_stack_ptr);
-    let next_stack_ptr = current_task().kernel_stack_pointer;
-    let next_page_table = current_task().page_table_addr;
+    let current_task = current_task();
+    let next_stack_ptr = current_task.kernel_stack_pointer;
+    let next_page_table = current_task.page_table_addr;
+    drop(current_task);
 
     unsafe {
         switch_to_task(prev_stack_ptr, next_stack_ptr, next_page_table);
@@ -158,12 +160,36 @@ pub(crate) fn run_scheduler() {
     // Set needs_reschedule to false if it hasn't been set already.
     percpu::set_per_cpu_needs_reschedule(0);
 
-    // Check preempt counter. If it's non-zero, then we're in a critical
-    // section and we shouldn't preempt.
+    // N.B. This function is split up into sub functions to ensure values are
+    // dropped before we hit `switch_to_task`.
+
+    if !check_current_task_needs_preemption() {
+        return;
+    }
+
+    // Take a lock on the run queue and disable interrupts. It is very important
+    // we hold this lock past switch_to_task!
+    let mut run_queue = RUN_QUEUE.lock_disable_interrupts();
+
+    let Some((prev_stack_ptr, next_stack_ptr, next_page_table)) = task_swap_parameters(&mut run_queue) else {
+        return;
+    };
+
+    unsafe {
+        switch_to_task(prev_stack_ptr, next_stack_ptr, next_page_table);
+    }
+}
+
+fn check_current_task_needs_preemption() -> bool {
+    let processor_id = percpu::get_per_cpu_processor_id();
+    let idle_task_id = TaskId(percpu::get_per_cpu_idle_task_id());
+
     let preempt_count = percpu::get_per_cpu_preempt_count();
     let current_task = current_task();
     let task_id = current_task.id;
-    let processor_id = percpu::get_per_cpu_processor_id();
+
+    // Check preempt counter. If it's non-zero, then we're in a critical
+    // section and we shouldn't preempt.
     assert!(
         preempt_count >= 0,
         "preempt_count is negative! Something bad happened"
@@ -173,40 +199,46 @@ pub(crate) fn run_scheduler() {
             "CPU {processor_id}: {task_id:?} preempt_count is {}, not preempting",
             preempt_count
         );
-        return;
+        return false;
     }
 
     // If the previous task still has a time slice left, don't preempt it.
     // (Except for idle task. We don't care if that ran out of time.)
-    let idle_task_id = TaskId(percpu::get_per_cpu_idle_task_id());
-
     let is_idle = current_task.id == idle_task_id;
     let is_ready = current_task.desired_state.load() == DesiredTaskState::ReadyToRun;
     let is_expired = current_task.remaining_slice.load() == Milliseconds::new(0);
     if !is_idle && is_ready && !is_expired {
-        return;
+        return false;
     }
 
-    // Take a lock on the run queue and disable interrupts. It is very important
-    // we hold this lock past switch_to_task!
-    let mut run_queue = RUN_QUEUE.lock_disable_interrupts();
+    true
+}
+
+fn task_swap_parameters(
+    run_queue: &mut RunQueue,
+) -> Option<(
+    *const TaskKernelStackPointer,
+    TaskKernelStackPointer,
+    PhysAddr,
+)> {
+    let processor_id = percpu::get_per_cpu_processor_id();
+    let idle_task_id = TaskId(percpu::get_per_cpu_idle_task_id());
 
     run_queue.remove_killed_pending_tasks();
-    let prev_task = current_task;
+    let prev_task = current_task();
     let prev_task_id = prev_task.id;
     let prev_task_state = prev_task.desired_state.load();
-    let next_task_id = match run_queue.pop_next_ready_pending_task() {
-        Some(id) => id,
-        None => {
-            // If we are not on the idle task, and if our current task is
-            // not ready, let's switch to the idle task.
-            if prev_task_state != DesiredTaskState::ReadyToRun && prev_task_id != idle_task_id {
-                idle_task_id
-            } else {
-                // Otherwise, just return. We won't do a switch.
-                return;
-            }
+    let next_task_id = if let Some(id) = run_queue.pop_next_ready_pending_task() {
+        id
+    } else {
+        // No other task to switch to. If we are on the idle task, or if the
+        // current task is ReadyToRun, don't switch tasks.
+        if prev_task_id == idle_task_id || prev_task_state == DesiredTaskState::ReadyToRun {
+            return None;
         }
+
+        // Otherwise, switch to the idle task.
+        idle_task_id
     };
     percpu::set_per_cpu_current_task_id(next_task_id.0);
 
@@ -229,24 +261,21 @@ pub(crate) fn run_scheduler() {
     // Give the next task some time slice
     next_task.remaining_slice.store(DEFAULT_TIME_SLICE);
 
-    let processor_id = percpu::get_per_cpu_processor_id();
-    unsafe {
-        if prev_task_id == next_task_id {
-            // We're already running the next task, so just return.
-            log::warn!("Tried to switch to the same task!: {prev_task_id:?} {next_task_id:?}");
-            return;
-        }
-        log::info!(
-            "SCHEDULER: (CPU {}) Switching from '{}' {:?} SP: {:x?} (@ {prev_stack_ptr:?}) to '{}' {:?} SP: {next_stack_ptr:x?}",
-            processor_id,
-            prev_task.name,
-            prev_task.id,
-            *prev_stack_ptr,
-            next_task.name,
-            next_task.id,
-        );
-        switch_to_task(prev_stack_ptr, next_stack_ptr, next_page_table);
+    if prev_task_id == next_task_id {
+        // We're already running the next task, so just return.
+        log::warn!("Tried to switch to the same task!: {prev_task_id:?} {next_task_id:?}");
+        return None;
     }
+    log::info!(
+        "SCHEDULER: (CPU {}) Switching from '{}' {:?} to '{}' {:?}",
+        processor_id,
+        prev_task.name,
+        prev_task.id,
+        next_task.name,
+        next_task.id,
+    );
+
+    Some((prev_stack_ptr, next_stack_ptr, next_page_table))
 }
 
 /// If the scheduler needs to run, then run it.

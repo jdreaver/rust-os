@@ -114,9 +114,12 @@ impl vfs::DirectoryEntry for VFSTaskInfoFile {
 
 impl vfs::FileInode for VFSTaskInfoFile {
     fn read(&mut self) -> Vec<u8> {
-        sched::TASKS.lock().get_task(self.task_id).map_or_else(
-            || format!("task not found...").into_bytes(),
-            |task| format!("{:#X?}", task).into_bytes(),
-        )
+        sched::TASKS
+            .lock_disable_interrupts()
+            .get_task(self.task_id)
+            .map_or_else(
+                || format!("task not found...").into_bytes(),
+                |task| format!("{:#X?}", task).into_bytes(),
+            )
     }
 }
