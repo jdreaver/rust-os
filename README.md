@@ -91,6 +91,7 @@ make test
 
 ## TODO
 
+- Task memory leak! When we go to kill a task the `Arc::strong_count` for the task is often >= 3, sometimes 5. Why is that?
 - Per CPU
   - Have per CPU macros assert that types are correct.
   - Arrays: have a helper macro to create a `MAX_CPUS`-sized array
