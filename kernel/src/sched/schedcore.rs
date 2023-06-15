@@ -131,6 +131,9 @@ pub(crate) fn start_multitasking(
     let current_task = current_task();
     let next_stack_ptr = current_task.kernel_stack_pointer;
     let next_page_table = current_task.page_table_addr;
+
+    // Drop to decrement reference count or else we will leak because of
+    // switch_to_task
     drop(current_task);
 
     unsafe {
@@ -321,6 +324,10 @@ pub(super) fn kill_current_task(exit_code: TaskExitCode) {
 
     // Inform waiters that the task has exited.
     current_task.exit_wait_cell.send_all_consumers(exit_code);
+
+    // Drop to decrement reference count or else we will leak because
+    // run_scheduler may never return
+    drop(current_task);
 
     run_scheduler();
 }
