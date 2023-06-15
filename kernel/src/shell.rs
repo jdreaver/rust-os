@@ -177,9 +177,14 @@ enum MountTarget {
 }
 
 #[derive(Debug)]
-struct PrimeCommand {
-    sync: bool,
-    nth_prime: usize,
+enum PrimeCommand {
+    Sync {
+        nth_prime: usize,
+    },
+    Async {
+        nth_prime: usize,
+        num_processes: usize,
+    },
 }
 
 #[allow(clippy::too_many_lines)]
@@ -302,7 +307,19 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
                 }
             };
             let nth_prime = parse_next_word(&mut words, "prime number index", usage)?;
-            Some(Command::Prime(PrimeCommand { sync, nth_prime }))
+            if sync {
+                Some(Command::Prime(PrimeCommand::Sync { nth_prime }))
+            } else {
+                let num_processes = parse_next_word(
+                    &mut words,
+                    "num processes",
+                    "prime async <nth_prime> <num_processes>",
+                )?;
+                Some(Command::Prime(PrimeCommand::Async {
+                    nth_prime,
+                    num_processes,
+                }))
+            }
         }
         _ => {
             serial_println!("Unknown command: {:?}", command_str);
@@ -585,20 +602,29 @@ fn run_command(command: &Command) {
             sched::sleep_timeout(*ms);
             serial_println!("Slept for {ms}");
         }
-        Command::Prime(PrimeCommand { sync, nth_prime }) => {
+        Command::Prime(PrimeCommand::Sync { nth_prime }) => {
             let task_id = sched::new_task(
                 "calculate prime",
                 calculate_prime_task,
                 *nth_prime as *const (),
             );
-            if *sync {
-                serial_println!("Waiting for task {task_id:?} to finish...");
-                let exit_code = sched::wait_on_task(task_id);
-                serial_println!("Task {task_id:?} finished! Exit code: {exit_code:?}");
-            } else {
-                serial_println!("Task {task_id:?} is running in the background");
-                sched::run_scheduler();
+            serial_println!("Waiting for task {task_id:?} to finish...");
+            let exit_code = sched::wait_on_task(task_id);
+            serial_println!("Task {task_id:?} finished! Exit code: {exit_code:?}");
+        }
+        Command::Prime(PrimeCommand::Async {
+            nth_prime,
+            num_processes,
+        }) => {
+            serial_println!("spawning {num_processes} processes to calculate {nth_prime}th prime");
+            for _ in 0..*num_processes {
+                sched::new_task(
+                    "calculate prime",
+                    calculate_prime_task,
+                    *nth_prime as *const (),
+                );
             }
+            sched::run_scheduler();
         }
     }
 }
@@ -606,7 +632,7 @@ fn run_command(command: &Command) {
 extern "C" fn calculate_prime_task(arg: *const ()) {
     let n = arg as usize;
     let p = naive_nth_prime(n);
-    serial_println!("calculate_prime_task DONE: {n}th prime: {p}");
+    log::info!("calculate_prime_task DONE: {n}th prime: {p}");
 }
 
 fn naive_nth_prime(n: usize) -> usize {
