@@ -1,5 +1,7 @@
 use alloc::vec::Vec;
 
+use zerocopy::{AsBytes, FromBytes, FromZeroes, LayoutVerified};
+
 use crate::block::BlockBuffer;
 
 use super::superblock::InodeNumber;
@@ -110,10 +112,7 @@ impl<'a> DirectoryEntry<'a> {
     }
 
     fn header(&self) -> &DirectoryEntryHeader {
-        unsafe {
-            let ptr = self.bytes.as_ptr().cast::<DirectoryEntryHeader>();
-            ptr.as_ref().expect("DirectoryEntryHeader pointer is null")
-        }
+        unsafe { DirectoryEntryHeader::from_bytes(self.bytes) }
     }
 
     pub(super) fn name(&self) -> &str {
@@ -127,23 +126,27 @@ impl<'a> DirectoryEntry<'a> {
         self.header().inode
     }
 
+    fn file_type(&self) -> DirectoryEntryFileType {
+        self.header().raw_file_type.into()
+    }
+
     pub(super) fn is_file(&self) -> bool {
-        self.header().file_type == DirectoryEntryFileType::RegularFile
+        self.file_type() == DirectoryEntryFileType::RegularFile
     }
 
     pub(super) fn is_dir(&self) -> bool {
-        self.header().file_type == DirectoryEntryFileType::Directory
+        self.file_type() == DirectoryEntryFileType::Directory
     }
 }
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#linked-directory-entry-structure>
 #[repr(C, packed)]
-#[derive(Debug)]
+#[derive(Debug, FromZeroes, FromBytes, AsBytes)]
 struct DirectoryEntryHeader {
     inode: InodeNumber,
     rec_len: u16,
     name_len: u8,
-    file_type: DirectoryEntryFileType,
+    raw_file_type: u8,
 }
 
 impl DirectoryEntryHeader {
@@ -153,8 +156,15 @@ impl DirectoryEntryHeader {
             inode,
             rec_len: 0,
             name_len,
-            file_type,
+            raw_file_type: file_type as u8,
         }
+    }
+
+    unsafe fn from_bytes(bytes: &[u8]) -> &Self {
+        LayoutVerified::<_, Self>::new_from_prefix(bytes)
+            .expect("failed to cast DirectoryEntryHeader bytes")
+            .0
+            .into_ref()
     }
 
     /// From: https://www.nongnu.org/ext2-doc/ext2.html#ifdir-rec-len
@@ -181,4 +191,21 @@ pub(super) enum DirectoryEntryFileType {
     Fifo = 5,
     Socket = 6,
     SymbolicLink = 7,
+}
+
+#[allow(clippy::fallible_impl_from)]
+impl From<u8> for DirectoryEntryFileType {
+    fn from(raw: u8) -> Self {
+        match raw {
+            value if value == Self::Unknown as u8 => Self::Unknown,
+            value if value == Self::RegularFile as u8 => Self::RegularFile,
+            value if value == Self::Directory as u8 => Self::Directory,
+            value if value == Self::CharacterDevice as u8 => Self::CharacterDevice,
+            value if value == Self::BlockDevice as u8 => Self::BlockDevice,
+            value if value == Self::Fifo as u8 => Self::Fifo,
+            value if value == Self::Socket as u8 => Self::Socket,
+            value if value == Self::SymbolicLink as u8 => Self::SymbolicLink,
+            _ => panic!("invalid DirectoryEntryFileType value {raw}"),
+        }
+    }
 }

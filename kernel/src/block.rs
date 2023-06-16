@@ -126,22 +126,22 @@ impl BlockBuffer {
 
     /// Index into the data block for this buffer, representing the bytes as a
     /// mutable reference to a type.
-    pub(crate) fn interpret_bytes_mut<T: FromBytes + AsBytes>(&mut self, offset: usize) -> &mut T {
+    pub(crate) fn cast_ref_mut<T: FromBytes + AsBytes>(&mut self, offset: usize) -> &mut T {
         let data = self.data.get_mut(offset..).expect("invalid offset");
-        let layout: LayoutVerified<&mut [u8], T> = LayoutVerified::new_from_prefix(data)
+        LayoutVerified::<_, T>::new_from_prefix(data)
             .expect("invalid layout")
-            .0;
-        layout.into_mut()
+            .0
+            .into_mut()
     }
 
     /// Index into the data block for this buffer, representing the bytes as a
     /// reference to a type.
-    pub(crate) fn interpret_bytes<T: FromBytes>(&self, offset: usize) -> &T {
+    pub(crate) fn cast_ref<T: FromBytes>(&self, offset: usize) -> &T {
         let data = self.data.get(offset..).expect("invalid offset");
-        let layout: LayoutVerified<&[u8], T> = LayoutVerified::new_from_prefix(data)
+        LayoutVerified::<_, T>::new_from_prefix(data)
             .expect("invalid layout")
-            .0;
-        layout.into_ref()
+            .0
+            .into_ref()
     }
 
     pub(crate) fn into_view_offset<T>(self, offset: usize) -> BlockBufferView<T> {
@@ -186,13 +186,13 @@ impl<T: FromBytes> Deref for BlockBufferView<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        self.buffer.interpret_bytes::<T>(self.offset)
+        self.buffer.cast_ref::<T>(self.offset)
     }
 }
 
 impl<T: FromBytes + AsBytes> DerefMut for BlockBufferView<T> {
     fn deref_mut(&mut self) -> &mut T {
-        self.buffer.interpret_bytes_mut(self.offset)
+        self.buffer.cast_ref_mut(self.offset)
     }
 }
 

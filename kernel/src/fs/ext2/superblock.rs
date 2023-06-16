@@ -212,7 +212,8 @@ impl Add<Self> for OffsetBytes {
 pub(super) struct InodesPerGroup(pub(super) u32);
 
 /// "Global" inode number within the filesystem.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, FromZeroes, FromBytes, AsBytes)]
+#[repr(transparent)]
 pub(super) struct InodeNumber(pub(super) u32);
 
 /// The root directory of the filesystem is always inode 2.

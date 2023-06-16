@@ -92,6 +92,7 @@ make test
 ## TODO
 
 - BlockBuffer refactor:
+  - Deciding between `bytemuck` and `zerocopy` is hard, and they will both be superseded when rust compiler transmute stuff is implemented. Make a facade module for now. I am leaning towards bytemuck for simplicity though.
   - Keep exploring `zerocopy`.
   - Rename `interpret_bytes{_mut}`
   - Figure out how to do arrays easier instead of needing to call `interpret_bytes`. Remember inode arrays will need runtime-defined spacing between inodes
