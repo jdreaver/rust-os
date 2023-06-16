@@ -1,3 +1,5 @@
+use core::cmp::max;
+
 use spin::Once;
 
 use limine::{
@@ -208,6 +210,7 @@ pub(crate) fn print_limine_memory_map() {
 
     serial_println!("limine memory map:");
     let mut memory_totals = [0u64; 16];
+    let mut max_memory = 0;
     for entry in memory_map_iter {
         serial_println!(
             "    base: {:#x}, len: {:#x}, type: {:?}",
@@ -217,9 +220,11 @@ pub(crate) fn print_limine_memory_map() {
         );
 
         memory_totals[entry.typ as usize] += entry.len;
+        max_memory = max(max_memory, entry.base + entry.len);
     }
 
     serial_println!("limine memory map totals:");
+    serial_println!("    max_memory: {} MiB", max_memory / 1024 / 1024);
     serial_println!(
         "    usable: {} MiB",
         memory_totals[LimineMemoryMapEntryType::Usable as usize] / 1024 / 1024
