@@ -2,7 +2,6 @@ use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec;
-use alloc::vec::Vec;
 
 use crate::sched::TaskId;
 use crate::{sched, vfs};
@@ -113,13 +112,15 @@ impl vfs::DirectoryEntry for VFSTaskInfoFile {
 }
 
 impl vfs::FileInode for VFSTaskInfoFile {
-    fn read(&mut self) -> Vec<u8> {
+    fn read(&mut self) -> Box<[u8]> {
         sched::TASKS
             .lock_disable_interrupts()
             .get_task(self.task_id)
             .map_or_else(
-                || format!("task not found...").into_bytes(),
-                |task| format!("{:#X?}", task).into_bytes(),
+                || format!("task not found..."),
+                |task| format!("{:#X?}", task),
             )
+            .into_bytes()
+            .into_boxed_slice()
     }
 }

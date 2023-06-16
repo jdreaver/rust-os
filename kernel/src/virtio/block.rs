@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 use bitflags::bitflags;
@@ -124,7 +125,8 @@ fn virtio_block_interrupt(_vector: InterruptVector, handler_id: InterruptHandler
                         raw_request.data_len as usize,
                     )
                 };
-                data.sender.send(VirtIOBlockResponse::Read { data: bytes.to_vec() });
+                let bytes_box = Box::from(bytes);
+                data.sender.send(VirtIOBlockResponse::Read { data: bytes_box });
             }
             BlockRequest::Write { .. } => {
                 data.sender.send(VirtIOBlockResponse::Write);
@@ -552,7 +554,7 @@ struct BlockDeviceDescData {
 
 #[derive(Debug)]
 pub(crate) enum VirtIOBlockResponse {
-    Read { data: Vec<u8> },
+    Read { data: Box<[u8]> },
     Write, // No data, just ACK that it completed
     GetID { id: String },
 }

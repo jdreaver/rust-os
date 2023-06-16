@@ -152,6 +152,9 @@ make test
   - Ensure overwriting file properly truncates all blocks first by marking them as free and removing them from inode block pointers
   - Sysfs ideas: pci devices, virtio devices, memory info
   - Instead of returning `Vec` for directories, consider returning an `impl Iterator` (except you probably can't do that with traits...)
+  - BlockBuffer refactor: in BlockBufferView, instead of keeping the underlying BlockBuffer and doing casts on the fly, immediately just transmute the buffer data into `T`. In `Drop`, convert back to `BlockBuffer`.
+    - Check out <https://crates.io/crates/bytes-cast>, <https://docs.rs/bytemuck/latest/bytemuck/>
+    - Also consider generalizing this, not using it _just_ for BlockBuffer. I'm sure there are other parts of the kernel that would benefit from "cast this `&[u8]`/`Vec<u8>` to `T` or `[T]`"
 - Serial port:
   - find a way to implement using `&mut` and locking without deadlocks from e.g. non-maskable interrupts, holding the lock in the shell while trying to debug print inside kernel code, etc.
   - Consider multiple serial ports: one that spits out logs from the kernel, and one dedicated to the shell.
@@ -162,10 +165,6 @@ make test
   - Consider using per CPU for storing the currently running task instead of having a Vec of those in `Scheduler`
     - The "current task" is only valid in the current thread. We need to wrap it in a type that is not `Send` or `Sync`; we can't just return a `&'static` ref (or maybe we can if we make sa
 - Stack size: figure out why stacks need to be so large when compiling in debug mode. Is Rust putting a ton of debug info on the stack?
-- Synchronization primitives
-  - Mutex (not spinlock "mutex") that handles sleeping and waking
-    - We can use `WaitQueue` along with `send_single_consumer` for wakeups. (The primary lock mechanism is still an atomic bool)
-    - I like Linux's mutex where they store the current holder's task ID in an atomic variable
 - Deadlock debugging: find a way to detect deadlocks and print the locks involved
   - Linux has a neat debugging system for mutexes <https://docs.kernel.org/locking/mutex-design.html#semantics>
   - Should we fail if we are holding a spinlock for too long?

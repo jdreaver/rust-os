@@ -57,7 +57,7 @@ pub(crate) struct VFSInode<D> {
 }
 
 impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for VFSInode<D> {
-    fn read(&mut self) -> Vec<u8> {
+    fn read(&mut self) -> Box<[u8]> {
         assert!(
             self.inode.is_file(),
             "expected file inode but found {:?}",
@@ -80,7 +80,7 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for VFSInode<D> {
 
             true
         });
-        data
+        data.into_boxed_slice()
     }
 
     fn write(&mut self, data: &[u8]) -> bool {

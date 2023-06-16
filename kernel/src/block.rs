@@ -2,8 +2,8 @@ use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::ops::{Add, Deref, DerefMut};
 
+use alloc::boxed::Box;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 
 use crate::virtio;
 
@@ -50,7 +50,7 @@ pub(crate) trait BlockDeviceDriver: Debug {
     fn device_block_size(&self) -> BlockSize;
 
     /// Number of _device_ blocks to read, using the device's block size.
-    fn read_device_blocks(&self, start_block: BlockIndex, num_blocks: usize) -> Vec<u8>;
+    fn read_device_blocks(&self, start_block: BlockIndex, num_blocks: usize) -> Box<[u8]>;
 
     fn write_device_blocks(&self, start_block: BlockIndex, data: &[u8]);
 }
@@ -110,7 +110,7 @@ impl Add for BlockIndex {
 pub(crate) struct BlockBuffer {
     device_start_block: BlockIndex,
     _device_num_blocks: usize,
-    data: Vec<u8>,
+    data: Box<[u8]>,
     driver: Arc<dyn BlockDeviceDriver>,
 }
 
@@ -222,7 +222,7 @@ impl BlockDeviceDriver for VirtioBlockDevice {
             .expect("invalid virtio block size")
     }
 
-    fn read_device_blocks(&self, start_block: BlockIndex, num_blocks: usize) -> Vec<u8> {
+    fn read_device_blocks(&self, start_block: BlockIndex, num_blocks: usize) -> Box<[u8]> {
         let response = virtio::virtio_block_read(self.device_id, start_block.0, num_blocks as u32)
             .wait_sleep();
         let virtio::VirtIOBlockResponse::Read{ ref data } = response else {

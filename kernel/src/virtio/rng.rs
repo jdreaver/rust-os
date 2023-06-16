@@ -1,4 +1,4 @@
-use alloc::vec::Vec;
+use alloc::boxed::Box;
 use bitflags::bitflags;
 
 use crate::apic::ProcessorID;
@@ -29,7 +29,7 @@ pub(crate) fn try_init_virtio_rng(device_config: VirtIODeviceConfig) {
     VIRTIO_RNG.lock_disable_interrupts().replace(virtio_rng);
 }
 
-pub(crate) fn request_random_numbers(num_bytes: u32) -> OnceReceiver<Vec<u8>> {
+pub(crate) fn request_random_numbers(num_bytes: u32) -> OnceReceiver<Box<[u8]>> {
     let mut lock = VIRTIO_RNG.lock_disable_interrupts();
     let rng = lock.as_mut().expect("VirtIO RNG not initialized");
     rng.request_random_numbers(num_bytes)
@@ -81,7 +81,7 @@ impl VirtIORNG {
         );
     }
 
-    fn request_random_numbers(&mut self, num_bytes: u32) -> OnceReceiver<Vec<u8>> {
+    fn request_random_numbers(&mut self, num_bytes: u32) -> OnceReceiver<Box<[u8]>> {
         assert!(num_bytes > 0, "cannot request zero bytes from RNG!");
 
         // Create a descriptor chain for the buffer
@@ -118,7 +118,7 @@ bitflags! {
 struct VirtIORNGRequest {
     // Buffer is kept here so we can drop it when we are done with the request.
     _descriptor_buffer: PhysicalBuffer,
-    sender: OnceSender<Vec<u8>>,
+    sender: OnceSender<Box<[u8]>>,
 }
 
 fn virtio_rng_interrupt(_vector: InterruptVector, _handler_id: InterruptHandlerID) {
@@ -150,6 +150,6 @@ fn virtio_rng_interrupt(_vector: InterruptVector, _handler_id: InterruptHandlerI
                 )
             };
 
-            request.sender.send(buffer.to_vec());
+            request.sender.send(Box::from(buffer));
         });
 }
