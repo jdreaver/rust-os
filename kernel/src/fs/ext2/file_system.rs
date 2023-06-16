@@ -13,7 +13,7 @@ use super::superblock::{
 /// with file system.
 #[derive(Debug)]
 pub(super) struct FileSystem<D> {
-    superblock_view: TransmuteView<BlockBuffer, Superblock>,
+    superblock: TransmuteView<BlockBuffer, Superblock>,
     block_group_descriptors: BlockGroupDescriptorBlocks,
     block_size: BlockSize,
 
@@ -62,14 +62,14 @@ impl BlockGroupDescriptorBlocks {
 
 impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
     pub(super) fn read(device: BlockDevice<D>) -> Option<Self> {
-        let mut superblock_view: TransmuteView<BlockBuffer, Superblock> = device
+        let mut superblock: TransmuteView<BlockBuffer, Superblock> = device
             .read_blocks(
                 Superblock::SUPERBLOCK_BLOCK_SIZE,
                 Superblock::SUPERBLOCK_BLOCK_INDEX,
                 1,
             )
-            .into_view();
-        let superblock: &mut Superblock = superblock_view.try_cast_ref_mut()?;
+            .into_view()
+            .expect("failed to transmute superblock");
         if !superblock.magic_valid() {
             return None;
         }
@@ -86,10 +86,10 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
 
         // Increase the mount count and write the superblock back
         superblock.mount_count += 1;
-        superblock_view.flush();
+        superblock.buffer().flush();
 
         Some(Self {
-            superblock_view,
+            superblock,
             block_group_descriptors,
             block_size,
             device,
@@ -97,15 +97,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
     }
 
     pub(super) fn superblock(&self) -> &Superblock {
-        self.superblock_view
-            .try_cast_ref()
-            .expect("failed to transmute superblock")
-    }
-
-    pub(super) fn superblock_mut(&mut self) -> &mut Superblock {
-        self.superblock_view
-            .try_cast_ref_mut()
-            .expect("failed to transmute superblock")
+        &self.superblock
     }
 
     pub(super) fn read_root(&mut self) -> (Inode, InodeNumber) {
@@ -116,7 +108,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
     }
 
     pub(super) fn read_inode(&mut self, inode_number: InodeNumber) -> Option<Inode> {
-        let (block_group_index, local_inode_index) = self.superblock().inode_location(inode_number);
+        let (block_group_index, local_inode_index) = self.superblock.inode_location(inode_number);
         let block_group_descriptor = self.block_group_descriptors.get(block_group_index)?;
 
         let mut inode_bitmap_block = self.inode_bitmap_block(block_group_descriptor);
@@ -147,7 +139,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         local_inode_index: LocalInodeIndex,
     ) -> (BlockBuffer, OffsetBytes) {
         let (inode_block_index, inode_offset) = self
-            .superblock()
+            .superblock
             .inode_block_and_offset(block_group_descriptor.inode_table, local_inode_index);
         let buf = self
             .device
@@ -163,7 +155,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
     }
 
     pub(super) fn write_inode(&mut self, inode: Inode, inode_number: InodeNumber) {
-        let (block_group_index, local_inode_index) = self.superblock().inode_location(inode_number);
+        let (block_group_index, local_inode_index) = self.superblock.inode_location(inode_number);
         let block_group_descriptor = self
             .block_group_descriptors
             .get(block_group_index)
@@ -191,7 +183,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
     where
         F: FnMut(OffsetBytes, BlockBuffer) -> bool,
     {
-        for (offset, block_addr) in self.superblock().iter_inode_blocks(inode) {
+        for (offset, block_addr) in self.superblock.iter_inode_blocks(inode) {
             let addr = BlockIndex::from(u64::from(block_addr.0));
             let block_buf = self.device.read_blocks(self.block_size, addr, 1);
 
@@ -210,8 +202,8 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         // Invariant: the directory data length is always a multiple of the
         // block size. Extra space manifests as directory entries with rec_len
         // longer than necessary.
-        let inode_size = self.superblock().inode_size(inode);
-        let block_size = u64::from(u16::from(self.superblock().block_size()));
+        let inode_size = self.superblock.inode_size(inode);
+        let block_size = u64::from(u16::from(self.superblock.block_size()));
         assert!(inode_size % block_size == 0, "invariant violated: directory size {inode_size} not a multiple of block size {block_size}");
 
         self.iter_file_blocks(inode, |_, buf| {
@@ -232,7 +224,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         );
 
         // Reserve inode number in parent's block group by finding free entry in bitmap
-        let (block_group_index, _) = self.superblock().inode_location(parent_number);
+        let (block_group_index, _) = self.superblock.inode_location(parent_number);
         let block_group_descriptor = self.block_group_descriptors.get(block_group_index)?;
 
         let mut inode_bitmap_block = self.inode_bitmap_block(block_group_descriptor);
@@ -255,7 +247,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         // Add inode entry to block group's inode table
         let mut direct_blocks = InodeDirectBlocks::empty();
         direct_blocks.insert(0, block_address);
-        let block_size = u32::from(u16::from(self.superblock().block_size()));
+        let block_size = u32::from(u16::from(self.superblock.block_size()));
         let blocks = block_size / 512; // Remember, blocks are in units if 512 bytes!
         let inode = Inode {
             mode: InodeMode::IROTH
@@ -285,7 +277,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
             osd2: [0; 12],
         };
         let inode_number = self
-            .superblock()
+            .superblock
             .inode_number(block_group_index, local_inode_index);
         let cloned_inode = inode.clone();
         self.write_inode(inode, inode_number);
@@ -315,8 +307,8 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         self.block_group_descriptors.flush();
 
         // Adjust superblock statistics
-        self.superblock_mut().free_inodes_count -= 1;
-        self.superblock_view.flush();
+        self.superblock.free_inodes_count -= 1;
+        self.superblock.buffer().flush();
 
         Some((cloned_inode, inode_number))
     }

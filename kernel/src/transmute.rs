@@ -67,52 +67,75 @@ impl<T: AsMut<[u8]> + ?Sized> CastBytesMut for T {
 #[derive(Debug)]
 pub(crate) struct TransmuteView<B, T> {
     buffer: B,
+    offset: usize,
     _phantom: PhantomData<T>,
 }
 
 impl<B, T> TransmuteView<B, T> {
-    pub(crate) fn new(buffer: B) -> Self {
-        Self {
-            buffer,
-            _phantom: PhantomData,
-        }
-    }
-
-    pub(crate) fn into_inner(self) -> B {
-        self.buffer
-    }
-}
-
-impl<B: CastBytes, T: FromBytes> TransmuteView<B, T> {
-    pub(crate) fn try_cast_ref(&self) -> Option<&T> {
-        self.buffer.try_cast_ref()
-    }
-
-    pub(crate) fn try_cast_ref_offset(&self, offset: usize) -> Option<&T> {
-        self.buffer.try_cast_ref_offset(offset)
-    }
-}
-
-impl<B: CastBytesMut, T: FromBytes + AsBytes> TransmuteView<B, T> {
-    pub(crate) fn try_cast_ref_mut(&mut self) -> Option<&mut T> {
-        self.buffer.try_cast_ref_mut()
-    }
-
-    pub(crate) fn try_cast_ref_mut_offset(&mut self, offset: usize) -> Option<&mut T> {
-        self.buffer.try_cast_ref_mut_offset(offset)
-    }
-}
-
-impl<B, T> Deref for TransmuteView<B, T> {
-    type Target = B;
-
-    fn deref(&self) -> &Self::Target {
+    pub(crate) fn buffer(&self) -> &B {
         &self.buffer
     }
 }
 
-impl<B, T> DerefMut for TransmuteView<B, T> {
+impl<B: CastBytes, T: FromBytes> TransmuteView<B, T> {
+    pub(crate) fn new(buffer: B) -> Option<Self> {
+        Self::new_offset(buffer, 0)
+    }
+
+    pub(crate) fn new_offset(buffer: B, offset: usize) -> Option<Self> {
+        // Assert that the conversion works. Ideally we could just store the
+        // LayoutVerified here, but we can't do that _and_ store the buffer
+        // itself because it makes the borrow checker unhappy.
+        let _: &T = buffer.try_cast_ref_offset(offset)?;
+
+        Some(Self {
+            buffer,
+            offset,
+            _phantom: PhantomData,
+        })
+    }
+}
+
+impl<B: CastBytes, T: FromBytes> Deref for TransmuteView<B, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        // Invariant: the cast is supposed to be infallible because we checked
+        // it in the constructor.
+        self.buffer
+            .try_cast_ref_offset(self.offset)
+            .expect("INTERNAL ERROR: cast is supposed to be infallible")
+    }
+}
+
+impl<B: CastBytes + CastBytesMut, T: FromBytes + AsBytes> DerefMut for TransmuteView<B, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.buffer
+        // Invariant: the cast is supposed to be infallible because we checked
+        // it in the constructor.
+        self.buffer
+            .try_cast_ref_mut_offset(self.offset)
+            .expect("INTERNAL ERROR: cast is supposed to be infallible")
+    }
+}
+
+impl<B, T> AsRef<T> for TransmuteView<B, T>
+where
+    T: FromBytes,
+    B: CastBytes,
+    <Self as Deref>::Target: AsRef<T>,
+{
+    #[allow(clippy::explicit_deref_methods)]
+    fn as_ref(&self) -> &T {
+        self.deref()
+    }
+}
+
+impl<B: CastBytes + CastBytesMut, T: FromBytes + AsBytes> AsMut<T> for TransmuteView<B, T>
+where
+    <Self as Deref>::Target: AsMut<T>,
+{
+    #[allow(clippy::explicit_deref_methods)]
+    fn as_mut(&mut self) -> &mut T {
+        self.deref_mut()
     }
 }

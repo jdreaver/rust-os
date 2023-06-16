@@ -3,7 +3,7 @@ use core::ops::{Add, Deref, DerefMut};
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use zerocopy::{FromBytes, LayoutVerified};
+use zerocopy::FromBytes;
 
 use crate::transmute::TransmuteView;
 use crate::virtio;
@@ -124,7 +124,7 @@ impl BlockBuffer {
         &mut self.data
     }
 
-    pub(crate) fn into_view<T>(self) -> TransmuteView<Self, T> {
+    pub(crate) fn into_view<T: FromBytes>(self) -> Option<TransmuteView<Self, T>> {
         TransmuteView::new(self)
     }
 
@@ -165,6 +165,7 @@ where
 
 impl<T> AsMut<T> for BlockBuffer
 where
+    T: ?Sized,
     <Self as Deref>::Target: AsMut<T>,
 {
     fn as_mut(&mut self) -> &mut T {

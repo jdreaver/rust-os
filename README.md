@@ -92,7 +92,6 @@ make test
 ## TODO
 
 - `TransmuteView` stuff:
-  - Can we make a `TransmuteView` that is infallible (maybe using the actual `LayoutVerified`?) so we don't have to manually call `try_cast_ref`, etc? The offset one wouldn't be infallible, so consider symmetry.
   - Consider renaming `TransmuteView`, especially if we have the infallible version.
   - Plug into block descriptors array, inode arrays, and directory
 - Memory management
