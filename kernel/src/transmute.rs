@@ -37,7 +37,6 @@ pub(crate) fn try_cast_bytes_ref_mut_offset<T: FromBytes + AsBytes>(
 #[derive(Debug)]
 pub(crate) struct TransmuteView<B, T> {
     buffer: B,
-    offset: usize,
     _phantom: PhantomData<T>,
 }
 
@@ -49,18 +48,13 @@ impl<B, T> TransmuteView<B, T> {
 
 impl<B: AsRef<[u8]>, T: FromBytes> TransmuteView<B, T> {
     pub(crate) fn new(buffer: B) -> Option<Self> {
-        Self::new_offset(buffer, 0)
-    }
-
-    pub(crate) fn new_offset(buffer: B, offset: usize) -> Option<Self> {
         // Assert that the conversion works. Ideally we could just store the
         // LayoutVerified here, but we can't do that _and_ store the buffer
         // itself because it makes the borrow checker unhappy.
-        let _: &T = try_cast_bytes_ref_offset(buffer.as_ref(), offset)?;
+        let _: &T = try_cast_bytes_ref(buffer.as_ref())?;
 
         Some(Self {
             buffer,
-            offset,
             _phantom: PhantomData,
         })
     }
@@ -72,7 +66,7 @@ impl<B: AsRef<[u8]>, T: FromBytes> Deref for TransmuteView<B, T> {
     fn deref(&self) -> &Self::Target {
         // Invariant: the cast is supposed to be infallible because we checked
         // it in the constructor.
-        try_cast_bytes_ref_offset(self.buffer.as_ref(), self.offset)
+        try_cast_bytes_ref(self.buffer.as_ref())
             .expect("INTERNAL ERROR: cast is supposed to be infallible")
     }
 }
@@ -81,7 +75,7 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>, T: FromBytes + AsBytes> DerefMut for Transmut
     fn deref_mut(&mut self) -> &mut Self::Target {
         // Invariant: the cast is supposed to be infallible because we checked
         // it in the constructor.
-        try_cast_bytes_ref_mut_offset(self.buffer.as_mut(), self.offset)
+        try_cast_bytes_ref_mut(self.buffer.as_mut())
             .expect("INTERNAL ERROR: cast is supposed to be infallible")
     }
 }
@@ -105,5 +99,39 @@ where
     #[allow(clippy::explicit_deref_methods)]
     fn as_mut(&mut self) -> &mut T {
         self.deref_mut()
+    }
+}
+
+/// Wrapper around a buffer `B` that interprets the underlying bytes as a
+/// collection of the given type. Supports indexing into this collection by a
+/// given offset.
+#[derive(Debug)]
+pub(crate) struct TransmuteCollection<B, T> {
+    buffer: B,
+    _phantom: PhantomData<T>,
+}
+
+impl<B, T> TransmuteCollection<B, T> {
+    pub(crate) fn new(buffer: B) -> Self {
+        Self {
+            buffer,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub(crate) fn buffer(&self) -> &B {
+        &self.buffer
+    }
+}
+
+impl<B: AsRef<[u8]>, T: FromBytes> TransmuteCollection<B, T> {
+    pub(crate) fn get(&self, offset: usize) -> Option<&T> {
+        try_cast_bytes_ref_offset(self.buffer.as_ref(), offset)
+    }
+}
+
+impl<B: AsRef<[u8]> + AsMut<[u8]>, T: FromBytes + AsBytes> TransmuteCollection<B, T> {
+    pub(crate) fn get_mut(&mut self, offset: usize) -> Option<&mut T> {
+        try_cast_bytes_ref_mut_offset(self.buffer.as_mut(), offset)
     }
 }

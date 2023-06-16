@@ -91,9 +91,6 @@ make test
 
 ## TODO
 
-- `TransmuteView` stuff:
-  - Consider renaming `TransmuteView`, especially if we have the infallible version.
-  - Plug into block descriptors array, inode arrays, and directory
 - Memory management
   - Split up `memory.rs` into `physical`, `heap`, and `paging`
   - Replace `x86_64` crate page table management with our own

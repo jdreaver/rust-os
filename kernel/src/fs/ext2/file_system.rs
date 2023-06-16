@@ -1,5 +1,5 @@
 use crate::block::{BlockBuffer, BlockDevice, BlockDeviceDriver, BlockIndex, BlockSize};
-use crate::transmute::{try_cast_bytes_ref_mut_offset, try_cast_bytes_ref_offset, TransmuteView};
+use crate::transmute::{TransmuteCollection, TransmuteView};
 
 use super::block_group::{BlockBitmap, BlockGroupDescriptor, InodeBitmap};
 use super::directory::{DirectoryBlock, DirectoryEntryFileType};
@@ -22,7 +22,7 @@ pub(super) struct FileSystem<D> {
 
 #[derive(Debug)]
 struct BlockGroupDescriptorBlocks {
-    blocks: BlockBuffer,
+    descriptors: TransmuteCollection<BlockBuffer, BlockGroupDescriptor>,
     num_block_groups: usize,
 }
 
@@ -33,19 +33,19 @@ impl BlockGroupDescriptorBlocks {
             "block buffer not large enough to hold all block group descriptors"
         );
         Self {
-            blocks,
+            descriptors: blocks.into_collection(),
             num_block_groups,
         }
     }
 
     fn get(&self, index: BlockGroupIndex) -> Option<&BlockGroupDescriptor> {
         let offset = self.offset(index)?;
-        try_cast_bytes_ref_offset(&self.blocks, offset)
+        self.descriptors.get(offset)
     }
 
     fn get_mut(&mut self, index: BlockGroupIndex) -> Option<&mut BlockGroupDescriptor> {
         let offset = self.offset(index)?;
-        try_cast_bytes_ref_mut_offset(&mut self.blocks, offset)
+        self.descriptors.get_mut(offset)
     }
 
     fn offset(&self, index: BlockGroupIndex) -> Option<usize> {
@@ -56,7 +56,7 @@ impl BlockGroupDescriptorBlocks {
     }
 
     fn flush(&self) {
-        self.blocks.flush();
+        self.descriptors.buffer().flush();
     }
 }
 
@@ -118,9 +118,9 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
             return None;
         }
 
-        let (inode_block, inode_offset) =
-            self.inode_block(block_group_descriptor, local_inode_index);
-        let inode = try_cast_bytes_ref_offset::<Inode>(&inode_block, inode_offset.0 as usize)
+        let (inodes, inode_offset) = self.inode_block(block_group_descriptor, local_inode_index);
+        let inode = inodes
+            .get(inode_offset.0 as usize)
             .expect("failed to cast Inode");
         Some(inode.clone())
     }
@@ -136,14 +136,14 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         &self,
         block_group_descriptor: &BlockGroupDescriptor,
         local_inode_index: LocalInodeIndex,
-    ) -> (BlockBuffer, OffsetBytes) {
+    ) -> (TransmuteCollection<BlockBuffer, Inode>, OffsetBytes) {
         let (inode_block_index, inode_offset) = self
             .superblock
             .inode_block_and_offset(block_group_descriptor.inode_table, local_inode_index);
         let buf = self
             .device
             .read_blocks(self.block_size, inode_block_index, 1);
-        (buf, inode_offset)
+        (buf.into_collection(), inode_offset)
     }
 
     fn block_bitmap_block(&self, block_group_descriptor: &BlockGroupDescriptor) -> BlockBuffer {
@@ -169,12 +169,13 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         assert!(inode_used, "inode {inode_number:?} is not marked as used!");
 
         // Write and flush inode block
-        let (mut inode_block, inode_offset) =
+        let (mut inodes, inode_offset) =
             self.inode_block(block_group_descriptor, local_inode_index);
-        let inode_ref = try_cast_bytes_ref_mut_offset(&mut inode_block, inode_offset.0 as usize)
-            .expect("failed to cast inode block to inode!");
+        let inode_ref = inodes
+            .get_mut(inode_offset.0 as usize)
+            .expect("failed to cast Inode");
         *inode_ref = inode;
-        inode_block.flush();
+        inodes.buffer().flush();
     }
 
     pub(super) fn iter_file_blocks<F>(&mut self, inode: &Inode, mut func: F)

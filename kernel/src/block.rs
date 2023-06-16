@@ -5,7 +5,7 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use zerocopy::FromBytes;
 
-use crate::transmute::TransmuteView;
+use crate::transmute::{TransmuteCollection, TransmuteView};
 use crate::virtio;
 
 /// Wrapper around a `BlockDeviceDriver` implementation.
@@ -126,6 +126,10 @@ impl BlockBuffer {
 
     pub(crate) fn into_view<T: FromBytes>(self) -> Option<TransmuteView<Self, T>> {
         TransmuteView::new(self)
+    }
+
+    pub(crate) fn into_collection<T: FromBytes>(self) -> TransmuteCollection<Self, T> {
+        TransmuteCollection::new(self)
     }
 
     /// Flushes the block back to disk
