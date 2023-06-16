@@ -1,5 +1,5 @@
 use crate::block::{BlockBuffer, BlockDevice, BlockDeviceDriver, BlockIndex, BlockSize};
-use crate::transmute::{CastBytes, CastBytesMut, TransmuteView};
+use crate::transmute::{try_cast_bytes_ref_mut_offset, try_cast_bytes_ref_offset, TransmuteView};
 
 use super::block_group::{BlockBitmap, BlockGroupDescriptor, InodeBitmap};
 use super::directory::{DirectoryBlock, DirectoryEntryFileType};
@@ -40,12 +40,12 @@ impl BlockGroupDescriptorBlocks {
 
     fn get(&self, index: BlockGroupIndex) -> Option<&BlockGroupDescriptor> {
         let offset = self.offset(index)?;
-        self.blocks.try_cast_ref_offset(offset)
+        try_cast_bytes_ref_offset(&self.blocks, offset)
     }
 
     fn get_mut(&mut self, index: BlockGroupIndex) -> Option<&mut BlockGroupDescriptor> {
         let offset = self.offset(index)?;
-        self.blocks.try_cast_ref_mut_offset(offset)
+        try_cast_bytes_ref_mut_offset(&mut self.blocks, offset)
     }
 
     fn offset(&self, index: BlockGroupIndex) -> Option<usize> {
@@ -120,8 +120,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
 
         let (inode_block, inode_offset) =
             self.inode_block(block_group_descriptor, local_inode_index);
-        let inode = inode_block
-            .try_cast_ref_offset::<Inode>(inode_offset.0 as usize)
+        let inode = try_cast_bytes_ref_offset::<Inode>(&inode_block, inode_offset.0 as usize)
             .expect("failed to cast Inode");
         Some(inode.clone())
     }
@@ -172,8 +171,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         // Write and flush inode block
         let (mut inode_block, inode_offset) =
             self.inode_block(block_group_descriptor, local_inode_index);
-        let inode_ref = inode_block
-            .try_cast_ref_mut_offset(inode_offset.0 as usize)
+        let inode_ref = try_cast_bytes_ref_mut_offset(&mut inode_block, inode_offset.0 as usize)
             .expect("failed to cast inode block to inode!");
         *inode_ref = inode;
         inode_block.flush();
