@@ -92,13 +92,13 @@ make test
 ## TODO
 
 - Memory management
-  - Split up `memory.rs` into `physical`, `heap`, and `paging`
   - Replace `x86_64` crate page table management with our own
     - Make a doc like <https://www.kernel.org/doc/Documentation/x86/x86_64/mm.txt>, and perhaps a static array of regions that other modules use
     - Hard-code the expected kernel offset and direct map memory offset from limine and assert it is what we expect
     - Abandon the default limine memory mapping and making our own
     - Map all physical memory starting at `0xffff_8000_0000_0000`. Limine just does 4 GiB, but make sure to do it all.
     - Consider a `KernelAddress` that wraps `VirtAddr` and can be converted to `PhysAddr` by just subtracting hard-coded offset (`0xffff_8000_0000_0000`)
+      - Be really careful here! Not all kernel memory is mapped as simply as an offset. Only some of it is.
   - Make it trivial to create a userspace page table. Ensure the entire top half of kernel page table is filled (or at least all memory areas we care about!), clone the whole thing, and then zero out bottom half. Then fill in with userspace segments.
 - Userspace
   - Set up and execute ELF for real in `task_userspace_setup`. Map segments to memory, make a stack, use real start location, etc.

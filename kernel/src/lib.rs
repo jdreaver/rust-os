@@ -45,7 +45,6 @@ pub(crate) mod boot_info;
 pub(crate) mod elf;
 pub(crate) mod fs;
 pub(crate) mod gdt;
-pub(crate) mod heap;
 pub(crate) mod hpet;
 pub(crate) mod interrupts;
 pub(crate) mod ioapic;
@@ -142,7 +141,6 @@ fn global_setup(boot_info_data: &boot_info::BootInfo) {
             make_memory_map,
         );
     };
-    heap::init().expect("failed to initialize heap");
 
     // N.B. Probing ACPI must happen after heap initialization because the Rust
     // `acpi` crate uses alloc. It would be nice to not need that...
