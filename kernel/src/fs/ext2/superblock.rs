@@ -2,6 +2,7 @@ use core::fmt;
 use core::ops::Add;
 
 use bitflags::bitflags;
+use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 use crate::block::{BlockIndex, BlockSize};
 
@@ -11,7 +12,7 @@ use super::strings::CStringBytes;
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#superblock>
 #[repr(C, packed)]
-#[derive(Debug)]
+#[derive(Debug, FromZeroes, FromBytes, AsBytes)]
 pub(super) struct Superblock {
     pub(super) inodes_count: u32,
     pub(super) blocks_count: u32,
@@ -47,8 +48,8 @@ pub(super) struct Superblock {
     pub(super) feature_incompat: FeatureIncompatFlags,
     pub(super) feature_ro_compat: FeatureReadOnlyCompatFlags,
     pub(super) uuid: UUID,
-    pub(super) volume_name: CStringBytes<16>,
-    pub(super) last_mounted: CStringBytes<64>,
+    pub(super) volume_name: CStringBytes<[u8; 16]>,
+    pub(super) last_mounted: CStringBytes<[u8; 64]>,
     pub(super) algo_bitmap: u32,
 
     // Performance Hints
@@ -182,7 +183,7 @@ impl Superblock {
 
 /// Address of a block in the filesystem.
 #[repr(transparent)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, FromZeroes, FromBytes, AsBytes)]
 pub(super) struct BlockAddress(pub(super) u32);
 
 impl Add<u32> for BlockAddress {
@@ -225,11 +226,13 @@ pub(super) struct LocalInodeIndex(pub(super) u32);
 #[derive(Debug, Copy, Clone)]
 pub(super) struct BlockGroupIndex(pub(super) u32);
 
+/// <https://www.nongnu.org/ext2-doc/ext2.html#s-feature-compat>
+#[derive(Debug, Copy, Clone, FromZeroes, FromBytes, AsBytes)]
+#[repr(transparent)]
+pub(super) struct FeatureCompatFlags(u32);
+
 bitflags! {
-    #[derive(Debug, Copy, Clone)]
-    #[repr(transparent)]
-    /// <https://www.nongnu.org/ext2-doc/ext2.html#s-feature-compat>
-    pub(super) struct FeatureCompatFlags: u32 {
+    impl FeatureCompatFlags: u32 {
         /// Block pre-allocation for new directories
         const DIR_PREALLOC = 0x0001;
 
@@ -249,11 +252,13 @@ bitflags! {
     }
 }
 
+#[derive(Debug, Copy, Clone, FromZeroes, FromBytes, AsBytes)]
+#[repr(transparent)]
+/// <https://www.nongnu.org/ext2-doc/ext2.html#s-feature-incompat>
+pub(super) struct FeatureIncompatFlags(u32);
+
 bitflags! {
-    #[derive(Debug, Copy, Clone)]
-    #[repr(transparent)]
-    /// <https://www.nongnu.org/ext2-doc/ext2.html#s-feature-incompat>
-    pub(super) struct FeatureIncompatFlags: u32 {
+    impl FeatureIncompatFlags: u32 {
         /// Disk/File compression is used
         const COMPRESSION = 0x0001;
         const FILETYPE = 0x0002;
@@ -263,11 +268,13 @@ bitflags! {
     }
 }
 
+#[derive(Debug, Copy, Clone, FromZeroes, FromBytes, AsBytes)]
+#[repr(transparent)]
+/// <https://www.nongnu.org/ext2-doc/ext2.html#s-feature-ro-compat>
+pub(super) struct FeatureReadOnlyCompatFlags(u32);
+
 bitflags! {
-    #[derive(Debug, Copy, Clone)]
-    #[repr(transparent)]
-    /// <https://www.nongnu.org/ext2-doc/ext2.html#s-feature-ro-compat>
-    pub(super) struct FeatureReadOnlyCompatFlags: u32 {
+    impl FeatureReadOnlyCompatFlags: u32 {
         /// Sparse Superblock
         const SPARSE_SUPER = 0x0001;
 
@@ -279,7 +286,7 @@ bitflags! {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, FromZeroes, FromBytes, AsBytes)]
 #[repr(transparent)]
 pub(super) struct UUID(pub(super) [u8; 16]);
 

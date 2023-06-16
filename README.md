@@ -91,6 +91,11 @@ make test
 
 ## TODO
 
+- BlockBuffer refactor:
+  - Keep exploring `zerocopy`.
+  - Rename `interpret_bytes{_mut}`
+  - Figure out how to do arrays easier instead of needing to call `interpret_bytes`. Remember inode arrays will need runtime-defined spacing between inodes
+  - Also consider generalizing this, not using it _just_ for BlockBuffer. I'm sure there are other parts of the kernel that would benefit from "cast this `&[u8]`/`Vec<u8>` to `T` or `[T]`"
 - Memory management
   - Split up `memory.rs` into `physical`, `heap`, and `paging`
   - Replace `x86_64` crate page table management with our own
@@ -152,9 +157,6 @@ make test
   - Ensure overwriting file properly truncates all blocks first by marking them as free and removing them from inode block pointers
   - Sysfs ideas: pci devices, virtio devices, memory info
   - Instead of returning `Vec` for directories, consider returning an `impl Iterator` (except you probably can't do that with traits...)
-  - BlockBuffer refactor: in BlockBufferView, instead of keeping the underlying BlockBuffer and doing casts on the fly, immediately just transmute the buffer data into `T`. In `Drop`, convert back to `BlockBuffer`.
-    - Check out <https://crates.io/crates/bytes-cast>, <https://docs.rs/bytemuck/latest/bytemuck/>
-    - Also consider generalizing this, not using it _just_ for BlockBuffer. I'm sure there are other parts of the kernel that would benefit from "cast this `&[u8]`/`Vec<u8>` to `T` or `[T]`"
 - Serial port:
   - find a way to implement using `&mut` and locking without deadlocks from e.g. non-maskable interrupts, holding the lock in the shell while trying to debug print inside kernel code, etc.
   - Consider multiple serial ports: one that spits out logs from the kernel, and one dedicated to the shell.

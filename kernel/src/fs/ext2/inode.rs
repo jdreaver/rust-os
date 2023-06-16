@@ -1,10 +1,11 @@
 use bitflags::bitflags;
+use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 use super::superblock::BlockAddress;
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#inode-table>
 #[repr(C, packed)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, FromZeroes, FromBytes, AsBytes)]
 pub(super) struct Inode {
     pub(super) mode: InodeMode,
     pub(super) uid: u16,
@@ -42,11 +43,13 @@ impl Inode {
     }
 }
 
+#[derive(Debug, Copy, Clone, FromZeroes, FromBytes, AsBytes)]
+#[repr(transparent)]
+/// <https://www.nongnu.org/ext2-doc/ext2.html#i-mode>
+pub(super) struct InodeMode(u16);
+
 bitflags! {
-    #[derive(Debug, Copy, Clone)]
-    #[repr(transparent)]
-    /// <https://www.nongnu.org/ext2-doc/ext2.html#i-mode>
-    pub(super) struct InodeMode: u16 {
+    impl InodeMode: u16 {
         // Access rights
 
         /// Others execute
@@ -112,7 +115,8 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, FromZeroes, FromBytes, AsBytes)]
+#[repr(transparent)]
 pub(super) struct InodeDirectBlocks(pub(super) [BlockAddress; 12]);
 
 impl InodeDirectBlocks {

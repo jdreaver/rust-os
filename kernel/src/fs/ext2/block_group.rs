@@ -1,8 +1,10 @@
+use zerocopy::{AsBytes, FromBytes, FromZeroes};
+
 use super::superblock::{BlockAddress, LocalInodeIndex};
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#block-group-descriptor-structure>
 #[repr(C, packed)]
-#[derive(Debug)]
+#[derive(Debug, FromZeroes, FromBytes, AsBytes)]
 pub(super) struct BlockGroupDescriptor {
     pub(super) block_bitmap: BlockAddress,
     pub(super) inode_bitmap: BlockAddress,
@@ -15,7 +17,7 @@ pub(super) struct BlockGroupDescriptor {
 }
 
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, FromZeroes, FromBytes, AsBytes)]
 pub(super) struct InodeTableBlockAddress(pub(super) BlockAddress);
 
 /// See <https://www.nongnu.org/ext2-doc/ext2.html#block-bitmap>

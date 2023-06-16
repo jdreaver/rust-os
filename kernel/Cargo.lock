@@ -33,7 +33,7 @@ checksum = "a4e766e50a6ec4582ebf04c907ac902e598fa295db078b5fdc71cd1efb0557e1"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -87,7 +87,7 @@ name = "fat"
 version = "0.1.0"
 dependencies = [
  "genio",
- "zerocopy",
+ "zerocopy 0.6.1",
 ]
 
 [[package]]
@@ -195,7 +195,7 @@ checksum = "bca9224df2e20e7c5548aeb5f110a0f3b77ef05f8585139b7148b59056168ed2"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -248,6 +248,7 @@ dependencies = [
  "uefi",
  "vesa_framebuffer",
  "x86_64",
+ "zerocopy 0.7.0-alpha.4",
 ]
 
 [[package]]
@@ -304,6 +305,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "syn"
+version = "2.0.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6f671d4b5ffdb8eadec19c0ae67fe2639df8684bd7bc4b83d986b8db549cf01"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
 name = "tap"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -339,7 +351,7 @@ checksum = "e0caeb0e7b31b9f1f347e541106be10aa8c66c76fa722a3298a4cd21433fabd4"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -397,7 +409,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "332f188cc1bcf1fe1064b8c58d150f497e697f49774aa846f2dc949d9a25f236"
 dependencies = [
  "byteorder",
- "zerocopy-derive",
+ "zerocopy-derive 0.3.2",
+]
+
+[[package]]
+name = "zerocopy"
+version = "0.7.0-alpha.4"
+source = "git+https://github.com/google/zerocopy?rev=b5b30d0287734c004bb2c1c97cc53a460443a57f#b5b30d0287734c004bb2c1c97cc53a460443a57f"
+dependencies = [
+ "byteorder",
+ "zerocopy-derive 0.7.0-alpha.4",
 ]
 
 [[package]]
@@ -408,5 +429,15 @@ checksum = "6505e6815af7de1746a08f69c69606bb45695a17149517680f3b2149713b19a3"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "zerocopy-derive"
+version = "0.7.0-alpha.4"
+source = "git+https://github.com/google/zerocopy?rev=b5b30d0287734c004bb2c1c97cc53a460443a57f#b5b30d0287734c004bb2c1c97cc53a460443a57f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.16",
 ]

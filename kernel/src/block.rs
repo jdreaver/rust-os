@@ -4,6 +4,7 @@ use core::ops::{Add, Deref, DerefMut};
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use zerocopy::{AsBytes, FromBytes, LayoutVerified};
 
 use crate::virtio;
 
@@ -125,15 +126,22 @@ impl BlockBuffer {
 
     /// Index into the data block for this buffer, representing the bytes as a
     /// mutable reference to a type.
-    pub(crate) fn interpret_bytes_mut<T>(&mut self, offset: usize) -> &mut T {
-        assert!(
-            self.data.len() >= core::mem::size_of::<T>(),
-            "data buffer is not large enough"
-        );
+    pub(crate) fn interpret_bytes_mut<T: FromBytes + AsBytes>(&mut self, offset: usize) -> &mut T {
+        let data = self.data.get_mut(offset..).expect("invalid offset");
+        let layout: LayoutVerified<&mut [u8], T> = LayoutVerified::new_from_prefix(data)
+            .expect("invalid layout")
+            .0;
+        layout.into_mut()
+    }
 
-        let ptr = unsafe { self.data.as_mut_ptr().add(offset).cast::<T>() };
-        assert!(ptr.is_aligned(), "pointer {ptr:p} not aligned!");
-        unsafe { ptr.as_mut().expect("pointer is null") }
+    /// Index into the data block for this buffer, representing the bytes as a
+    /// reference to a type.
+    pub(crate) fn interpret_bytes<T: FromBytes>(&self, offset: usize) -> &T {
+        let data = self.data.get(offset..).expect("invalid offset");
+        let layout: LayoutVerified<&[u8], T> = LayoutVerified::new_from_prefix(data)
+            .expect("invalid layout")
+            .0;
+        layout.into_ref()
     }
 
     pub(crate) fn into_view_offset<T>(self, offset: usize) -> BlockBufferView<T> {
@@ -146,19 +154,6 @@ impl BlockBuffer {
 
     pub(crate) fn into_view<T>(self) -> BlockBufferView<T> {
         self.into_view_offset(0)
-    }
-
-    /// Index into the data block for this buffer, representing the bytes as a
-    /// reference to a type.
-    pub(crate) fn interpret_bytes<T>(&self, offset: usize) -> &T {
-        assert!(
-            self.data.len() >= core::mem::size_of::<T>(),
-            "data buffer is not large enough"
-        );
-
-        let ptr = unsafe { self.data.as_ptr().add(offset).cast::<T>() };
-        assert!(ptr.is_aligned(), "pointer {ptr:p} not aligned!");
-        unsafe { ptr.as_ref().expect("pointer is null") }
     }
 
     /// Flushes the block back to disk
@@ -187,15 +182,15 @@ impl<T> BlockBufferView<T> {
     }
 }
 
-impl<T> Deref for BlockBufferView<T> {
+impl<T: FromBytes> Deref for BlockBufferView<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        self.buffer.interpret_bytes(self.offset)
+        self.buffer.interpret_bytes::<T>(self.offset)
     }
 }
 
-impl<T> DerefMut for BlockBufferView<T> {
+impl<T: FromBytes + AsBytes> DerefMut for BlockBufferView<T> {
     fn deref_mut(&mut self) -> &mut T {
         self.buffer.interpret_bytes_mut(self.offset)
     }

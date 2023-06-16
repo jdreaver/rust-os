@@ -41,7 +41,7 @@ impl BlockGroupDescriptorBlocks {
 
     fn get(&self, index: BlockGroupIndex) -> Option<&BlockGroupDescriptor> {
         let offset = self.offset(index)?;
-        Some(self.blocks.interpret_bytes(offset))
+        Some(self.blocks.interpret_bytes::<BlockGroupDescriptor>(offset))
     }
 
     fn get_mut(&mut self, index: BlockGroupIndex) -> Option<&mut BlockGroupDescriptor> {
@@ -120,7 +120,7 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
 
         let (inode_block, inode_offset) =
             self.inode_block(block_group_descriptor, local_inode_index);
-        let inode: &Inode = inode_block.interpret_bytes(inode_offset.0 as usize);
+        let inode = inode_block.interpret_bytes::<Inode>(inode_offset.0 as usize);
         Some(inode.clone())
     }
 

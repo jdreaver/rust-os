@@ -23,3 +23,7 @@ spin = "0.9"
 uefi = "0.20"
 vesa_framebuffer = { path = "../crates/vesa_framebuffer" }
 x86_64 = "0.14"
+# Latest version of zerocopy was like 2 years old when I added it, but I needed
+# some newer features, like
+# https://github.com/google/zerocopy/commit/a728cb9ecc5eef30462969da09820f0053bc0d62
+zerocopy = { git = "https://github.com/google/zerocopy", rev = "b5b30d0287734c004bb2c1c97cc53a460443a57f" }
