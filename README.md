@@ -91,12 +91,10 @@ make test
 
 ## TODO
 
-- BlockBuffer refactor:
-  - Deciding between `bytemuck` and `zerocopy` is hard, and they will both be superseded when rust compiler transmute stuff is implemented. Make a facade module for now. I am leaning towards bytemuck for simplicity though.
-  - Keep exploring `zerocopy`.
-  - Rename `interpret_bytes{_mut}`
-  - Figure out how to do arrays easier instead of needing to call `interpret_bytes`. Remember inode arrays will need runtime-defined spacing between inodes
-  - Also consider generalizing this, not using it _just_ for BlockBuffer. I'm sure there are other parts of the kernel that would benefit from "cast this `&[u8]`/`Vec<u8>` to `T` or `[T]`"
+- `TransmuteView` stuff:
+  - Can we make a `TransmuteView` that is infallible (maybe using the actual `LayoutVerified`?) so we don't have to manually call `try_cast_ref`, etc? The offset one wouldn't be infallible, so consider symmetry.
+  - Consider renaming `TransmuteView`, especially if we have the infallible version.
+  - Plug into block descriptors array, inode arrays, and directory
 - Memory management
   - Split up `memory.rs` into `physical`, `heap`, and `paging`
   - Replace `x86_64` crate page table management with our own

@@ -1,11 +1,11 @@
 use core::fmt::Debug;
-use core::marker::PhantomData;
 use core::ops::{Add, Deref, DerefMut};
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use zerocopy::{AsBytes, FromBytes, LayoutVerified};
+use zerocopy::{FromBytes, LayoutVerified};
 
+use crate::transmute::TransmuteView;
 use crate::virtio;
 
 /// Wrapper around a `BlockDeviceDriver` implementation.
@@ -124,36 +124,8 @@ impl BlockBuffer {
         &mut self.data
     }
 
-    /// Index into the data block for this buffer, representing the bytes as a
-    /// mutable reference to a type.
-    pub(crate) fn cast_ref_mut<T: FromBytes + AsBytes>(&mut self, offset: usize) -> &mut T {
-        let data = self.data.get_mut(offset..).expect("invalid offset");
-        LayoutVerified::<_, T>::new_from_prefix(data)
-            .expect("invalid layout")
-            .0
-            .into_mut()
-    }
-
-    /// Index into the data block for this buffer, representing the bytes as a
-    /// reference to a type.
-    pub(crate) fn cast_ref<T: FromBytes>(&self, offset: usize) -> &T {
-        let data = self.data.get(offset..).expect("invalid offset");
-        LayoutVerified::<_, T>::new_from_prefix(data)
-            .expect("invalid layout")
-            .0
-            .into_ref()
-    }
-
-    pub(crate) fn into_view_offset<T>(self, offset: usize) -> BlockBufferView<T> {
-        BlockBufferView {
-            buffer: self,
-            offset,
-            _phantom: PhantomData,
-        }
-    }
-
-    pub(crate) fn into_view<T>(self) -> BlockBufferView<T> {
-        self.into_view_offset(0)
+    pub(crate) fn into_view<T>(self) -> TransmuteView<Self, T> {
+        TransmuteView::new(self)
     }
 
     /// Flushes the block back to disk
@@ -167,32 +139,36 @@ impl BlockBuffer {
     }
 }
 
-/// Wrapper around a `BlockBuffer` that interprets the underlying bytes as a
-/// given type.
-#[derive(Debug)]
-pub(crate) struct BlockBufferView<T> {
-    buffer: BlockBuffer,
-    offset: usize,
-    _phantom: PhantomData<T>,
-}
+impl Deref for BlockBuffer {
+    type Target = [u8];
 
-impl<T> BlockBufferView<T> {
-    pub(crate) fn flush(&self) {
-        self.buffer.flush();
+    fn deref(&self) -> &Self::Target {
+        &self.data
     }
 }
 
-impl<T: FromBytes> Deref for BlockBufferView<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        self.buffer.cast_ref::<T>(self.offset)
+impl DerefMut for BlockBuffer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
     }
 }
 
-impl<T: FromBytes + AsBytes> DerefMut for BlockBufferView<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        self.buffer.cast_ref_mut(self.offset)
+impl<T> AsRef<T> for BlockBuffer
+where
+    T: ?Sized,
+    <Self as Deref>::Target: AsRef<T>,
+{
+    fn as_ref(&self) -> &T {
+        self.deref().as_ref()
+    }
+}
+
+impl<T> AsMut<T> for BlockBuffer
+where
+    <Self as Deref>::Target: AsMut<T>,
+{
+    fn as_mut(&mut self) -> &mut T {
+        self.deref_mut().as_mut()
     }
 }
 
