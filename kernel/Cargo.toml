@@ -30,6 +30,9 @@ x86_64 = "0.14"
 # https://github.com/google/zerocopy/commit/a728cb9ecc5eef30462969da09820f0053bc0d62
 zerocopy = { git = "https://github.com/google/zerocopy", rev = "b5b30d0287734c004bb2c1c97cc53a460443a57f" }
 
+# Test dependencies
+proptest = { version = "1", default-features = false, features = ["alloc", "unstable"], optional = true }
+
 [features]
 default = ["tests"]
-tests = []
+tests = ["proptest"]

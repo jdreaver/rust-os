@@ -2,6 +2,8 @@
 //! and run tests. Based on the Linux kernel [KUnit
 //! architecture](https://www.kernel.org/doc/html/latest/dev-tools/kunit/architecture.html).
 
+use proptest::{prop_assert, proptest};
+
 use test_infra::SimpleTest;
 use test_macro::kernel_test;
 
@@ -57,3 +59,10 @@ fn my_other_test() {
     let x = "hello";
     assert!(x == "hello");
 }
+
+proptest!(
+    #[kernel_test]
+    fn example_proptest_test(x in 0..100u8) {
+        prop_assert!(x < 100);
+    }
+);

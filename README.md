@@ -92,7 +92,8 @@ make test
 ## TODO
 
 - Tests: Add thorough unit test suite we can trigger with shell command.
-  - Support proptest tests
+  - Consider combining all crates into kernel again now that we support tests
+    - Make sure the bitmap-alloc proptest tests are still useful! Force a few failures. I'm a bit worried that proptest w/ no_std and panic == abort isn't useful
   - Have a way to run tests on boot and return the QEMU exit code with the result. Just short circuit to running tests instead of the shell.
     - Maybe I need a way to pass kernel arguments. I don't want to necessarily use config options. I could also pass the arguments directly into the shell...
 - Memory management
