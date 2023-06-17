@@ -19,6 +19,8 @@ KERNEL = kernel/target/x86_64-rust_os/$(RUST_BUILD_MODE)/rust-os
 TEST_CRATES += crates/bitmap-alloc
 TEST_CRATES += crates/fat
 TEST_CRATES += crates/ring_buffer
+TEST_CRATES += crates/test-infra
+TEST_CRATES += crates/test-macro
 TEST_CRATES += crates/vesa_framebuffer
 ALL_CRATES = $(TEST_CRATES) kernel
 

@@ -17,8 +17,3 @@ mod superblock;
 mod vfs;
 
 pub(crate) use vfs::*;
-
-#[cfg(feature = "tests")]
-pub(crate) fn run_tests() {
-    superblock::tests::test_magic_check();
-}

@@ -356,9 +356,11 @@ impl Iterator for InodeBlockIterator {
 pub(super) mod tests {
     use super::*;
 
+    use crate::tests::kernel_test;
     use crate::transmute::try_cast_bytes_ref;
 
-    pub(crate) fn test_magic_check() {
+    #[kernel_test]
+    fn test_magic_check() {
         let mut bytes = [0u8; 1024];
         bytes[56] = 0x53;
         bytes[57] = 0xEF;
