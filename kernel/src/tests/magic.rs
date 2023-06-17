@@ -10,9 +10,6 @@ extern "C" {
 pub(super) fn run_tests_from_linker() {
     log::info!("Running tests from linker...");
 
-    // TODO: Remove this once we figure out how to keep MY_TEST around after linking
-    log::warn!("MY_TEST: {:p}", &MY_TEST);
-
     let test_array_start = unsafe { core::ptr::addr_of!(_start_init_test_array) };
     let test_array_end = unsafe { core::ptr::addr_of!(_end_init_test_array) };
     let test_array_size_bytes = test_array_end as usize - test_array_start as usize;
@@ -38,7 +35,6 @@ pub(super) fn run_tests_from_linker() {
     }
 
     log::info!("Tests from linker complete!");
-
 }
 
 /// Holds a single test.

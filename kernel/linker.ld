@@ -70,7 +70,7 @@ SECTIONS
     .init : {
         /* Testing infrastructure */
         _start_init_test_array = .;
-        *(.init_test_array)
+        KEEP(*(.init_test_array))
         _end_init_test_array = .;
     } :data
 
