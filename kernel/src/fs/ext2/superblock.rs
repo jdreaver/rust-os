@@ -352,12 +352,10 @@ impl Iterator for InodeBlockIterator {
     }
 }
 
-#[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
 
-    #[test]
-    fn magic_check() {
+    pub(crate) fn test_magic_check() {
         let mut bytes = [0u8; 1024];
         bytes[56] = 0x53;
         bytes[57] = 0xEF;

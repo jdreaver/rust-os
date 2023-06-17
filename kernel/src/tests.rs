@@ -5,9 +5,14 @@ use core::fmt::Write;
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 use x86_64::structures::paging::{Size2MiB, Size4KiB};
 
-use crate::{boot_info, memory, serial_println};
+use crate::{boot_info, fs, memory, serial_println};
 
 static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
+
+pub(crate) fn run_test_suite() {
+    fs::ext2::run_tests();
+    run_misc_tests();
+}
 
 pub(crate) fn run_misc_tests() {
     let boot_info_data = boot_info::boot_info();

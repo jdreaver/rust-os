@@ -132,7 +132,7 @@ fn handle_ansi_escape_sequence() {
 
 #[derive(Debug)]
 enum Command {
-    TestMisc,
+    Test,
     ListPCI,
     ListVirtIO,
     BootInfo,
@@ -197,13 +197,7 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
 
     #[allow(clippy::single_match_else)]
     let command = match words.next()? {
-        "test" => match words.next() {
-            Some("misc") => Some(Command::TestMisc),
-            _ => {
-                serial_println!("Usage: test [misc|hpet]");
-                None
-            }
-        },
+        "test" => Some(Command::Test),
         "list-pci" => Some(Command::ListPCI),
         "list-virtio" => Some(Command::ListVirtIO),
         "boot-info" => Some(Command::BootInfo),
@@ -372,8 +366,8 @@ where
 #[allow(clippy::too_many_lines)]
 fn run_command(command: &Command) {
     match command {
-        Command::TestMisc => {
-            tests::run_misc_tests();
+        Command::Test => {
+            tests::run_test_suite();
         }
         Command::ListPCI => {
             serial_println!("Listing PCI devices...");
