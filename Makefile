@@ -1,5 +1,4 @@
 KERNEL_HDD = kernel.hdd
-LIMINE = $(shell nix build ./flake#limine --print-out-paths --no-link)
 OVMF = $(shell nix build ./flake#OVMF --print-out-paths --no-link)/OVMF.fd
 QEMU_DEBUG_BIN = $(shell nix build ./flake#qemu-x86_64-debug --print-out-paths --no-link)/bin/qemu-system-x86_64
 QEMU_SOURCE_CODE = $(shell nix build ./flake#qemu-x86_64-debug --print-out-paths --no-link)/raw
@@ -95,25 +94,7 @@ CMDLINE=
 
 # Adapted from https://github.com/limine-bootloader/limine-barebones/blob/trunk/GNUmakefile
 $(KERNEL_HDD): kernel
-	rm -f $(KERNEL_HDD)
-	dd if=/dev/zero bs=1M count=0 seek=64 of=$(KERNEL_HDD)
-	parted -s $(KERNEL_HDD) mklabel gpt
-	parted -s $(KERNEL_HDD) mkpart ESP fat32 2048s 100%
-	parted -s $(KERNEL_HDD) set 1 esp on
-	$(LIMINE)/limine-deploy $(KERNEL_HDD)
-	sudo losetup -Pf --show $(KERNEL_HDD) >loopback_dev
-	sudo mkfs.fat -F 32 `cat loopback_dev`p1
-	mkdir -p img_mount
-	sudo mount `cat loopback_dev`p1 img_mount
-	sudo mkdir -p img_mount/EFI/BOOT
-	sudo cp -v $(KERNEL) img_mount/kernel.elf
-	sudo cp -v limine.cfg $(LIMINE)/limine.sys img_mount/
-	sudo sed -i "s|CMDLINE=|CMDLINE=$(CMDLINE)|" img_mount/limine.cfg
-	sudo cp -v $(LIMINE)/BOOTX64.EFI img_mount/EFI/BOOT/
-	sync img_mount
-	sudo umount img_mount
-	sudo losetup -d `cat loopback_dev`
-	rm -rf loopback_dev img_mount
+	./scripts/create-boot-image.sh $(KERNEL_HDD) $(KERNEL) "$(CMDLINE)"
 
 $(TEST_FAT_HDD):
 	./crates/fat/scripts/create-test-image.sh $(TEST_FAT_HDD)
