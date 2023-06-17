@@ -81,6 +81,8 @@ pub fn start() -> ! {
         true,
         ProcessorID(boot_info_data.bootstrap_processor_lapic_id as u8),
     );
+
+    log::info!("kernel cmdline: {}", boot_info_data.kernel_cmdline);
     global_setup(boot_info_data);
 
     // Finish bootstrapping current CPU

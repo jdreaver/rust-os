@@ -4,8 +4,8 @@ use spin::Once;
 
 use limine::{
     LimineBootInfoRequest, LimineEfiSystemTableRequest, LimineFramebufferRequest,
-    LimineHhdmRequest, LimineKernelAddressRequest, LimineMemmapRequest, LimineMemoryMapEntryType,
-    LimineRsdpRequest, LimineSmpRequest, NonNullPtr,
+    LimineHhdmRequest, LimineKernelAddressRequest, LimineKernelFileRequest, LimineMemmapRequest,
+    LimineMemoryMapEntryType, LimineRsdpRequest, LimineSmpRequest, NonNullPtr,
 };
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -17,6 +17,7 @@ static BOOT_INFO_ONCE: Once<BootInfo> = Once::new();
 pub(crate) struct BootInfo {
     pub(crate) _info_name: &'static str,
     pub(crate) _info_version: &'static str,
+    pub(crate) kernel_cmdline: &'static str,
     pub(crate) higher_half_direct_map_offset: VirtAddr,
     pub(crate) _kernel_address_physical_base: PhysAddr,
     pub(crate) _kernel_address_virtual_base: VirtAddr,
@@ -52,6 +53,7 @@ static KERNEL_ADDRESS_REQUEST: LimineKernelAddressRequest = LimineKernelAddressR
 static MEMORY_MAP_REQUEST: LimineMemmapRequest = LimineMemmapRequest::new(0);
 static RSDP_REQUEST: LimineRsdpRequest = LimineRsdpRequest::new(0);
 static SMP_REQUEST: LimineSmpRequest = LimineSmpRequest::new(0);
+static KERNEL_FILE_REQUEST: LimineKernelFileRequest = LimineKernelFileRequest::new(0);
 
 pub(crate) fn boot_info() -> &'static BootInfo {
     BOOT_INFO_ONCE.call_once(|| -> BootInfo {
@@ -71,9 +73,23 @@ pub(crate) fn boot_info() -> &'static BootInfo {
             .get()
             .expect("failed to get limine smp info response");
 
+        let kernel_file_response = KERNEL_FILE_REQUEST
+            .get_response()
+            .get()
+            .expect("failed to get limine kernel file response");
+        let kernel_file_ptr = kernel_file_response
+            .kernel_file
+            .as_ptr()
+            .expect("no kernel file");
+        let kernel_file = unsafe { kernel_file_ptr.read() };
+        let kernel_cmdline_ptr = kernel_file.cmdline.as_ptr().expect("no kernel cmdline");
+        let kernel_cmdline =
+            unsafe { strings::c_str_from_pointer(kernel_cmdline_ptr.cast::<u8>(), 1000) };
+
         BootInfo {
             _info_name: info_name,
             _info_version: info_version,
+            kernel_cmdline,
             higher_half_direct_map_offset,
             _kernel_address_physical_base: PhysAddr::new(kernel_address.physical_base),
             _kernel_address_virtual_base: VirtAddr::new(kernel_address.virtual_base),

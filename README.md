@@ -28,6 +28,12 @@ Add VGA graphics:
 $ make run GRAPHICS=on
 ```
 
+Provide command line arguments:
+
+```
+$ make run CMDLINE='hello world'
+```
+
 ### QEMU interaction
 
 I tend to prefer

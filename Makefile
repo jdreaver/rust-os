@@ -90,6 +90,8 @@ gdb: # No deps because we don't want an accidental rebuild if `make debug` alrea
 kernel:
 	cd kernel && cargo build $(RUST_BUILD_MODE_FLAG)
 
+CMDLINE=
+
 # Adapted from https://github.com/limine-bootloader/limine-barebones/blob/trunk/GNUmakefile
 $(KERNEL_HDD): kernel
 	rm -f $(KERNEL_HDD)
@@ -105,6 +107,7 @@ $(KERNEL_HDD): kernel
 	sudo mkdir -p img_mount/EFI/BOOT
 	sudo cp -v $(KERNEL) img_mount/kernel.elf
 	sudo cp -v limine.cfg $(LIMINE)/limine.sys img_mount/
+	sudo sed -i "s|CMDLINE=|CMDLINE=$(CMDLINE)|" img_mount/limine.cfg
 	sudo cp -v $(LIMINE)/BOOTX64.EFI img_mount/EFI/BOOT/
 	sync img_mount
 	sudo umount img_mount
