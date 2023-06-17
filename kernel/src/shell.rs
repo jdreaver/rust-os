@@ -11,7 +11,8 @@ use crate::hpet::Milliseconds;
 use crate::sync::SpinLock;
 use crate::vfs::FilePath;
 use crate::{
-    acpi, ansiterm, boot_info, pci, sched, serial, serial_print, serial_println, tick, vfs, virtio,
+    acpi, ansiterm, boot_info, graphics, pci, sched, serial, serial_print, serial_println, tick,
+    vfs, virtio,
 };
 
 static NEXT_COMMAND_BUFFER: SpinLock<ShellBuffer> = SpinLock::new(ShellBuffer::new());
@@ -143,6 +144,7 @@ enum Command {
     Ls(FilePath),
     Cat(FilePath),
     Exec(FilePath),
+    WriteFramebuffer(String),
     WriteToFile { path: FilePath, content: String },
     FATBIOS { device_id: usize },
     Timer(Milliseconds),
@@ -262,6 +264,14 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
         "exec" => {
             let path = parse_next_word(&mut words, "path", "exec <path>")?;
             Some(Command::Exec(path))
+        }
+        "write-framebuffer" => {
+            let mut content = String::new();
+            for word in words.by_ref() {
+                content.push_str(word);
+                content.push(' ');
+            }
+            Some(Command::WriteFramebuffer(content))
         }
         "write-to-file" => {
             let path = parse_next_word(&mut words, "path", "write-to-file <path> <content>")?;
@@ -534,6 +544,10 @@ fn run_command(command: &Command) {
             serial_println!("Waiting for userspace task {task_id:?} to finish...");
             let exit_code = sched::wait_on_task(task_id);
             serial_println!("Task {task_id:?} finished! Exit code: {exit_code:?}");
+        }
+        Command::WriteFramebuffer(content) => {
+            graphics::write_text_buffer(content);
+            graphics::write_text_buffer("\n");
         }
         Command::WriteToFile { path, content } => {
             let mut file = if let Ok(inode) = vfs::get_path_inode(path) {

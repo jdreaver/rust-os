@@ -29,6 +29,8 @@ pub struct VESAFramebuffer32Bit {
     pitch: usize,
 }
 
+unsafe impl Send for VESAFramebuffer32Bit {}
+
 impl VESAFramebuffer32Bit {
     /// Create a `VESAFrambuffer` from a `limine` framebuffer, returned to the
     /// kernel from the `limine` bootloader. Returns `Err` if the framebuffer

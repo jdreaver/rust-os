@@ -1,30 +1,10 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use core::fmt::Write;
-
-use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
 
 use crate::{boot_info, memory, serial_println};
 
-static mut TEXT_BUFFER: TextBuffer = TextBuffer::new();
-
 pub(crate) fn run_misc_tests() {
     let boot_info_data = boot_info::boot_info();
-
-    // Ensure we got a framebuffer.
-    let mut framebuffer = unsafe {
-        VESAFramebuffer32Bit::from_limine_framebuffer(boot_info_data.framebuffer)
-            .expect("failed to create VESAFramebuffer32Bit")
-    };
-    serial_println!("framebuffer: {framebuffer:#?}");
-
-    // TODO: Initialize TEXT_BUFFER better so we don't need unsafe.
-    let text_buffer = unsafe { &mut TEXT_BUFFER };
-
-    writeln!(text_buffer, "Hello!").expect("failed to write to text buffer");
-    writeln!(text_buffer, "World!").expect("failed to write to text buffer");
-
-    text_buffer.flush(&mut framebuffer);
 
     // Print out some test addresses
     let addresses = [

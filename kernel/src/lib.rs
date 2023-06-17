@@ -45,6 +45,7 @@ pub(crate) mod boot_info;
 pub(crate) mod elf;
 pub(crate) mod fs;
 pub(crate) mod gdt;
+pub(crate) mod graphics;
 pub(crate) mod hpet;
 pub(crate) mod interrupts;
 pub(crate) mod ioapic;
@@ -165,6 +166,8 @@ fn global_setup(boot_info_data: &boot_info::BootInfo) {
         virtio::try_init_virtio_rng(device_config);
         virtio::try_init_virtio_block(device_config);
     });
+
+    graphics::init(boot_info_data);
 }
 
 fn later_per_cpu_setup() {
