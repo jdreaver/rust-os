@@ -94,6 +94,8 @@ make test
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - This is necessary as I start adding more complex subsystems. I'm not a big fan of the external crate that runs on the host because I don't like unnecessarily abstracting code _just_ for tests. Doing with with `ext2` was a PITA.
   - Organize test suite with macros so tests have names, we print individual test status, etc
+    - I like the KUnit architecture <https://www.kernel.org/doc/html/latest/dev-tools/kunit/architecture.html>
+    - Maybe in a `build.rs` we could dynamically figure out which tests to compile in? I don't want e.g. a Cargo feature for every test...
   - Consider a way to run tests on boot and return the QEMU exit code with the result
 - Memory management
   - Replace `x86_64` crate page table management with our own

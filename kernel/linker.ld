@@ -67,6 +67,13 @@ SECTIONS
         *(.data .data.*)
     } :data
 
+    .init : {
+        /* Testing infrastructure */
+        _start_init_test_array = .;
+        *(.init_test_array)
+        _end_init_test_array = .;
+    } :data
+
     /* NOTE: .bss needs to be the last thing mapped to :data, otherwise lots of */
     /* unnecessary zeros will be written to the binary. */
     /* If you need, for example, .init_array and .fini_array, those should be placed */
