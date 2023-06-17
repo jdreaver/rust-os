@@ -122,8 +122,10 @@ test:
 	done
 
 	for crate in $(ALL_CRATES); do \
-		(cd $$crate && cargo clippy && cargo fmt --check) \
+		(cd $$crate && cargo clippy -- -D warnings && cargo fmt --check) \
 	done
+
+	(cd kernel && cargo clippy --no-default-features -- -D warnings) # Ensure there isn't dead code due to tests
 
 .PHONY: clean
 clean:

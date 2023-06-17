@@ -352,14 +352,17 @@ impl Iterator for InodeBlockIterator {
     }
 }
 
+#[cfg(feature = "tests")]
 pub(super) mod tests {
     use super::*;
+
+    use crate::transmute::try_cast_bytes_ref;
 
     pub(crate) fn test_magic_check() {
         let mut bytes = [0u8; 1024];
         bytes[56] = 0x53;
         bytes[57] = 0xEF;
-        let superblock: Superblock = unsafe { bytes.as_ptr().cast::<Superblock>().read() };
+        let superblock: &Superblock = try_cast_bytes_ref::<Superblock>(&bytes).unwrap();
         assert!(superblock.magic_valid());
     }
 }

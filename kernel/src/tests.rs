@@ -3,7 +3,6 @@ use alloc::vec::Vec;
 use core::fmt::Write;
 
 use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
-use x86_64::structures::paging::{Size2MiB, Size4KiB};
 
 use crate::{boot_info, fs, memory, serial_println};
 
@@ -50,32 +49,6 @@ pub(crate) fn run_misc_tests() {
         let phys = memory::translate_addr(virt);
         serial_println!("{:?} -> {:?}", virt, phys);
     }
-
-    serial_println!(
-        "next 4KiB page: {:?}",
-        memory::allocate_physical_frame::<Size4KiB>()
-    );
-    serial_println!(
-        "next 2MiB page: {:?}",
-        memory::allocate_physical_frame::<Size2MiB>()
-    );
-    serial_println!(
-        "next 4KiB page: {:?}",
-        memory::allocate_physical_frame::<Size4KiB>()
-    );
-    serial_println!(
-        "next 2MiB page: {:?}",
-        memory::allocate_physical_frame::<Size2MiB>()
-    );
-
-    for _ in 0..10000 {
-        memory::allocate_physical_frame::<Size4KiB>();
-    }
-
-    serial_println!(
-        "far page: {:?}",
-        memory::allocate_physical_frame::<Size4KiB>()
-    );
 
     // Invoke a breakpoint exception and ensure we continue on
     serial_println!("interrupt");

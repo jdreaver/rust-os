@@ -22,6 +22,7 @@ pub(crate) struct BootInfo {
     pub(crate) _kernel_address_virtual_base: VirtAddr,
     pub(crate) efi_system_table_address: Option<VirtAddr>,
     rsdp_address: Option<VirtAddr>,
+    #[allow(dead_code)] // TODO: Remove dead_code modifier. Currently only used in tests
     pub(crate) framebuffer: &'static mut limine::LimineFramebuffer,
     pub(crate) _x2apic_enabled: bool,
     pub(crate) bootstrap_processor_lapic_id: u32,

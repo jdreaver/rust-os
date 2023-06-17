@@ -60,6 +60,7 @@ pub(crate) mod serial;
 pub(crate) mod shell;
 pub(crate) mod strings;
 pub(crate) mod sync;
+#[cfg(feature = "tests")]
 pub(crate) mod tests;
 pub(crate) mod tick;
 pub(crate) mod transmute;

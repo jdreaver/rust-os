@@ -11,8 +11,7 @@ use crate::hpet::Milliseconds;
 use crate::sync::SpinLock;
 use crate::vfs::FilePath;
 use crate::{
-    acpi, ansiterm, boot_info, pci, sched, serial, serial_print, serial_println, tests, tick, vfs,
-    virtio,
+    acpi, ansiterm, boot_info, pci, sched, serial, serial_print, serial_println, tick, vfs, virtio,
 };
 
 static NEXT_COMMAND_BUFFER: SpinLock<ShellBuffer> = SpinLock::new(ShellBuffer::new());
@@ -367,7 +366,11 @@ where
 fn run_command(command: &Command) {
     match command {
         Command::Test => {
-            tests::run_test_suite();
+            #[cfg(feature = "tests")]
+            crate::tests::run_test_suite();
+
+            #[cfg(not(feature = "tests"))]
+            log::warn!("Test suite not compiled in");
         }
         Command::ListPCI => {
             serial_println!("Listing PCI devices...");

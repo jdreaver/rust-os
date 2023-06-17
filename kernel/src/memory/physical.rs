@@ -108,16 +108,6 @@ impl LockedPhysicalMemoryAllocator<'_> {
 //     NonNull::new_unchecked(core::slice::from_raw_parts_mut(ptr, len_bytes))
 // }
 
-/// Allocates a physical frame of memory for the given size.
-pub(crate) fn allocate_physical_frame<S: PageSize>() -> Option<PhysFrame<S>> {
-    KERNEL_PHYSICAL_ALLOCATOR
-        .lock
-        .lock()
-        .as_mut()
-        .expect("kernel memory allocator not initialized")
-        .allocate_frame()
-}
-
 /// Wrapper around `BitmapAllocator` that knows how to deal with the kernel.
 pub(super) struct PhysicalMemoryAllocator<'a> {
     pub(super) allocator: BitmapAllocator<'a>,

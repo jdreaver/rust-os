@@ -93,14 +93,8 @@ make test
 
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - This is necessary as I start adding more complex subsystems. I'm not a big fan of the external crate that runs on the host because I don't like unnecessarily abstracting code _just_ for tests. Doing with with `ext2` was a PITA.
-  - Plan:
-    - Have a `tests` Cargo feature and create `test` modules with `[cfg(tests)]`. Have it on by default.
-    - Put unit test suites wherever, and just register them centrally in `tests`.
-    - Have a kernel shell command to run all tests.
-    - Make it either impossible or very hard for a test to get orphaned. I guess dead code checker will help?
+  - Organize test suite with macros so tests have names, we print individual test status, etc
   - Consider a way to run tests on boot and return the QEMU exit code with the result
-  - <https://github.com/knurling-rs/defmt/tree/704bee6ebfa153aad9dba1fcee5ba0ec6b77f3a8/firmware/defmt-test>
-  - <https://ferrous-systems.com/blog/tags/embedded-rust-testing/>
 - Memory management
   - Replace `x86_64` crate page table management with our own
     - Make a doc like <https://www.kernel.org/doc/Documentation/x86/x86_64/mm.txt>, and perhaps a static array of regions that other modules use
