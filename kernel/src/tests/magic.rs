@@ -17,7 +17,7 @@ pub(super) fn run_tests_from_linker() {
     log::info!("{} tests found", tests.len());
 
     for test in tests {
-        log::info!("Running test {}...", test.name);
+        log::info!("Running test {}:{}...", test.source_location, test.name);
         let test_fn = test.test_fn;
         test_fn();
     }

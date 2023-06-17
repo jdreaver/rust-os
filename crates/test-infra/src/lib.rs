@@ -5,6 +5,7 @@
 
 /// Holds a single test.
 pub struct SimpleTest {
+    pub source_location: &'static str,
     pub name: &'static str,
     pub test_fn: fn(),
 }
