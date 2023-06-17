@@ -101,7 +101,10 @@ make test
   - Consider combining all crates into kernel again now that we support tests
     - Make sure the bitmap-alloc proptest tests are still useful! Force a few failures. I'm a bit worried that proptest w/ no_std and panic == abort isn't useful
   - Have a way to run tests on boot and return the QEMU exit code with the result. Just short circuit to running tests instead of the shell.
-    - Maybe I need a way to pass kernel arguments. I don't want to necessarily use config options. I could also pass the arguments directly into the shell...
+    - Might need to encapsulate compilation + running in a shell script instead of having it in the Makefile, so that `make test` can modify the CMDLINE arguments. Or at the very least creating the image must be done in a script.
+  - Integration tests:
+    - Spawn a bunch of processes and hope we don't crash?
+    - maybe some expected failures to ensure we call panic handler?
 - Memory management
   - Replace `x86_64` crate page table management with our own
     - Make a doc like <https://www.kernel.org/doc/Documentation/x86/x86_64/mm.txt>, and perhaps a static array of regions that other modules use

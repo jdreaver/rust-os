@@ -65,6 +65,7 @@ QEMU_COMMON_ARGS += -drive file=$(TEST_EXT2_HDD),if=none,id=drive-virtio-disk2,f
 QEMU_COMMON_ARGS += -smp 4 # Use 4 cores
 QEMU_COMMON_ARGS += -m 2G # More memory
 QEMU_COMMON_ARGS += -device virtio-rng-pci-non-transitional # RNG is the simplest virtio device. Good for testing.
+QEMU_COMMON_ARGS += -device isa-debug-exit,iobase=0xf4,iosize=0x04 # Exit QEMU when the kernel writes to port 0xf4
 
 QEMU_ARGS += $(QEMU_COMMON_ARGS)
 QEMU_ARGS += -M q35,accel=kvm # Use the q35 chipset. accel=kvm enables hardware acceleration, makes things way faster.

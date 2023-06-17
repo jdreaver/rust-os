@@ -8,6 +8,7 @@ use uefi::table::{Runtime, SystemTable};
 use crate::block;
 use crate::fs::{ext2, sysfs};
 use crate::hpet::Milliseconds;
+use crate::qemu::{exit_qemu, QEMUExitCode};
 use crate::sync::SpinLock;
 use crate::vfs::FilePath;
 use crate::{
@@ -133,6 +134,7 @@ fn handle_ansi_escape_sequence() {
 #[derive(Debug)]
 enum Command {
     Test,
+    Exit,
     ListPCI,
     ListVirtIO,
     BootInfo,
@@ -199,6 +201,7 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
     #[allow(clippy::single_match_else)]
     let command = match words.next()? {
         "test" => Some(Command::Test),
+        "exit" => Some(Command::Exit),
         "list-pci" => Some(Command::ListPCI),
         "list-virtio" => Some(Command::ListVirtIO),
         "boot-info" => Some(Command::BootInfo),
@@ -381,6 +384,10 @@ fn run_command(command: &Command) {
 
             #[cfg(not(feature = "tests"))]
             log::warn!("Test suite not compiled in");
+        }
+        Command::Exit => {
+            serial_println!("Exiting...");
+            exit_qemu(QEMUExitCode::Success);
         }
         Command::ListPCI => {
             serial_println!("Listing PCI devices...");

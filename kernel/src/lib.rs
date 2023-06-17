@@ -54,6 +54,7 @@ pub(crate) mod logging;
 pub(crate) mod memory;
 pub(crate) mod pci;
 pub(crate) mod percpu;
+pub(crate) mod qemu;
 #[allow(dead_code)] // This could be its own crate
 pub(crate) mod registers;
 pub(crate) mod sched;
