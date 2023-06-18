@@ -12,8 +12,8 @@ use crate::qemu::{exit_qemu, QEMUExitCode};
 use crate::sync::SpinLock;
 use crate::vfs::FilePath;
 use crate::{
-    acpi, ansiterm, boot_info, debug, graphics, pci, sched, serial, serial_print, serial_println,
-    tick, vfs, virtio,
+    acpi, ansiterm, boot_info, debug, graphics, memory, pci, sched, serial, serial_print,
+    serial_println, tick, vfs, virtio,
 };
 
 static NEXT_COMMAND_BUFFER: SpinLock<ShellBuffer> = SpinLock::new(ShellBuffer::new());
@@ -140,6 +140,7 @@ enum Command {
     ListVirtIO,
     BootInfo,
     PrintACPI,
+    PageTable,
     RNG(u32),
     VirtIOBlock(VirtIOBlockCommand),
     Mount(MountTarget),
@@ -208,6 +209,7 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
         "list-virtio" => Some(Command::ListVirtIO),
         "boot-info" => Some(Command::BootInfo),
         "print-acpi" => Some(Command::PrintACPI),
+        "page-table" => Some(Command::PageTable),
         "rng" => {
             let num_bytes = parse_next_word(&mut words, "num bytes", "rng <num_bytes>")?;
             Some(Command::RNG(num_bytes))
@@ -439,6 +441,12 @@ fn run_command(command: &Command) {
         Command::PrintACPI => {
             serial_println!("Printing ACPI info...");
             acpi::print_acpi_info();
+        }
+        Command::PageTable => {
+            let (level_4_table_frame, _) = x86_64::registers::control::Cr3::read();
+            let level_4_table_ptr = level_4_table_frame.start_address().as_u64() as *const _;
+            let level_4_table: &memory::Level4PageTable = unsafe { &*level_4_table_ptr };
+            serial_println!("Level 4 page table: {level_4_table:#x?}");
         }
         Command::RNG(num_bytes) => {
             serial_println!("Generating random numbers...");
