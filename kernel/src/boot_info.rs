@@ -5,7 +5,7 @@ use spin::Once;
 use limine::{
     LimineBootInfoRequest, LimineEfiSystemTableRequest, LimineFramebufferRequest,
     LimineHhdmRequest, LimineKernelAddressRequest, LimineKernelFileRequest, LimineMemmapRequest,
-    LimineMemoryMapEntryType, LimineRsdpRequest, LimineSmpRequest, NonNullPtr,
+    LimineMemoryMapEntryType, LimineModuleRequest, LimineRsdpRequest, LimineSmpRequest, NonNullPtr,
 };
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -28,6 +28,7 @@ pub(crate) struct BootInfo {
     pub(crate) _x2apic_enabled: bool,
     pub(crate) bootstrap_processor_lapic_id: u32,
     pub(crate) _cpu_count: u64,
+    pub(crate) kernel_symbol_map_file: Option<KernelSymbolMapFile>,
 }
 
 // We need to implement Send for BootInfo so it can be used with `Once`.
@@ -45,6 +46,42 @@ impl BootInfo {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct KernelSymbolMapFile {
+    pub(crate) address: VirtAddr,
+    pub(crate) length: u64,
+}
+
+impl KernelSymbolMapFile {
+    /// Given an address of an instruction inside a function, find the function
+    /// symbol and address for that instruction address.
+    pub(crate) fn find_function_symbol_for_instruction_address(
+        &self,
+        address: u64,
+    ) -> Option<&'static str> {
+        self.as_str()
+            .lines()
+            .map(|line| {
+                let address_str = line
+                    .split_whitespace()
+                    .next()
+                    .expect("failed to get symbol map address string");
+                let address = u64::from_str_radix(address_str, 16)
+                    .expect("failed to parse symbol map address string");
+                (address, line)
+            })
+            .filter(|(symbol_address, _)| *symbol_address <= address)
+            .max_by_key(|(symbol_address, _)| *symbol_address)
+            .map(|(_, line)| line)
+    }
+
+    fn as_str(&self) -> &'static str {
+        unsafe {
+            strings::c_str_from_pointer(self.address.as_u64() as *const u8, self.length as usize)
+        }
+    }
+}
+
 static BOOT_INFO_REQUEST: LimineBootInfoRequest = LimineBootInfoRequest::new(0);
 static EFI_SYSTEM_TABLE_REQUEST: LimineEfiSystemTableRequest = LimineEfiSystemTableRequest::new(0);
 static FRAMEBUFFER_REQUEST: LimineFramebufferRequest = LimineFramebufferRequest::new(0);
@@ -54,6 +91,7 @@ static MEMORY_MAP_REQUEST: LimineMemmapRequest = LimineMemmapRequest::new(0);
 static RSDP_REQUEST: LimineRsdpRequest = LimineRsdpRequest::new(0);
 static SMP_REQUEST: LimineSmpRequest = LimineSmpRequest::new(0);
 static KERNEL_FILE_REQUEST: LimineKernelFileRequest = LimineKernelFileRequest::new(0);
+static MODULE_REQUEST: LimineModuleRequest = LimineModuleRequest::new(0);
 
 pub(crate) fn boot_info() -> &'static BootInfo {
     BOOT_INFO_ONCE.call_once(|| -> BootInfo {
@@ -86,6 +124,24 @@ pub(crate) fn boot_info() -> &'static BootInfo {
         let kernel_cmdline =
             unsafe { strings::c_str_from_pointer(kernel_cmdline_ptr.cast::<u8>(), 1000) };
 
+        let module_response = MODULE_REQUEST
+            .get_response()
+            .get()
+            .expect("failed to get limine module response");
+
+        let mut kernel_symbol_map_file = None;
+        for module in module_response.modules() {
+            let path_ptr = module.path.as_ptr().expect("no path pointer") as *const u8;
+            let path = unsafe { strings::c_str_from_pointer(path_ptr, 1000) };
+            if path == "/kernel.symbols" {
+                let address = module.base.as_ptr().expect("no module base") as *const u8 as u64;
+                kernel_symbol_map_file = Some(KernelSymbolMapFile {
+                    address: VirtAddr::new(address),
+                    length: module.length,
+                });
+            }
+        }
+
         BootInfo {
             _info_name: info_name,
             _info_version: info_version,
@@ -99,6 +155,7 @@ pub(crate) fn boot_info() -> &'static BootInfo {
             _x2apic_enabled: smp_info.flags & 1 == 1,
             bootstrap_processor_lapic_id: smp_info.bsp_lapic_id,
             _cpu_count: smp_info.cpu_count,
+            kernel_symbol_map_file,
         }
     })
 }

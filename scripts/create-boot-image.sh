@@ -38,6 +38,10 @@ mkdir -p img_mount
 sudo mount "${loopback_dev}p1" img_mount
 sudo mkdir -p img_mount/EFI/BOOT
 sudo cp -v "$kernel_binary" img_mount/kernel.elf
+
+# Run nm to create a map of all the kernel's symbols. Useful for stack traces
+sudo nm "$kernel_binary" | sudo tee img_mount/kernel.symbols > /dev/null
+
 sudo cp -v limine.cfg "$limine_dir/limine.sys" img_mount/
 sudo sed -i "s|CMDLINE=|CMDLINE=$cmdline|" img_mount/limine.cfg
 sudo cp -v "$limine_dir/BOOTX64.EFI" img_mount/EFI/BOOT/
