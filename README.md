@@ -97,6 +97,7 @@ make test
 
 ## TODO
 
+- GDB: Add GDB helpers for my TUI setup, and helpers for printing my common data structures better (`Vec`, `SpinLock`, `BTReeMap`, etc)
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - Consider combining all crates into kernel again now that we support tests
     - Make sure the bitmap-alloc proptest tests are still useful! Force a few failures. I'm a bit worried that proptest w/ no_std and panic == abort isn't useful
@@ -250,6 +251,10 @@ $ qemu-system-x86_64 -device virtio-rng-pci,help
 
 ### GDB/Debugging
 
+- <https://sourceware.org/gdb/onlinedocs/gdb/Rust.html>
+- <https://www.cse.unsw.edu.au/~learn/debugging/modules/gdb_init_file/>
+
+In QEMU:
 - Using `break` in GDB doesn't work when QEMU first starts because the kernel has a higher-half mapping, and the addresses aren't mapped yet. Instead, use `hbreak`.
   - <https://forum.osdev.org/viewtopic.php?f=13&t=39998>
 - <https://airbus-seclab.github.io/qemu_blog/brk.html>
