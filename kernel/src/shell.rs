@@ -12,8 +12,8 @@ use crate::qemu::{exit_qemu, QEMUExitCode};
 use crate::sync::SpinLock;
 use crate::vfs::FilePath;
 use crate::{
-    acpi, ansiterm, boot_info, graphics, pci, sched, serial, serial_print, serial_println, tick,
-    vfs, virtio,
+    acpi, ansiterm, boot_info, debug, graphics, pci, sched, serial, serial_print, serial_println,
+    tick, vfs, virtio,
 };
 
 static NEXT_COMMAND_BUFFER: SpinLock<ShellBuffer> = SpinLock::new(ShellBuffer::new());
@@ -135,6 +135,7 @@ fn handle_ansi_escape_sequence() {
 enum Command {
     Test,
     Exit,
+    Backtrace,
     ListPCI,
     ListVirtIO,
     BootInfo,
@@ -202,6 +203,7 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
     let command = match words.next()? {
         "test" => Some(Command::Test),
         "exit" => Some(Command::Exit),
+        "backtrace" => Some(Command::Backtrace),
         "list-pci" => Some(Command::ListPCI),
         "list-virtio" => Some(Command::ListVirtIO),
         "boot-info" => Some(Command::BootInfo),
@@ -388,6 +390,9 @@ fn run_command(command: &Command) {
         Command::Exit => {
             serial_println!("Exiting...");
             exit_qemu(QEMUExitCode::Success);
+        }
+        Command::Backtrace => {
+            debug::print_stack_trace();
         }
         Command::ListPCI => {
             serial_println!("Listing PCI devices...");

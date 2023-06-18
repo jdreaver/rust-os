@@ -1,3 +1,5 @@
+use core::arch::asm;
+
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -216,6 +218,12 @@ pub(crate) enum TaskExitCode {
 /// `switch_to_task`, and we need to pass in arguments via the known C calling
 /// convention registers.
 pub(super) extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *const ()) {
+    // Clear rbp register. This prevents stack traces from trying to walk past
+    // the stack.
+    unsafe {
+        asm!("xor rbp, rbp", options(nostack));
+    }
+
     // Release the scheduler lock. Normally, when we switch to a task, the task
     // exits `run_scheduler` and the lock would be released. However, the first
     // time we switch to a task we won't be exiting from `run_scheduler`, so we

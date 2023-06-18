@@ -9,6 +9,7 @@ use crate::boot_info;
 /// See:
 /// - <https://techno-coder.github.io/example_os/2018/06/04/A-stack-trace-for-your-OS.html>
 /// - <https://doc.rust-lang.org/rustc/codegen-options/index.html#force-frame-pointers>
+/// - <https://blogs.oracle.com/linux/post/unwinding-stack-frame-pointers-and-orc>
 pub(crate) fn print_stack_trace() {
     let boot_info_data = boot_info::boot_info();
 
