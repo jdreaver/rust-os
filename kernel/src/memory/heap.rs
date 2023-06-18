@@ -3,6 +3,7 @@ use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::{Page, PageTableFlags, Size4KiB};
 use x86_64::VirtAddr;
 
+use super::mapping::{KERNEL_HEAP_REGION_MAX_SIZE, KERNEL_HEAP_REGION_START};
 use super::virt::allocate_and_map_pages;
 
 /// NOTE: `LockedHeap` uses a spin lock under the hood, so we should ensure we
@@ -12,12 +13,14 @@ use super::virt::allocate_and_map_pages;
 #[global_allocator]
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
-const HEAP_START: usize = 0x_ffff_8500_0000_0000;
+const HEAP_START: usize = KERNEL_HEAP_REGION_START as usize;
 const HEAP_SIZE: usize = 10 * 1024 * 1024; // 10 MiB
 
 /// Maps pages for a kernel heap defined by `HEAP_START` and `HEAP_SIZE` and
 /// initializes `ALLOCATOR` with this heap.
 pub(super) fn init() -> Result<(), MapToError<Size4KiB>> {
+    assert!(HEAP_SIZE < KERNEL_HEAP_REGION_MAX_SIZE as usize);
+
     let page_range = {
         let heap_start = VirtAddr::new(HEAP_START as u64);
         let heap_end = heap_start + HEAP_SIZE as u64 - 1u64;

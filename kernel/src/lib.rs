@@ -142,10 +142,7 @@ fn global_setup(boot_info_data: &boot_info::BootInfo) {
     };
 
     unsafe {
-        memory::init(
-            boot_info_data.higher_half_direct_map_offset,
-            make_memory_map,
-        );
+        memory::init(boot_info_data, make_memory_map);
     };
 
     // N.B. Probing ACPI must happen after heap initialization because the Rust

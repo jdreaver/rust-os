@@ -167,7 +167,7 @@ impl DirectoryEntryHeader {
             .into_ref()
     }
 
-    /// From: https://www.nongnu.org/ext2-doc/ext2.html#ifdir-rec-len
+    /// From: <https://www.nongnu.org/ext2-doc/ext2.html#ifdir-rec-len>
     ///
     /// The directory entries must be aligned on 4 bytes boundaries and there
     /// cannot be any directory entry spanning multiple data blocks. If an entry

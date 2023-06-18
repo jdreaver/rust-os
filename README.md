@@ -107,11 +107,8 @@ make test
     - maybe some expected failures to ensure we call panic handler?
 - Memory management
   - Replace `x86_64` crate page table management with our own
-    - Create page table and page table entry structs and use them to print existing page tables with a shell command.
-    - Make a doc like <https://www.kernel.org/doc/Documentation/x86/x86_64/mm.txt>, and perhaps a static array of regions that other modules use
     - Better terminology: `VirtPage` vs `PhysPage`
-    - Hard-code the expected kernel offset and direct map memory offset from limine and assert it is what we expect
-    - Abandon the default limine memory mapping and making our own
+    - Abandon the default limine memory mapping and make our own
       - Make sure to copy the pages relating to how the kernel is loaded though. Limine did all the hard work parsing the ELF file and set page permissions properly (or so I hope) for e.g. text, data, etc
     - Map all physical memory starting at `0xffff_8000_0000_0000`. Limine just does 4 GiB, but make sure to do it all.
     - Consider a `KernelPhysAddr` that wraps `VirtAddr` and can be converted to `PhysAddr` by just subtracting hard-coded offset (`0xffff_8000_0000_0000`)

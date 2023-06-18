@@ -15,7 +15,7 @@ use crate::sync::SpinLock;
 /// mode.
 const KERNEL_STACK_SIZE_PAGES: usize = 16;
 const KERNEL_STACK_SIZE_BYTES: usize = KERNEL_STACK_SIZE_PAGES * memory::PAGE_SIZE;
-const KERNEL_STACK_START_VIRT_ADDR: usize = 0x_ffff_8400_0000_0000;
+const KERNEL_STACK_START_VIRT_ADDR: usize = memory::KERNEL_STACK_REGION_START as usize;
 
 const MAX_KERNEL_STACKS: usize = 256;
 const MAX_KERNEL_ALLOC_BIT_CHUNKS: usize = MAX_KERNEL_STACKS.div_ceil(u64::BITS as usize);
@@ -26,6 +26,10 @@ static mut KERNEL_ALLOC_BIT_CHUNKS: [u64; MAX_KERNEL_ALLOC_BIT_CHUNKS] =
 static KERNEL_STACK_ALLOCATOR: SpinLock<Option<KernelStackAllocator>> = SpinLock::new(None);
 
 pub(super) fn stack_init() {
+    assert!(
+        MAX_KERNEL_STACKS * KERNEL_STACK_SIZE_PAGES < memory::KERNEL_STACK_REGION_MAX_SIZE as usize
+    );
+
     let allocator = KernelStackAllocator::new();
     KERNEL_STACK_ALLOCATOR.lock().replace(allocator);
 }

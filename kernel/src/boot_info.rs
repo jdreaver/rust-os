@@ -20,7 +20,7 @@ pub(crate) struct BootInfo {
     pub(crate) kernel_cmdline: &'static str,
     pub(crate) higher_half_direct_map_offset: VirtAddr,
     pub(crate) _kernel_address_physical_base: PhysAddr,
-    pub(crate) _kernel_address_virtual_base: VirtAddr,
+    pub(crate) kernel_address_virtual_base: VirtAddr,
     pub(crate) efi_system_table_address: Option<VirtAddr>,
     rsdp_address: Option<VirtAddr>,
     #[allow(dead_code)] // TODO: Remove dead_code modifier. Currently only used in tests
@@ -148,7 +148,7 @@ pub(crate) fn boot_info() -> &'static BootInfo {
             kernel_cmdline,
             higher_half_direct_map_offset,
             _kernel_address_physical_base: PhysAddr::new(kernel_address.physical_base),
-            _kernel_address_virtual_base: VirtAddr::new(kernel_address.virtual_base),
+            kernel_address_virtual_base: VirtAddr::new(kernel_address.virtual_base),
             efi_system_table_address: limine_efi_system_table_address(),
             rsdp_address: limine_rsdp_address(),
             framebuffer,
