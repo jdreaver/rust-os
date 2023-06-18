@@ -1,5 +1,3 @@
-use core::arch::asm;
-
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -134,21 +132,26 @@ impl Task {
             let stack_top_pointer = kernel_stack.top_addr().as_mut_ptr::<u8>().cast::<usize>();
             assert!(stack_top_pointer as usize % 8 == 0, "stack top not aligned");
 
+            // Keep the top u64 on the stack zero. This will be used as the rbp
+            // register when we return. This is important because it prevents us
+            // from walking off the stack (and perhaps into another stack's guard
+            // page) while building stack traces.
+
             // Push the RIP for the task_setup.
-            *stack_top_pointer.sub(1) = task_setup as usize;
+            *stack_top_pointer.sub(2) = task_setup as usize;
 
             // Set rsi, which will end up as the second argument to task_setup when
             // we `ret` to it in `switch_to_task` (this is the C calling
             // convention).
-            *stack_top_pointer.sub(7) = arg as usize;
+            *stack_top_pointer.sub(8) = arg as usize;
 
             // Set rdi, which will end up as the first argument to task_setup when
             // we `ret` to it in `switch_to_task` (this is the C calling
             // convention).
-            *stack_top_pointer.sub(8) = start_fn as usize;
+            *stack_top_pointer.sub(9) = start_fn as usize;
 
             let num_general_purpose_registers = 15;
-            let stack_top_offset = num_general_purpose_registers + 1; // +1 for the RIP
+            let stack_top_offset = num_general_purpose_registers + 2; // +1 for zeroed rbp, +1 for the RIP
             stack_top_pointer.sub(stack_top_offset) as usize
         };
 
@@ -218,12 +221,6 @@ pub(crate) enum TaskExitCode {
 /// `switch_to_task`, and we need to pass in arguments via the known C calling
 /// convention registers.
 pub(super) extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *const ()) {
-    // Clear rbp register. This prevents stack traces from trying to walk past
-    // the stack.
-    unsafe {
-        asm!("xor rbp, rbp", options(nostack));
-    }
-
     // Release the scheduler lock. Normally, when we switch to a task, the task
     // exits `run_scheduler` and the lock would be released. However, the first
     // time we switch to a task we won't be exiting from `run_scheduler`, so we

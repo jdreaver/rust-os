@@ -182,7 +182,8 @@ make test
   - Should we fail if we are holding a spinlock for too long?
   - Consider naming spinlocks, and having the lock holder put their name once they take the lock. Then if we fail we can dump all of this info.
 - Consider storing task context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>. This makes it easier to manipulate during setup.
-- Try using ORC for stack traces so we don't need to keep frame pointers around <https://blogs.oracle.com/linux/post/unwinding-stack-frame-pointers-and-orc> (we currently have `-C force-frame-pointers=yes`)
+- Pre-process DWARF info to use for stack traces so we don't need to keep frame pointers around (we currently have `-C force-frame-pointers=yes`)
+  - Do something like Linux's ORC <https://blogs.oracle.com/linux/post/unwinding-stack-frame-pointers-and-orc>
 - VirtIO improvements:
   - Create a physically contiguous heap, or slab allocator, or something for virtio buffer requests so we don't waste an entire page per tiny allocation.
     - Ensure we are still satisfying any alignment requirements for buffers. Read the spec!
