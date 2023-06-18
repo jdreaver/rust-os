@@ -49,6 +49,10 @@ SECTIONS
         *(.rodata .rodata.*)
     } :rodata
 
+    .debug_gdb_scripts : {
+        KEEP(*(.debug_gdb_scripts))
+    } :rodata
+
     /* Move to the next memory page for .data */
     . += CONSTANT(MAXPAGESIZE);
 

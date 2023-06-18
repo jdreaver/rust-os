@@ -2,6 +2,12 @@ use core::arch::asm;
 
 use crate::boot_info;
 
+/// This is a hack to get GDB to load our pretty printers. See
+/// <https://github.com/rust-lang/rust/issues/96365>
+#[used]
+#[link_section = ".debug_gdb_scripts"]
+static GDB_PRETTY_PRINTERS: [u8; 34] = *b"\x01gdb_load_rust_pretty_printers.py\0";
+
 /// Generates a stack trace by iterating over the stack frame pointers. Requires
 /// `-C force-frame-pointers=yes` to be passed to rustc, otherwise Rust tends to
 /// treat `rbp` as a general purpose register.
