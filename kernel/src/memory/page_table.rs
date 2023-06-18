@@ -1,30 +1,178 @@
 use alloc::vec::Vec;
-use bitflags::bitflags;
-use x86_64::PhysAddr;
-
 use core::fmt;
+use core::ops::Index;
 
-#[derive(Debug, Clone)]
-pub(crate) struct Level4PageTable(PageTable);
+use bitflags::bitflags;
+use x86_64::{PhysAddr, VirtAddr};
+
+/// A `RawPageTable` with a level. This is the top-level type for this module.
+pub(crate) struct PageTable {
+    level: PageTableLevel,
+    table: &'static RawPageTable,
+}
+
+impl PageTable {
+    pub(crate) fn level_4_from_cr3() -> Self {
+        let (level_4_table_frame, _) = x86_64::registers::control::Cr3::read();
+        let level_4_table_ptr = level_4_table_frame.start_address().as_u64() as *const _;
+        let table: &RawPageTable = unsafe { &*level_4_table_ptr };
+        Self {
+            level: PageTableLevel::Level4,
+            table,
+        }
+    }
+
+    pub(crate) fn entry(&self, index: PageTableIndex) -> PageTableIndexedEntry {
+        PageTableIndexedEntry {
+            level: self.level,
+            index,
+            entry: self.table.0[index.0 as usize],
+        }
+    }
+}
+
+impl fmt::Debug for PageTable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PageTable")
+            .field("level", &self.level)
+            .field(
+                "present_entries",
+                &self.table.present_entries(self.level).collect::<Vec<_>>(),
+            )
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum PageTableLevel {
+    Level1 = 1,
+    Level2,
+    Level3,
+    Level4,
+}
+
+impl PageTableLevel {
+    fn next_lower_level(self) -> Option<Self> {
+        match self {
+            Self::Level4 => Some(Self::Level3),
+            Self::Level3 => Some(Self::Level2),
+            Self::Level2 => Some(Self::Level1),
+            Self::Level1 => None,
+        }
+    }
+}
+
+/// All page table levels have 512 entries.
+const NUM_PAGE_TABLE_ENTRIES: usize = 512;
 
 /// Underlying type for all levels of page tables.
 ///
 /// See 4.5 4-LEVEL PAGING AND 5-LEVEL PAGING
 #[derive(Clone)]
 #[repr(C, align(4096))]
-pub(crate) struct PageTable([PageTableEntry; 512]);
+pub(crate) struct RawPageTable([PageTableEntry; NUM_PAGE_TABLE_ENTRIES]);
 
-impl fmt::Debug for PageTable {
+impl RawPageTable {
+    fn entries(&self, level: PageTableLevel) -> impl Iterator<Item = PageTableIndexedEntry> + '_ {
+        self.0
+            .iter()
+            .enumerate()
+            .map(move |(i, entry)| PageTableIndexedEntry {
+                level,
+                index: PageTableIndex::new(i as u16),
+                entry: *entry,
+            })
+    }
+
+    fn present_entries(
+        &self,
+        level: PageTableLevel,
+    ) -> impl Iterator<Item = PageTableIndexedEntry> + '_ {
+        self.entries(level)
+            .filter(|entry| entry.entry.flags().contains(PageTableEntryFlags::PRESENT))
+    }
+}
+
+impl Index<PageTableIndex> for RawPageTable {
+    type Output = PageTableEntry;
+
+    fn index(&self, index: PageTableIndex) -> &Self::Output {
+        self.0
+            .get(index.0 as usize)
+            .expect("failed to get entry, somehow index was over 512")
+    }
+}
+
+/// Simply a `PageTableEntry` with additional context about its level and
+/// location in the page table.
+pub(crate) struct PageTableIndexedEntry {
+    level: PageTableLevel,
+    index: PageTableIndex,
+    entry: PageTableEntry,
+}
+
+impl PageTableIndexedEntry {
+    /// Start address of the region the page table points to.
+    fn virtual_address(&self) -> VirtAddr {
+        let shift = (self.level as u64 - 1) * 9 + 12;
+        let raw_addr = u64::from(self.index.0) << shift;
+        let sign_extended = sign_extend_virtual_address(raw_addr);
+        VirtAddr::new(sign_extended)
+    }
+
+    pub(crate) fn target(self) -> Option<PageTableTarget> {
+        if !self.entry.flags().contains(PageTableEntryFlags::PRESENT) {
+            return None;
+        }
+
+        let target_addr = self.entry.address();
+        if self.entry.flags().contains(PageTableEntryFlags::HUGE_PAGE) {
+            match self.level {
+                PageTableLevel::Level4 => {
+                    panic!("found huge page flag on level 4 page table entry! {self:?}")
+                }
+                PageTableLevel::Level3 => {
+                    return Some(PageTableTarget::Page1GiB(target_addr));
+                }
+                PageTableLevel::Level2 => {
+                    return Some(PageTableTarget::Page2MiB(target_addr));
+                }
+                PageTableLevel::Level1 => {
+                    panic!("found huge page flag on level 1 page table entry! {self:?}")
+                }
+            }
+        }
+
+        self.level.next_lower_level().map_or(
+            Some(PageTableTarget::Page4KiB(target_addr)),
+            |next_level| {
+                let table = unsafe { &*(target_addr.as_u64() as *const RawPageTable) };
+                Some(PageTableTarget::NextTable(PageTable {
+                    level: next_level,
+                    table,
+                }))
+            },
+        )
+    }
+}
+
+fn sign_extend_virtual_address(address: u64) -> u64 {
+    const SIGN_BIT: u64 = 0x0000_8000_0000_0000;
+    const SIGN_MASK: u64 = 0xFFFF_8000_0000_0000;
+
+    if (address & SIGN_BIT) == 0 {
+        return address;
+    }
+    (address | SIGN_BIT) | SIGN_MASK
+}
+
+impl fmt::Debug for PageTableIndexedEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("PageTable")
-            .field(
-                &self
-                    .0
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, entry)| entry.flags().contains(PageTableEntryFlags::PRESENT))
-                    .collect::<Vec<(usize, &PageTableEntry)>>(),
-            )
+        f.debug_struct("PageTableIndexedEntry")
+            .field("level", &self.level)
+            .field("index", &self.index)
+            .field("virtual_address", &self.virtual_address())
+            .field("entry", &self.entry)
             .finish()
     }
 }
@@ -55,7 +203,7 @@ impl fmt::Debug for PageTableEntry {
 bitflags! {
     /// Flags for all levels of page table entries.
     #[derive(Debug, Clone, Copy)]
-    pub struct PageTableEntryFlags: u64 {
+    pub(crate) struct PageTableEntryFlags: u64 {
         /// Indicates if entry is valid. If this bit is unset, the entry is ignored.
         const PRESENT = 1;
 
@@ -112,4 +260,24 @@ bitflags! {
         /// register.
         const NO_EXECUTE = 1 << 63;
     }
+}
+
+/// Index into a page table. Guaranteed to be in the range 0..512 (9 bits).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct PageTableIndex(u16);
+
+impl PageTableIndex {
+    pub(crate) fn new(index: u16) -> Self {
+        assert!(usize::from(index) < NUM_PAGE_TABLE_ENTRIES);
+        Self(index)
+    }
+}
+
+/// What a page table entry points to.
+#[derive(Debug)]
+pub(crate) enum PageTableTarget {
+    Page4KiB(PhysAddr),
+    Page2MiB(PhysAddr),
+    Page1GiB(PhysAddr),
+    NextTable(PageTable),
 }

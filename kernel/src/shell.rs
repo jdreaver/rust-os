@@ -443,10 +443,11 @@ fn run_command(command: &Command) {
             acpi::print_acpi_info();
         }
         Command::PageTable => {
-            let (level_4_table_frame, _) = x86_64::registers::control::Cr3::read();
-            let level_4_table_ptr = level_4_table_frame.start_address().as_u64() as *const _;
-            let level_4_table: &memory::PageTable = unsafe { &*level_4_table_ptr };
-            serial_println!("Level 4 page table: {level_4_table:#x?}");
+            let table = memory::PageTable::level_4_from_cr3();
+            serial_println!("{table:#x?}");
+            let first_entry = table.entry(memory::PageTableIndex::new(0));
+            serial_println!("First entry: {first_entry:#x?}");
+            serial_println!("First target: {:#x?}", first_entry.target());
         }
         Command::RNG(num_bytes) => {
             serial_println!("Generating random numbers...");
