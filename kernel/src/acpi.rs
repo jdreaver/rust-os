@@ -173,6 +173,10 @@ pub(crate) fn print_acpi_info() {
     for (i, entry) in mcfg_entries.iter().enumerate() {
         serial_println!("  MCFG entry {i}: {entry:#x?}");
     }
+
+    let pci_config_regions =
+        acpi::mcfg::PciConfigRegions::new(&info.tables).expect("couldn't get PCI config regions");
+    serial_println!("PCI config regions: {:#x?}", pci_config_regions);
 }
 
 /// For some reason this code is private in the acpi crate. See
