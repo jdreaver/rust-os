@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use uefi::table::{Runtime, SystemTable};
+use x86_64::VirtAddr;
 
 use crate::block;
 use crate::fs::{ext2, sysfs};
@@ -445,9 +446,20 @@ fn run_command(command: &Command) {
         Command::PageTable => {
             let table = memory::PageTable::level_4_from_cr3();
             serial_println!("{table:#x?}");
-            let first_entry = table.entry(memory::PageTableIndex::new(0));
-            serial_println!("First entry: {first_entry:#x?}");
+            let first_entry = table.index_entry(memory::PageTableIndex::new(0));
             serial_println!("First target: {:#x?}", first_entry.target());
+
+            let target_addr = VirtAddr::new(0x1234);
+            let target = table.translate_address(target_addr);
+            serial_println!("Target of {target_addr:x?}: {target:x?}");
+
+            let target_addr = VirtAddr::new(0x4000_1234);
+            let target = table.translate_address(target_addr);
+            serial_println!("Target of {target_addr:x?}: {target:x?}");
+
+            let target_addr = VirtAddr::new(0xffff_ffff_8000_1234);
+            let target = table.translate_address(target_addr);
+            serial_println!("Target of {target_addr:x?}: {target:x?}");
         }
         Command::RNG(num_bytes) => {
             serial_println!("Generating random numbers...");

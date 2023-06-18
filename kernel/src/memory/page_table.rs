@@ -6,12 +6,14 @@ use bitflags::bitflags;
 use x86_64::{PhysAddr, VirtAddr};
 
 /// A `RawPageTable` with a level. This is the top-level type for this module.
+#[derive(Clone)]
 pub(crate) struct PageTable {
     level: PageTableLevel,
     table: &'static RawPageTable,
 }
 
 impl PageTable {
+    /// Loads the page table from the current value of the CR3 register.
     pub(crate) fn level_4_from_cr3() -> Self {
         let (level_4_table_frame, _) = x86_64::registers::control::Cr3::read();
         let level_4_table_ptr = level_4_table_frame.start_address().as_u64() as *const _;
@@ -22,11 +24,37 @@ impl PageTable {
         }
     }
 
-    pub(crate) fn entry(&self, index: PageTableIndex) -> PageTableIndexedEntry {
+    /// Indexes into the page table given a virtual address. NOTE: this only
+    /// goes one level deep. Use `translate_address` to recursively translate a
+    /// virtual address.
+    pub(crate) fn address_entry(&self, addr: VirtAddr) -> PageTableIndexedEntry {
+        let index = PageTableIndex::from_address(self.level, addr);
+        self.index_entry(index)
+    }
+
+    pub(crate) fn index_entry(&self, index: PageTableIndex) -> PageTableIndexedEntry {
         PageTableIndexedEntry {
             level: self.level,
             index,
             entry: self.table.0[index.0 as usize],
+        }
+    }
+
+    /// Recursively translates a virtual address to a physical address mapped by
+    /// the page table.
+    pub(crate) fn translate_address(&self, addr: VirtAddr) -> Option<PhysicalPage> {
+        let mut table = self.clone();
+        loop {
+            let entry = table.address_entry(addr);
+            let target = entry.target()?;
+            match target {
+                PageTableTarget::Page(page) => {
+                    return Some(page);
+                }
+                PageTableTarget::NextTable(next_table) => {
+                    table = next_table;
+                }
+            }
         }
     }
 }
@@ -127,24 +155,27 @@ impl PageTableIndexedEntry {
 
         let target_addr = self.entry.address();
         if self.entry.flags().contains(PageTableEntryFlags::HUGE_PAGE) {
-            match self.level {
+            let page_size = match self.level {
                 PageTableLevel::Level4 => {
                     panic!("found huge page flag on level 4 page table entry! {self:?}")
                 }
-                PageTableLevel::Level3 => {
-                    return Some(PageTableTarget::Page1GiB(target_addr));
-                }
-                PageTableLevel::Level2 => {
-                    return Some(PageTableTarget::Page2MiB(target_addr));
-                }
+                PageTableLevel::Level3 => PageSize::Size1GiB,
+                PageTableLevel::Level2 => PageSize::Size2MiB,
                 PageTableLevel::Level1 => {
                     panic!("found huge page flag on level 1 page table entry! {self:?}")
                 }
-            }
+            };
+            return Some(PageTableTarget::Page(PhysicalPage {
+                start_addr: target_addr,
+                size: page_size,
+            }));
         }
 
         self.level.next_lower_level().map_or(
-            Some(PageTableTarget::Page4KiB(target_addr)),
+            Some(PageTableTarget::Page(PhysicalPage {
+                start_addr: target_addr,
+                size: PageSize::Size4KiB,
+            })),
             |next_level| {
                 let table = unsafe { &*(target_addr.as_u64() as *const RawPageTable) };
                 Some(PageTableTarget::NextTable(PageTable {
@@ -271,13 +302,32 @@ impl PageTableIndex {
         assert!(usize::from(index) < NUM_PAGE_TABLE_ENTRIES);
         Self(index)
     }
+
+    /// Computes an index into a page table for a virtual address.
+    pub(crate) fn from_address(level: PageTableLevel, address: VirtAddr) -> Self {
+        let shift = 12 + (u64::from(level as u16) - 1) * 9;
+        let mask = 0b1_1111_1111;
+        let index = ((address.as_u64() >> shift) & mask) as u16;
+        Self::new(index)
+    }
 }
 
 /// What a page table entry points to.
 #[derive(Debug)]
 pub(crate) enum PageTableTarget {
-    Page4KiB(PhysAddr),
-    Page2MiB(PhysAddr),
-    Page1GiB(PhysAddr),
+    Page(PhysicalPage),
     NextTable(PageTable),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PhysicalPage {
+    start_addr: PhysAddr,
+    size: PageSize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum PageSize {
+    Size4KiB,
+    Size2MiB,
+    Size1GiB,
 }

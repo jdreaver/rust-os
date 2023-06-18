@@ -114,9 +114,10 @@ make test
     - Abandon the default limine memory mapping and making our own
       - Make sure to copy the pages relating to how the kernel is loaded though. Limine did all the hard work parsing the ELF file and set page permissions properly (or so I hope) for e.g. text, data, etc
     - Map all physical memory starting at `0xffff_8000_0000_0000`. Limine just does 4 GiB, but make sure to do it all.
-    - Consider a `KernelAddress` that wraps `VirtAddr` and can be converted to `PhysAddr` by just subtracting hard-coded offset (`0xffff_8000_0000_0000`)
+    - Consider a `KernelPhysAddr` that wraps `VirtAddr` and can be converted to `PhysAddr` by just subtracting hard-coded offset (`0xffff_8000_0000_0000`)
       - Be really careful here! Not all kernel memory is mapped as simply as an offset. Only some of it is.
-  - Make it trivial to create a userspace page table. Ensure the entire top half of kernel page table is filled (or at least all memory areas we care about!), clone the whole thing, and then zero out bottom half. Then fill in with userspace segments.
+  - Make it trivial to create a userspace page table.
+    - Ensure the entire top half of kernel page table is filled, even if most of the level 3 tables are just empty, clone the whole thing, and then zero out bottom half. Then fill in with userspace segments.
   - Linux prefers to use physical allocation in the kernel by default (kmalloc) because it is faster than virtual allocation (vmalloc) because vmalloc needs to mess with page tables. Vmalloc is only used when you need a huge chunk of memory that might be hard to get physically contiguous.
   - Linux keeps a 40 byte page struct per physical page of memory. That is way larger than my 1 bit! It only takes 40MB of a 4GB system (assuming 4kB pages) which might be an acceptable tradeoff.
 - Userspace
