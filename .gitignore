@@ -3,3 +3,4 @@
 /kernel.elf
 /kernel.iso
 /*.hdd
+/gdb.log

@@ -97,7 +97,6 @@ make test
 
 ## TODO
 
-- GDB: Add GDB helpers for my TUI setup, and helpers for printing my common data structures better (`Vec`, `SpinLock`, `BTReeMap`, etc)
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - Consider combining all crates into kernel again now that we support tests
     - Make sure the bitmap-alloc proptest tests are still useful! Force a few failures. I'm a bit worried that proptest w/ no_std and panic == abort isn't useful
@@ -168,6 +167,9 @@ make test
   - Ensure overwriting file properly truncates all blocks first by marking them as free and removing them from inode block pointers
   - Sysfs ideas: pci devices, virtio devices, memory info
   - Instead of returning `Vec` for directories, consider returning an `impl Iterator` (except you probably can't do that with traits...)
+- GDB:
+  - Add helpers for printing my common data structures better (`OnceCell`, `SpinLock`, `Mutex`, `BTReeMap`. Also third party like `SpinMutex`)
+  - Also consider Emacs gdb window layout helper
 - Serial port:
   - find a way to implement using `&mut` and locking without deadlocks from e.g. non-maskable interrupts, holding the lock in the shell while trying to debug print inside kernel code, etc.
   - Consider multiple serial ports: one that spits out logs from the kernel, and one dedicated to the shell.
