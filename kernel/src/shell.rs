@@ -445,7 +445,7 @@ fn run_command(command: &Command) {
         Command::PageTable => {
             let (level_4_table_frame, _) = x86_64::registers::control::Cr3::read();
             let level_4_table_ptr = level_4_table_frame.start_address().as_u64() as *const _;
-            let level_4_table: &memory::Level4PageTable = unsafe { &*level_4_table_ptr };
+            let level_4_table: &memory::PageTable = unsafe { &*level_4_table_ptr };
             serial_println!("Level 4 page table: {level_4_table:#x?}");
         }
         Command::RNG(num_bytes) => {

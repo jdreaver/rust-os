@@ -1,78 +1,115 @@
 use alloc::vec::Vec;
-use bitfield_struct::bitfield;
+use bitflags::bitflags;
+use x86_64::PhysAddr;
 
 use core::fmt;
 
+#[derive(Debug, Clone)]
+pub(crate) struct Level4PageTable(PageTable);
+
+/// Underlying type for all levels of page tables.
+///
 /// See 4.5 4-LEVEL PAGING AND 5-LEVEL PAGING
 #[derive(Clone)]
 #[repr(C, align(4096))]
-pub(crate) struct Level4PageTable {
-    entries: [Level4PageTableEntry; 512],
-}
+pub(crate) struct PageTable([PageTableEntry; 512]);
 
-impl fmt::Debug for Level4PageTable {
+impl fmt::Debug for PageTable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Level4PageTable")
+        f.debug_tuple("PageTable")
             .field(
-                "entries",
                 &self
-                    .entries
+                    .0
                     .iter()
                     .enumerate()
-                    .filter(|(_, entry)| entry.present())
-                    .collect::<Vec<(usize, &Level4PageTableEntry)>>(),
+                    .filter(|(_, entry)| entry.flags().contains(PageTableEntryFlags::PRESENT))
+                    .collect::<Vec<(usize, &PageTableEntry)>>(),
             )
             .finish()
     }
 }
 
-#[bitfield(u64)]
-/// See Table 4-15. Format of a PML4 Entry (PML4E) that References a Page-Directory-Pointer Table
-pub(crate) struct Level4PageTableEntry {
-    /// Present; must be 1 to reference a page-directory-pointer table
-    present: bool,
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub(crate) struct PageTableEntry(u64);
 
-    /// Read/write; if 0, writes may not be allowed to the 512-GByte region
-    /// controlled by this entry
-    read_write: bool,
+impl PageTableEntry {
+    fn flags(self) -> PageTableEntryFlags {
+        PageTableEntryFlags::from_bits_truncate(self.0)
+    }
 
-    /// User/supervisor; if 0, user-mode accesses are not allowed
-    user_supervisor: bool,
+    fn address(self) -> PhysAddr {
+        PhysAddr::new(self.0 & 0x000f_ffff_ffff_f000)
+    }
+}
 
-    /// Page-level write-through; indirectly determines the memory type used to
-    /// access the page-directory-pointer table referenced by this entry
-    page_write_through: bool,
+impl fmt::Debug for PageTableEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PageTableEntry")
+            .field("flags", &self.flags())
+            .field("address", &self.address())
+            .finish()
+    }
+}
 
-    /// Page-level cache disable; indirectly determines the memory type used to
-    /// access the page-directory-pointer table referenced by this entry
-    page_cache_disable: bool,
+bitflags! {
+    /// Flags for all levels of page table entries.
+    #[derive(Debug, Clone, Copy)]
+    pub struct PageTableEntryFlags: u64 {
+        /// Indicates if entry is valid. If this bit is unset, the entry is ignored.
+        const PRESENT = 1;
 
-    /// Accessed; indicates whether this entry has been used for linear-address
-    accessed: bool,
-    __ignored_1: bool,
+        /// If unset, then the region represented by this entry cannot be written to.
+        const WRITABLE = 1 << 1;
 
-    /// Reserved (must be 0)
-    _page_size: bool,
+        /// If set, access from ring 3 is permitted.
+        const USER_ACCESSIBLE = 1 << 2;
 
-    #[bits(3)]
-    __ignored_2: u8,
+        /// If this bit is set, a "write-through" policy is used for the cache,
+        /// else a "write-back" policy is used.
+        const PAGE_WRITE_THROUGH = 1 << 3;
 
-    /// For ordinary paging, ignored; for HLAT paging, restart (if 1,
-    /// linear-address translation is restarted with ordinary paging)
-    hlat_restart: bool,
+        /// Disables caching.
+        const PAGE_CACHE_DISABLE = 1 << 4;
 
-    /// Physical address of 4-KByte aligned page-directory-pointer table
-    /// referenced by this entry. Only up to MAXPHYSADDR bits can be used from
-    /// this field.
-    #[bits(40)]
-    page_directory_pointer_table_address: u64,
+        /// Set by the CPU when the mapped frame or page table is accessed.
+        const ACCESSED = 1 << 5;
 
-    /// Can be used by the OS for whatever it wants.
-    #[bits(11)]
-    ignored: u16,
+        /// Set by the CPU on a write to the mapped frame.
+        const DIRTY = 1 << 6;
 
-    /// If IA32_EFER.NXE = 1, execute-disable (if 1, instruction fetches are not
-    /// allowed from the 512-GByte region controlled by this entry; see Section
-    /// 4.6); otherwise, reserved (must be 0)
-    no_execute: bool,
+        /// Only allowed in level 2 or 3 tables. If set in level 3, then the
+        /// entry points to a 1 GiB page. If set in level 2, then the entry
+        /// points to a 2 MiB page.
+        const HUGE_PAGE = 1 << 7;
+
+        /// Indicates that the mapping is present in all address spaces, so it
+        /// isn't flushed from the TLB on an address space switch.
+        const GLOBAL = 1 << 8;
+
+        // Bits available to the OS to do whatever it wants. We can use these in
+        // the future.
+        const OS_BIT_9 = 1 << 9;
+        const OS_BIT_10 = 1 << 10;
+        const OS_BIT_11 = 1 << 11;
+        const OS_BIT_52 = 1 << 52;
+        const OS_BIT_53 = 1 << 53;
+        const OS_BIT_54 = 1 << 54;
+        const OS_BIT_55 = 1 << 55;
+        const OS_BIT_56 = 1 << 56;
+        const OS_BIT_57 = 1 << 57;
+        const OS_BIT_58 = 1 << 58;
+        const OS_BIT_59 = 1 << 59;
+        const OS_BIT_60 = 1 << 60;
+        const OS_BIT_61 = 1 << 61;
+        const OS_BIT_62 = 1 << 62;
+
+        /// If set, then the memory in the region cannot be executed (e.g. it
+        /// cannot hold code, and we will get a page fault if the instruction
+        /// pointer points here).
+        ///
+        /// Requires no-execute page protection feature set in the EFER
+        /// register.
+        const NO_EXECUTE = 1 << 63;
+    }
 }
