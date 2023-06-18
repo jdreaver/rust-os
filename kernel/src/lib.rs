@@ -42,6 +42,7 @@ pub(crate) mod apic;
 pub(crate) mod barrier;
 pub(crate) mod block;
 pub(crate) mod boot_info;
+pub(crate) mod debug;
 pub(crate) mod elf;
 pub(crate) mod fs;
 pub(crate) mod gdt;
@@ -193,6 +194,7 @@ extern "C" fn bootstrap_secondary_cpu(info: *const limine::LimineSmpInfo) -> ! {
 pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     logging::force_unlock_logger();
     log::error!("PANIC: {info}");
+    debug::print_stack_trace();
     hlt_loop()
 }
 

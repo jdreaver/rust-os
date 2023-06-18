@@ -97,6 +97,9 @@ make test
 
 ## TODO
 
+- Stack traces: these would be extremely helpful to have, especially for panics
+  - <https://techno-coder.github.io/example_os/2018/06/04/A-stack-trace-for-your-OS.html>
+  - <https://github.com/Amanieu/mini-backtrace> (got really far trying to use this, but it uses libunwind, and is compiled with `sse` extensions so it causes an INVALID OPCODE exception (in a git stash)
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - Consider combining all crates into kernel again now that we support tests
     - Make sure the bitmap-alloc proptest tests are still useful! Force a few failures. I'm a bit worried that proptest w/ no_std and panic == abort isn't useful
@@ -255,6 +258,7 @@ $ qemu-system-x86_64 -device virtio-rng-pci,help
 
 ### Rust OS dev
 
+- <https://github.com/Techno-coder/example_os>
 - Excellent documentation. Goes well beyond the Blog OS stuff <https://github.com/bendudson/EuraliOS>
 - <https://github.com/vinc/moros>
 - <https://osblog.stephenmarz.com/index.html>
