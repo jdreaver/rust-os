@@ -19,7 +19,7 @@ use crate::boot_info::BootInfo;
 use crate::serial_println;
 use crate::sync::SpinLock;
 
-use super::page_table::{PageTable, PageTableIndex};
+use super::page_table::PageTable;
 
 pub(crate) const HIGHER_HALF_START: u64 = 0xffff_8000_0000_0000;
 
@@ -54,8 +54,6 @@ pub(crate) fn test_new_page_table() {
     let table = lock.as_mut().expect("kernel page table not initialized");
 
     serial_println!("{table:#x?}");
-    let first_entry = table.index_entry(PageTableIndex::new(0));
-    serial_println!("First target: {:#x?}", first_entry.target());
 
     let target_addr = VirtAddr::new(0x1234);
     let target = table.translate_address(target_addr);
