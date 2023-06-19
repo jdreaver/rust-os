@@ -73,24 +73,3 @@ pub(crate) fn map_page_to_frame(
         })
     })
 }
-
-pub(crate) fn identity_map_physical_frame(
-    frame: PhysFrame<Size4KiB>,
-    flags: PageTableFlags,
-) -> Result<(), MapToError<Size4KiB>> {
-    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
-        KERNEL_MAPPER.with_lock(|mapper| {
-            let map_result = unsafe { mapper.identity_map(frame, flags, allocator) };
-            match map_result {
-                Ok(flusher) => {
-                    flusher.flush();
-                    Ok(())
-                }
-                // These errors are okay. They just mean the frame is already identity
-                // mapped (well, hopefully).
-                Err(MapToError::ParentEntryHugePage | MapToError::PageAlreadyMapped(_)) => Ok(()),
-                Err(e) => Err(e),
-            }
-        })
-    })
-}

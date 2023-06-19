@@ -111,6 +111,7 @@ make test
       - Replace existing mapping functions
       - Add support for huge pages in `map_to`
   - Don't use `usize` so casually in `physical.rs`. Have a `PageNumber` newtype or something.
+  - Make `VirtPage`/`PhysPage` actually `Page<A>` where `A` is PhysAddr, VirtAddr, etc
   - New allocator is slower. Heap used to initialize in milliseconds, and now takes almost a second
     - Consider pages with size in type and more straight-line code for mapping different page sizes instead of current loops, and likely lots of multiplications.
   - Abandon the default limine memory mapping and make our own

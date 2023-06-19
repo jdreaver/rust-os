@@ -99,6 +99,39 @@ pub(crate) unsafe fn unmap_page(page: VirtPage) -> Result<PhysPage, UnmapError> 
         .unmap(page)
 }
 
+pub(crate) fn identity_map_physical_pages(
+    phys_pages: impl Iterator<Item = PhysPage>,
+    flags: PageTableEntryFlags,
+) -> Result<(), MapError> {
+    let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
+    let table = page_table_lock
+        .as_mut()
+        .expect("kernel page table not initialized");
+
+    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
+        for phys_page in phys_pages {
+            let virt_page = VirtPage {
+                start_addr: VirtAddr::new(phys_page.start_addr.as_u64()),
+                size: phys_page.size,
+            };
+            let result = table.map_to(
+                allocator,
+                virt_page,
+                MapTarget::ExistingPhysPage(phys_page),
+                flags,
+                PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
+            );
+            match result {
+                // These errors are okay. They just mean the frame is already identity
+                // mapped (well, hopefully).
+                Ok(_) | Err(MapError::PageAlreadyMapped { .. }) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    })
+}
+
 pub(crate) fn test_new_page_table() {
     let mut lock = KERNEL_PAGE_TABLE.lock();
     let table = lock.as_mut().expect("kernel page table not initialized");

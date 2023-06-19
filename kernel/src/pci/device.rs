@@ -1,9 +1,9 @@
 use core::fmt;
 
 use bitfield_struct::bitfield;
-use x86_64::structures::paging::{PageTableFlags, PhysFrame, Size4KiB};
 use x86_64::PhysAddr;
 
+use crate::memory::{PageTableEntryFlags, PhysPage};
 use crate::registers::{RegisterRO, RegisterRW};
 use crate::{memory, register_struct};
 
@@ -351,17 +351,14 @@ impl PCIDeviceConfigType0 {
         // by the device, so we aren't mapping physical RAM pages here, we are
         // just ensuring these addresses are identity mapped in the page table
         // so they don't fault.
-        let config_addr = bar_phys_addr + u64::from(physical_offset);
-        let config_start_frame = PhysFrame::<Size4KiB>::containing_address(config_addr);
-        let config_end_frame = PhysFrame::containing_address(config_addr + (region_size - 1));
-        let frame_range = PhysFrame::range_inclusive(config_start_frame, config_end_frame);
-        for frame in frame_range {
-            let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-            memory::identity_map_physical_frame(frame, flags)
-                .expect("failed to identity map PCI BAR frame");
-        }
+        let config_start_addr = bar_phys_addr + u64::from(physical_offset);
+        let config_end_addr = config_start_addr + region_size;
+        let pages = PhysPage::range_exclusive(config_start_addr, config_end_addr);
+        let flags = PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE;
+        memory::identity_map_physical_pages(pages, flags)
+            .expect("failed to identity map PCI BAR frame");
 
-        config_addr
+        config_start_addr
     }
 
     pub(crate) fn msix_config(self) -> Option<MSIXConfig> {

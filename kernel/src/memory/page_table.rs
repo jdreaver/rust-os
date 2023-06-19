@@ -89,9 +89,7 @@ impl Level4PageTable {
                     }
                 }
                 PageTableTarget::Page(existing_target) => {
-                    return Err(MapError::PageAlreadyMapped {
-                        existing_target,
-                    })
+                    return Err(MapError::PageAlreadyMapped { existing_target })
                 }
                 PageTableTarget::NextTable { level, table } => {
                     current_table = table;
@@ -449,6 +447,41 @@ pub(crate) struct PhysPage {
     pub(crate) size: PageSize,
 }
 
+impl PhysPage {
+    pub(crate) fn range_exclusive(start: PhysAddr, end: PhysAddr) -> PhysPageRange {
+        let current_addr = start.align_down(PAGE_SIZE as u64);
+        PhysPageRange {
+            current_addr,
+            page_size: PageSize::Size4KiB,
+            end_addr_exclusive: end,
+        }
+    }
+}
+
+pub(crate) struct PhysPageRange {
+    current_addr: PhysAddr,
+    page_size: PageSize,
+    end_addr_exclusive: PhysAddr,
+}
+
+impl Iterator for PhysPageRange {
+    type Item = PhysPage;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_addr >= self.end_addr_exclusive {
+            return None;
+        }
+
+        let page = PhysPage {
+            start_addr: self.current_addr,
+            size: self.page_size,
+        };
+
+        self.current_addr += self.page_size.size_bytes();
+        Some(page)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct VirtPage {
     pub(crate) start_addr: VirtAddr,
@@ -457,9 +490,9 @@ pub(crate) struct VirtPage {
 
 impl VirtPage {
     pub(crate) fn range_exclusive(start: VirtAddr, end: VirtAddr) -> VirtPageRange {
-        assert!(start.as_u64() % PAGE_SIZE as u64 == 0);
+        let current_addr = start.align_down(PAGE_SIZE as u64);
         VirtPageRange {
-            current_addr: start,
+            current_addr,
             page_size: PageSize::Size4KiB,
             end_addr_exclusive: end,
         }
