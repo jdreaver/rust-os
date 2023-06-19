@@ -51,6 +51,14 @@ pub(super) fn init(boot_info_data: &BootInfo) {
     lock.replace(page_table);
 }
 
+pub(crate) fn kernel_default_page_table_address() -> PhysAddr {
+    KERNEL_PAGE_TABLE
+        .lock_disable_interrupts()
+        .as_ref()
+        .expect("kernel page table not initialized")
+        .physical_address()
+}
+
 pub(crate) fn test_new_page_table() {
     let mut lock = KERNEL_PAGE_TABLE.lock();
     let table = lock.as_mut().expect("kernel page table not initialized");

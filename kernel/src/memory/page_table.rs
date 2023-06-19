@@ -26,6 +26,11 @@ impl Level4PageTable {
         Self(table)
     }
 
+    pub(super) fn physical_address(&self) -> PhysAddr {
+        let table_ptr = self.0 as *const _ as u64;
+        PhysAddr::new(table_ptr)
+    }
+
     /// Translates a virtual address to a physical address mapped by the page
     /// table.
     pub(super) fn translate_address(&self, addr: VirtAddr) -> Option<PhysPage> {
