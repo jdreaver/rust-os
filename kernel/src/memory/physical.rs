@@ -1,6 +1,5 @@
 use core::alloc::AllocError;
 
-use x86_64::structures::paging::{FrameAllocator, FrameDeallocator, PageSize, PhysFrame, Size4KiB};
 use x86_64::PhysAddr;
 
 use bitmap_alloc::{bootstrap_allocator, BitmapAllocator, MemoryRegion};
@@ -112,7 +111,7 @@ pub(super) struct PhysicalMemoryAllocator<'a> {
     pub(super) allocator: BitmapAllocator<'a>,
 }
 
-pub(crate) const PAGE_SIZE: usize = Size4KiB::SIZE as usize;
+pub(crate) const PAGE_SIZE: usize = 4096; // 4 KiB
 
 impl PhysicalMemoryAllocator<'_> {
     unsafe fn new<I, R>(memory_regions: R) -> Self
@@ -140,47 +139,6 @@ impl PhysicalMemoryAllocator<'_> {
             unsafe { core::slice::from_raw_parts_mut(page_addr as *mut u8, num_pages * PAGE_SIZE) };
         page_slice.fill(0);
         Ok(page)
-    }
-}
-
-unsafe impl<S: PageSize> FrameAllocator<S> for PhysicalMemoryAllocator<'_> {
-    fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
-        assert!(
-            S::SIZE as usize % PAGE_SIZE == 0,
-            "frame size {:?} must be a multiple of page size {}",
-            S::SIZE,
-            PAGE_SIZE
-        );
-        let num_pages = S::SIZE as usize / PAGE_SIZE;
-        let frame_page = self.allocator.allocate_contiguous(num_pages)?;
-        let frame_address = PhysAddr::new(frame_page as u64 * PAGE_SIZE as u64);
-        let frame: PhysFrame<S> = PhysFrame::containing_address(frame_address);
-        Some(frame)
-    }
-}
-
-impl<S: PageSize> FrameDeallocator<S> for PhysicalMemoryAllocator<'_> {
-    unsafe fn deallocate_frame(&mut self, frame: PhysFrame<S>) {
-        assert!(
-            S::SIZE as usize % PAGE_SIZE == 0,
-            "frame size {:?} must be a multiple of page size {}",
-            S::SIZE,
-            PAGE_SIZE
-        );
-        let num_pages = S::SIZE as usize / PAGE_SIZE;
-        let frame_page = frame.start_address().as_u64() / PAGE_SIZE as u64;
-        self.allocator
-            .free_contiguous(frame_page as usize, num_pages);
-    }
-}
-
-unsafe impl<S: PageSize> FrameAllocator<S> for LockedPhysicalMemoryAllocator<'_> {
-    fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
-        self.lock
-            .lock()
-            .as_mut()
-            .expect("kernel memory allocator not initialized")
-            .allocate_frame()
     }
 }
 

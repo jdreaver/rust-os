@@ -106,10 +106,7 @@ make test
     - Spawn a bunch of processes and hope we don't crash?
     - maybe some expected failures to ensure we call panic handler?
 - Memory management
-  - Replace `x86_64` crate page table management with our own
-    - Tactical:
-      - Replace existing mapping functions
-      - Add support for huge pages in `map_to`
+  - Add support for huge pages in `map_to`
   - Don't use `usize` so casually in `physical.rs`. Have a `PageNumber` newtype or something.
   - New allocator is slower. Heap used to initialize in milliseconds, and now takes almost a second
     - Consider pages with size in type and more straight-line code for mapping different page sizes instead of current loops, and likely lots of multiplications.
@@ -135,7 +132,9 @@ make test
   - Page table concurrency:
     - Consider representing each PageTableEntry as `AtomicU64`, or in the page table as `AtomicInt<u64, PageTableEntry>`
 - Userspace
+  - Ensure userspace page fault properly throws an error. Currently nothing gets printed.
   - Be much more careful in `task_userspace_setup` because `jump_to_userspace` doesn't return. Ensure that marking `jump_to_userspace` with return of `-> !` actually solves all my problems. Before I had that I had some puzzling stack corruption.
+    - Actually I think the breakage was just the code being pushed off the page.
   - Set up and execute ELF for real in `task_userspace_setup`. Map segments to memory, make a stack, use real start location, etc.
     - Use a fresh page table!
       - Copy all of the higher half entries for the kernel page table.

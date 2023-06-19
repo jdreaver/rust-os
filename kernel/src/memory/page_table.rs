@@ -32,9 +32,15 @@ impl Level4PageTable {
         PhysAddr::new(table_ptr)
     }
 
-    /// Translates a virtual address to a physical address mapped by the page
+    pub(super) fn translate_address(&self, addr: VirtAddr) -> Option<PhysAddr> {
+        let page = self.translate_address_page(addr)?;
+        let addr_offset = addr.as_u64() % page.size.size_bytes() as u64;
+        Some(page.start_addr + addr_offset)
+    }
+
+    /// Translates a virtual address to a physical page mapped by the page
     /// table.
-    pub(super) fn translate_address(&self, addr: VirtAddr) -> Option<Page<PhysAddr>> {
+    pub(super) fn translate_address_page(&self, addr: VirtAddr) -> Option<Page<PhysAddr>> {
         let mut current_table = &*self.0;
         let mut current_level = PageTableLevel::Level4;
 
@@ -57,11 +63,15 @@ impl Level4PageTable {
         allocator: &mut PhysicalMemoryAllocator,
         page: Page<VirtAddr>,
         map_target: MapTarget,
-        parent_flags: PageTableEntryFlags,
         flags: PageTableEntryFlags,
     ) -> Result<Page<PhysAddr>, MapError> {
         let mut current_table = &mut *self.0;
         let mut current_level = PageTableLevel::Level4;
+
+        let parent_flags = flags
+            & (PageTableEntryFlags::PRESENT
+                | PageTableEntryFlags::WRITABLE
+                | PageTableEntryFlags::USER_ACCESSIBLE);
 
         loop {
             let entry = current_table.address_entry_mut(current_level, page.start_addr);
@@ -457,6 +467,11 @@ impl<A: Address> Page<A> {
             end_addr_exclusive: end,
         }
     }
+
+    pub(crate) fn containing_address(addr: A, size: PageSize) -> Self {
+        let start_addr = addr.align_down(size.size_bytes() as u64);
+        Self { start_addr, size }
+    }
 }
 
 #[derive(Debug)]
@@ -510,7 +525,7 @@ pub(crate) enum PageSize {
 }
 
 impl PageSize {
-    fn size_bytes(self) -> usize {
+    pub(crate) fn size_bytes(self) -> usize {
         match self {
             Self::Size4KiB => 4096,
             Self::Size2MiB => 2 * 1024 * 1024,

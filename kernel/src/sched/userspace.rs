@@ -2,10 +2,9 @@ use alloc::boxed::Box;
 use core::arch::asm;
 
 use x86_64::registers::rflags::RFlags;
-use x86_64::structures::paging::mapper::MapToError;
-use x86_64::structures::paging::{Page, PageTableFlags, PhysFrame};
 use x86_64::VirtAddr;
 
+use crate::memory::{MapError, Page, PageSize, PageTableEntryFlags};
 use crate::{elf, gdt, memory, percpu, vfs};
 
 static DUMMY_USERSPACE_STACK: &[u8] = &[0; 4096];
@@ -39,7 +38,9 @@ pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
     };
     log::info!("ELF header: {:#?}", elf_exe);
 
-    // TODO: This is currently a big fat hack
+    // TODO: This is currently a big fat hack and this code is very fragile
+    // because it relies on our hack "userspace" function fitting in a single
+    // page. Adding code here can break that.
 
     let instruction_ptr = dummy_hacky_userspace_task as usize;
 
@@ -47,28 +48,45 @@ pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
     let instruction_ptr_virt = VirtAddr::new(instruction_ptr as u64);
     let instruction_ptr_phys = memory::translate_addr(instruction_ptr_virt).unwrap();
     let instruction_ptr_page_start = VirtAddr::new(0x2_0000_0000);
-    let instruction_ptr_page = Page::containing_address(instruction_ptr_page_start);
-    let instruction_ptr_frame = PhysFrame::containing_address(instruction_ptr_phys);
-    let flags =
-        PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
-    match memory::map_page_to_frame(instruction_ptr_page, instruction_ptr_frame, flags) {
-        Ok(_) | Err(MapToError::PageAlreadyMapped(_)) => {}
-        Err(e) => panic!("failed to map instruction page: {:?}", e),
+    let instruction_ptr_phys_page =
+        Page::containing_address(instruction_ptr_phys, PageSize::Size4KiB);
+
+    // Map two of these pages to be safe
+    for i in 0..=1 {
+        let instruction_ptr_virt_page = Page {
+            start_addr: instruction_ptr_page_start + i * PageSize::Size4KiB.size_bytes(),
+            size: PageSize::Size4KiB,
+        };
+        let instruction_ptr_phys_page = Page {
+            start_addr: instruction_ptr_phys_page.start_addr + i * PageSize::Size4KiB.size_bytes(),
+            size: PageSize::Size4KiB,
+        };
+        let flags = PageTableEntryFlags::PRESENT
+            | PageTableEntryFlags::WRITABLE
+            | PageTableEntryFlags::USER_ACCESSIBLE;
+        match memory::map_page(instruction_ptr_virt_page, instruction_ptr_phys_page, flags) {
+            Ok(_) | Err(MapError::PageAlreadyMapped { .. }) => {}
+            Err(e) => panic!("failed to map instruction page: {:?}", e),
+        }
     }
 
     let instruction_virt_offset =
-        instruction_ptr_phys.as_u64() - instruction_ptr_frame.start_address().as_u64();
+        instruction_ptr_phys.as_u64() - instruction_ptr_phys_page.start_addr.as_u64();
     let instruction_virt = instruction_ptr_page_start + instruction_virt_offset;
 
     let stack_ptr_start = VirtAddr::new(DUMMY_USERSPACE_STACK.as_ptr() as u64);
     let stack_ptr_phys = memory::translate_addr(stack_ptr_start).unwrap();
-    let stack_start_virt = VirtAddr::new(0x2_1000_0000);
-    let stack_ptr_page = Page::containing_address(stack_start_virt);
-    let stack_ptr_frame = PhysFrame::containing_address(stack_ptr_phys);
-    let flags =
-        PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
-    match memory::map_page_to_frame(stack_ptr_page, stack_ptr_frame, flags) {
-        Ok(_) | Err(MapToError::PageAlreadyMapped(_)) => {}
+    let stack_ptr_page_start = VirtAddr::new(0x2_1000_0000);
+    let stack_ptr_virt_page = Page {
+        start_addr: stack_ptr_page_start,
+        size: PageSize::Size4KiB,
+    };
+    let stack_ptr_phys_page = Page::containing_address(stack_ptr_phys, PageSize::Size4KiB);
+    let flags = PageTableEntryFlags::PRESENT
+        | PageTableEntryFlags::WRITABLE
+        | PageTableEntryFlags::USER_ACCESSIBLE;
+    match memory::map_page(stack_ptr_virt_page, stack_ptr_phys_page, flags) {
+        Ok(_) | Err(MapError::PageAlreadyMapped { .. }) => {}
         Err(e) => panic!("failed to map stack page: {:?}", e),
     }
 

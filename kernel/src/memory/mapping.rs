@@ -62,6 +62,36 @@ pub(crate) fn kernel_default_page_table_address() -> PhysAddr {
         .physical_address()
 }
 
+/// Translate a given physical address to a virtual address, if possible.
+pub(crate) fn translate_addr(addr: VirtAddr) -> Option<PhysAddr> {
+    KERNEL_PAGE_TABLE
+        .lock_disable_interrupts()
+        .as_ref()
+        .expect("kernel page table not initialized")
+        .translate_address(addr)
+}
+
+/// Maps a given virtual page to a physical page.
+pub(crate) fn map_page(
+    virt_page: Page<VirtAddr>,
+    phys_page: Page<PhysAddr>,
+    flags: PageTableEntryFlags,
+) -> Result<Page<PhysAddr>, MapError> {
+    let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
+    let table = page_table_lock
+        .as_mut()
+        .expect("kernel page table not initialized");
+
+    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
+        table.map_to(
+            allocator,
+            virt_page,
+            MapTarget::ExistingPhysPage(phys_page),
+            flags,
+        )
+    })
+}
+
 /// Allocates a physical frame for the given virtual page of memory and maps the
 /// virtual page to the physical frame in the page table. Useful for
 /// initializing a virtual region that is known not to be backed by memory, like
@@ -77,13 +107,7 @@ pub(crate) fn allocate_and_map_pages(
 
     KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
         for page in pages {
-            table.map_to(
-                allocator,
-                page,
-                MapTarget::NewPhysPage,
-                flags,
-                PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
-            )?;
+            table.map_to(allocator, page, MapTarget::NewPhysPage, flags)?;
         }
 
         Ok(())
@@ -118,7 +142,6 @@ pub(crate) fn identity_map_physical_pages(
                 virt_page,
                 MapTarget::ExistingPhysPage(phys_page),
                 flags,
-                PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
             );
             match result {
                 // These errors are okay. They just mean the frame is already identity
@@ -164,7 +187,6 @@ pub(crate) fn test_new_page_table() {
             map_virt,
             MapTarget::ExistingPhysPage(map_phys),
             PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
-            PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
         )
     });
 
@@ -185,7 +207,6 @@ pub(crate) fn test_new_page_table() {
             allocator,
             map_virt,
             MapTarget::NewPhysPage,
-            PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
             PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
         )
     });
