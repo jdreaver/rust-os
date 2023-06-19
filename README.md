@@ -119,6 +119,8 @@ make test
     - Map all physical memory starting at `0xffff_8000_0000_0000`. Limine just does 4 GiB, but make sure to do it all.
     - Consider a `KernelPhysAddr` that wraps `VirtAddr` and can be converted to `PhysAddr` by just subtracting hard-coded offset (`0xffff_8000_0000_0000`)
       - Be really careful here! Not all kernel memory is mapped as simply as an offset. Only some of it is.
+  - Guard pages: consider using one of the special OS-available bits on pages for `GUARD_PAGE`, in case that could simplify our guard page detection logic in the page fault handler. Using these OS-available bits in general to identify the type of page is probably going to be useful.
+    - This will require not simply "unmapping" a page for the guard page, but to add some sort of "unmap with flags", or mapping "to" physical address 0 with flags (this is what we used to do)
   - Ensure we use `KernelPhysAddr` and mapping to higher half reserved stuff like PCI addresses, LAPIC, etc (I think? does that work or do we need identity mapping?)
   - Make it trivial to create a userspace page table.
     - Make kernel page table cloneable: fill entire top half (even if most level 3 page tables are empty), and zero out bottom half. That means we only use `KernelPhysAddr`.

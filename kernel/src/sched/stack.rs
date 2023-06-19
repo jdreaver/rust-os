@@ -1,3 +1,4 @@
+use x86_64::structures::paging::mapper::UnmapError;
 use x86_64::structures::paging::page::PageRangeInclusive;
 use x86_64::structures::paging::{Page, PageTableFlags};
 use x86_64::VirtAddr;
@@ -66,8 +67,10 @@ impl KernelStackAllocator<'_> {
 
         // Map the guard page as invalid
         unsafe {
-            memory::map_guard_page(stack.guard_page())
-                .expect("failed to map kernel stack guard page");
+            match memory::unmap_page(stack.guard_page()) {
+                Ok(()) | Err(UnmapError::PageNotMapped) => {}
+                Err(e) => panic!("failed to unmap kernel stack guard page: {:?}", e),
+            }
         }
 
         // Map the physical memory into the virtual address space
