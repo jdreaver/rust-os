@@ -19,7 +19,9 @@ use crate::boot_info::BootInfo;
 use crate::serial_println;
 use crate::sync::SpinLock;
 
-use super::page_table::{Level4PageTable, PageSize, PageTableEntryFlags, PhysPage, VirtPage};
+use super::page_table::{
+    Level4PageTable, MapTarget, PageSize, PageTableEntryFlags, PhysPage, VirtPage,
+};
 
 pub(crate) const HIGHER_HALF_START: u64 = 0xffff_8000_0000_0000;
 
@@ -78,12 +80,28 @@ pub(crate) fn test_new_page_table() {
 
     let result = table.map_to(
         map_virt,
-        map_phys,
+        MapTarget::ExistingPhysPage(map_phys),
         PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
         PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
     );
 
     serial_println!("Mapping {map_virt:?} to {map_phys:?}, result: {:?}", result);
+
+    let target = table.translate_address(map_virt.start_addr);
+    serial_println!("Target of {target_addr:x?}: {target:x?}");
+
+    let map_virt = VirtPage {
+        start_addr: VirtAddr::new(0x4_0001_0000),
+        size: PageSize::Size4KiB,
+    };
+    let result = table.map_to(
+        map_virt,
+        MapTarget::NewPhysPage,
+        PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
+        PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
+    );
+
+    serial_println!("Mapped {map_virt:?}, result: {:?}", result);
 
     let target = table.translate_address(map_virt.start_addr);
     serial_println!("Target of {target_addr:x?}: {target:x?}");

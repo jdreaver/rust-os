@@ -186,6 +186,10 @@ impl PhysicalBuffer {
     // Don't need to expose this b/c allocate_zeroed is safer.
     fn allocate(min_bytes: usize) -> Result<Self, AllocError> {
         let num_pages = min_bytes.div_ceil(PAGE_SIZE);
+        Self::allocate_pages(num_pages)
+    }
+
+    fn allocate_pages(num_pages: usize) -> Result<Self, AllocError> {
         let start_page = KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
             allocator
                 .allocator
@@ -208,6 +212,14 @@ impl PhysicalBuffer {
 
     pub(crate) fn allocate_zeroed(min_bytes: usize) -> Result<Self, AllocError> {
         let mut buffer = Self::allocate(min_bytes)?;
+        for x in buffer.as_slice_mut() {
+            *x = 0;
+        }
+        Ok(buffer)
+    }
+
+    pub(crate) fn allocate_zeroed_pages(num_pages: usize) -> Result<Self, AllocError> {
+        let mut buffer = Self::allocate_pages(num_pages)?;
         for x in buffer.as_slice_mut() {
             *x = 0;
         }

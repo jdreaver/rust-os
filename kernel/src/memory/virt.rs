@@ -129,7 +129,7 @@ pub(crate) unsafe fn unmap_page(page: Page<Size4KiB>) -> Result<(), UnmapError> 
 }
 
 pub(crate) fn identity_map_physical_frame(
-    frame: PhysFrame,
+    frame: PhysFrame<Size4KiB>,
     flags: PageTableFlags,
 ) -> Result<(), MapToError<Size4KiB>> {
     KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {

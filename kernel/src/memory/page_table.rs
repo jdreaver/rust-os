@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use bitflags::bitflags;
 use x86_64::{PhysAddr, VirtAddr};
 
-use crate::memory::{PhysicalBuffer, PAGE_SIZE};
+use super::physical::{PhysicalBuffer, PAGE_SIZE};
 
 #[derive(Debug)]
 pub(super) struct Level4PageTable(&'static mut PageTable);
@@ -48,23 +48,18 @@ impl Level4PageTable {
     pub(super) fn map_to(
         &mut self,
         page: VirtPage,
-        target_page: PhysPage,
+        target: MapTarget,
         parent_flags: PageTableEntryFlags,
         flags: PageTableEntryFlags,
-    ) -> Result<(), MapError> {
-        assert!(
-            target_page.size == PageSize::Size4KiB,
-            "TODO: support more page sizes"
-        );
-
+    ) -> Result<PhysPage, MapError> {
         let mut current_table = &mut *self.0;
         let mut current_level = PageTableLevel::Level4;
 
         loop {
             let entry = current_table.address_entry_mut(current_level, page.start_addr);
-            let target = entry.map_to(current_level, page, target_page, parent_flags, flags)?;
+            let target = entry.map_to(current_level, page, target, parent_flags, flags)?;
             match target {
-                PageTableTargetMut::Page(_) => return Ok(()),
+                PageTableTargetMut::Page(page) => return Ok(page),
                 PageTableTargetMut::NextTable { level, table } => {
                     current_table = table;
                     current_level = level;
@@ -72,6 +67,15 @@ impl Level4PageTable {
             }
         }
     }
+}
+
+/// Target of the `map_to` operation.
+#[derive(Debug, Clone, Copy)]
+pub(super) enum MapTarget {
+    /// Map the virtual page to the given physical page that has already been allocated.
+    ExistingPhysPage(PhysPage),
+    /// Allocate a new physical page and map the virtual page to it.
+    NewPhysPage,
 }
 
 /// All page table levels have 512 entries.
@@ -178,7 +182,7 @@ impl PageTableEntry {
         &mut self,
         level: PageTableLevel,
         page: VirtPage,
-        target_page: PhysPage,
+        target: MapTarget,
         parent_flags: PageTableEntryFlags,
         flags: PageTableEntryFlags,
     ) -> Result<PageTableTargetMut, MapError> {
@@ -199,7 +203,7 @@ impl PageTableEntry {
             }
             (Some(level), false) => {
                 // We're not at the lowest level, so we need to create a new page table.
-                let new_table_addr = PhysicalBuffer::allocate_zeroed(PAGE_SIZE)
+                let new_table_addr = PhysicalBuffer::allocate_zeroed_pages(1)
                     .map_err(MapError::PhysicalPageAllocationFailed)?
                     .leak();
                 self.set_address(new_table_addr);
@@ -215,6 +219,28 @@ impl PageTableEntry {
                 //
                 // TODO: Check target page size instead of saying lowest level
                 // == make a page.
+                let target_page = match target {
+                    MapTarget::ExistingPhysPage(target_page) => {
+                        assert!(
+                            page.size == target_page.size,
+                            "ERROR: page and target_page must be the same size\n{page:?}\n{target_page:?}",
+                        );
+                        target_page
+                    }
+                    MapTarget::NewPhysPage => {
+                        assert!(
+                            page.size.size_bytes() == PAGE_SIZE,
+                            "ERROR: page must be a single page. TODO: support larger pages (and handle alignment requirements!)",
+                        );
+                        let target_page_addr = PhysicalBuffer::allocate_zeroed_pages(1)
+                            .map_err(MapError::PhysicalPageAllocationFailed)?
+                            .leak();
+                        PhysPage {
+                            start_addr: target_page_addr,
+                            size: page.size,
+                        }
+                    }
+                };
                 self.set_address(target_page.start_addr);
                 self.set_flags(parent_flags | flags);
                 // Need to flush the TLB here
@@ -360,6 +386,16 @@ pub(super) enum PageSize {
     Size4KiB,
     Size2MiB,
     Size1GiB,
+}
+
+impl PageSize {
+    fn size_bytes(self) -> usize {
+        match self {
+            Self::Size4KiB => 4096,
+            Self::Size2MiB => 2 * 1024 * 1024,
+            Self::Size1GiB => 1024 * 1024 * 1024,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
