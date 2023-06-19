@@ -1,8 +1,12 @@
 use core::fmt;
 
+use alloc::string::String;
 use alloc::vec::Vec;
+
 use bitflags::bitflags;
 use x86_64::{PhysAddr, VirtAddr};
+
+use crate::memory::{PhysicalBuffer, PAGE_SIZE};
 
 #[derive(Debug)]
 pub(super) struct Level4PageTable(&'static mut PageTable);
@@ -40,6 +44,34 @@ impl Level4PageTable {
             }
         }
     }
+
+    pub(super) fn map_to(
+        &mut self,
+        page: PhysicalPage,
+        addr: VirtAddr,
+        parent_flags: PageTableEntryFlags,
+        flags: PageTableEntryFlags,
+    ) -> Result<(), String> {
+        assert!(
+            page.size == PageSize::Size4KiB,
+            "TODO: support more page sizes"
+        );
+
+        let mut current_table = &mut *self.0;
+        let mut current_level = PageTableLevel::Level4;
+
+        loop {
+            let entry = current_table.address_entry_mut(current_level, addr);
+            let target = entry.map_to(current_level, page, addr, parent_flags, flags)?;
+            match target {
+                PageTableTargetMut::Page(_) => return Ok(()),
+                PageTableTargetMut::NextTable { level, table } => {
+                    current_table = table;
+                    current_level = level;
+                }
+            }
+        }
+    }
 }
 
 /// All page table levels have 512 entries.
@@ -55,12 +87,15 @@ struct PageTable {
 }
 
 impl PageTable {
-    /// Indexes into the page table given a virtual address. NOTE: this only
-    /// goes one level deep. Use `translate_address` to recursively translate a
-    /// virtual address.
+    /// Indexes into the page table given a virtual address.
     fn address_entry(&self, level: PageTableLevel, addr: VirtAddr) -> &PageTableEntry {
         let index = PageTableIndex::from_address(level, addr);
         &self.entries[index.0 as usize]
+    }
+
+    fn address_entry_mut(&mut self, level: PageTableLevel, addr: VirtAddr) -> &mut PageTableEntry {
+        let index = PageTableIndex::from_address(level, addr);
+        &mut self.entries[index.0 as usize]
     }
 }
 
@@ -87,8 +122,17 @@ impl PageTableEntry {
         PageTableEntryFlags::from_bits_truncate(self.0)
     }
 
+    fn set_flags(&mut self, flags: PageTableEntryFlags) {
+        self.0 |= flags.bits();
+    }
+
     fn address(self) -> PhysAddr {
         PhysAddr::new(self.0 & 0x000f_ffff_ffff_f000)
+    }
+
+    fn set_address(&mut self, addr: PhysAddr) {
+        assert_eq!(addr.as_u64() & !0x000f_ffff_ffff_f000, 0);
+        self.0 |= addr.as_u64();
     }
 
     fn is_present(self) -> bool {
@@ -128,6 +172,60 @@ impl PageTableEntry {
                 Some(PageTableTarget::NextTable { level, table })
             },
         )
+    }
+
+    pub(super) fn map_to(
+        &mut self,
+        level: PageTableLevel,
+        page: PhysicalPage,
+        addr: VirtAddr,
+        parent_flags: PageTableEntryFlags,
+        flags: PageTableEntryFlags,
+    ) -> Result<PageTableTargetMut, String> {
+        assert!(
+            page.size == PageSize::Size4KiB,
+            "TODO: support more page sizes"
+        );
+
+        if !self.is_present() {
+            // TODO: Check target page size here
+            return match level.next_lower_level() {
+                None => {
+                    // We're at the lowest level, so we can map to a page.
+                    self.set_address(page.start_addr);
+                    self.set_flags(parent_flags | flags);
+                    // Need to flush the TLB here
+                    x86_64::instructions::tlb::flush(addr);
+                    Ok(PageTableTargetMut::Page(page))
+                }
+                Some(level) => {
+                    // We're not at the lowest level, so we need to create a new page table.
+                    let new_table_addr = PhysicalBuffer::allocate_zeroed(PAGE_SIZE)
+                        .map_err(|e| format!("Failed to allocate physical buffer: {}", e))?
+                        .leak();
+                    self.set_address(new_table_addr);
+                    self.set_flags(parent_flags | flags);
+                    let table = unsafe { &mut *(new_table_addr.as_u64() as *mut PageTable) };
+                    Ok(PageTableTargetMut::NextTable { level, table })
+                }
+            };
+        }
+
+        assert!(
+            !self.flags().contains(PageTableEntryFlags::HUGE_PAGE),
+            "TODO: support huge pages"
+        );
+
+        match level.next_lower_level() {
+            None => Err(format!(
+                "Virtual address {addr:x?} is already mapped to a page at {:?}",
+                self.address()
+            )),
+            Some(level) => {
+                let table = unsafe { &mut *(self.address().as_u64() as *mut PageTable) };
+                Ok(PageTableTargetMut::NextTable { level, table })
+            }
+        }
     }
 }
 
@@ -231,20 +329,29 @@ enum PageTableTarget<'a> {
     },
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(super) struct PhysicalPage {
-    start_addr: PhysAddr,
-    size: PageSize,
+#[derive(Debug)]
+enum PageTableTargetMut<'a> {
+    Page(PhysicalPage),
+    NextTable {
+        level: PageTableLevel,
+        table: &'a mut PageTable,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
+pub(super) struct PhysicalPage {
+    pub(super) start_addr: PhysAddr,
+    pub(super) size: PageSize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum PageSize {
     Size4KiB,
     Size2MiB,
     Size1GiB,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PageTableLevel {
     Level1 = 1,
     Level2,
@@ -264,6 +371,7 @@ impl PageTableLevel {
 }
 
 /// Start address of the region the page table entry points to.
+#[allow(dead_code)]
 fn page_table_entry_virtual_address(level: PageTableLevel, index: PageTableIndex) -> VirtAddr {
     let shift = (level as u64 - 1) * 9 + 12;
     let raw_addr = u64::from(index.0) << shift;
@@ -271,6 +379,7 @@ fn page_table_entry_virtual_address(level: PageTableLevel, index: PageTableIndex
     VirtAddr::new(sign_extended)
 }
 
+#[allow(dead_code)]
 fn sign_extend_virtual_address(address: u64) -> u64 {
     const SIGN_BIT: u64 = 0x0000_8000_0000_0000;
     const SIGN_MASK: u64 = 0xFFFF_8000_0000_0000;

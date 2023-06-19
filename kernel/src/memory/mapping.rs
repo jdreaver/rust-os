@@ -13,13 +13,13 @@
 //! | 0xffff_e000_0000_0000 | -32 TB  | 0xffff_ffff_efff_ffff | ~32 TB  | (empty space) |
 //! | 0xffff_ffff_8000_0000 | -2 GB   | 0xffff_ffff_ffff_ffff | 2 GB    | Kernel text and data segments |
 
-use x86_64::VirtAddr;
+use x86_64::{PhysAddr, VirtAddr};
 
 use crate::boot_info::BootInfo;
 use crate::serial_println;
 use crate::sync::SpinLock;
 
-use super::page_table::Level4PageTable;
+use super::page_table::{Level4PageTable, PageSize, PageTableEntryFlags, PhysicalPage};
 
 pub(crate) const HIGHER_HALF_START: u64 = 0xffff_8000_0000_0000;
 
@@ -65,5 +65,26 @@ pub(crate) fn test_new_page_table() {
 
     let target_addr = VirtAddr::new(0xffff_ffff_8000_1234);
     let target = table.translate_address(target_addr);
+    serial_println!("Target of {target_addr:x?}: {target:x?}");
+
+    let map_phys = PhysicalPage {
+        start_addr: PhysAddr::new(0x1_0000_0000),
+        size: PageSize::Size4KiB,
+    };
+    let map_target = VirtAddr::new(0x4_0000_0000);
+
+    let result = table.map_to(
+        map_phys,
+        map_target,
+        PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
+        PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
+    );
+
+    serial_println!(
+        "Mapping {map_phys:?} to {map_target:?}, result: {:?}",
+        result
+    );
+
+    let target = table.translate_address(map_target);
     serial_println!("Target of {target_addr:x?}: {target:x?}");
 }

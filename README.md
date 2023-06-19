@@ -107,6 +107,12 @@ make test
     - maybe some expected failures to ensure we call panic handler?
 - Memory management
   - Replace `x86_64` crate page table management with our own
+    - Tactical:
+      - Refactor new `map_to` methods
+      - Replace existing mapping functions
+      - Re-evaluate locking: should we be calling `PhysicalBuffer::allocate_zeroed` which takes a lock underneath, or should we explicitly pass in a `&mut PhysicalAllocator`?
+      - Add support for huge pages in `map_to`
+      - I don't like `PageTableTarget`, especially because we need `PageTableTargetMut`. Can I get rid of it?
     - Better terminology: `VirtPage` vs `PhysPage`
     - Ensure we call `invlpg` for the TLB whenever we modify the page table.
     - Abandon the default limine memory mapping and make our own

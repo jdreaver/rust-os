@@ -221,6 +221,12 @@ impl PhysicalBuffer {
     pub(crate) fn len_bytes(&self) -> usize {
         self.num_pages * PAGE_SIZE
     }
+
+    pub(crate) fn leak(self) -> PhysAddr {
+        let addr = self.address();
+        core::mem::forget(self);
+        addr
+    }
 }
 
 impl Drop for PhysicalBuffer {
