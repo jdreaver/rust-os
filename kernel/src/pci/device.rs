@@ -3,7 +3,7 @@ use core::fmt;
 use bitfield_struct::bitfield;
 use x86_64::PhysAddr;
 
-use crate::memory::{PageTableEntryFlags, PhysPage};
+use crate::memory::{Page, PageTableEntryFlags};
 use crate::registers::{RegisterRO, RegisterRW};
 use crate::{memory, register_struct};
 
@@ -353,7 +353,7 @@ impl PCIDeviceConfigType0 {
         // so they don't fault.
         let config_start_addr = bar_phys_addr + u64::from(physical_offset);
         let config_end_addr = config_start_addr + region_size;
-        let pages = PhysPage::range_exclusive(config_start_addr, config_end_addr);
+        let pages = Page::range_exclusive(config_start_addr, config_end_addr);
         let flags = PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE;
         memory::identity_map_physical_pages(pages, flags)
             .expect("failed to identity map PCI BAR frame");

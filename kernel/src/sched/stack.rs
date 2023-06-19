@@ -3,9 +3,7 @@ use x86_64::VirtAddr;
 use bitmap_alloc::BitmapAllocator;
 
 use crate::memory;
-use crate::memory::{
-    PageSize, PageTableEntryFlags, UnmapError, VirtPage, VirtPageRange, PAGE_SIZE,
-};
+use crate::memory::{Page, PageRange, PageSize, PageTableEntryFlags, UnmapError, PAGE_SIZE};
 use crate::sync::SpinLock;
 
 /// Size of a kernel stack, including the guard page (so subtract one page to get
@@ -115,18 +113,18 @@ impl KernelStack {
         self.start_addr + KERNEL_STACK_SIZE_BYTES
     }
 
-    fn guard_page(&self) -> VirtPage {
+    fn guard_page(&self) -> Page<VirtAddr> {
         assert!(self.start_addr.as_u64() % PAGE_SIZE as u64 == 0);
-        VirtPage {
+        Page {
             start_addr: self.start_addr,
             size: PageSize::Size4KiB,
         }
     }
 
-    fn physically_mapped_pages(&self) -> VirtPageRange {
+    fn physically_mapped_pages(&self) -> PageRange<VirtAddr> {
         let start_addr = self.start_addr + PAGE_SIZE;
         let end_addr = self.start_addr + KERNEL_STACK_SIZE_BYTES;
-        VirtPage::range_exclusive(start_addr, end_addr)
+        Page::range_exclusive(start_addr, end_addr)
     }
 }
 

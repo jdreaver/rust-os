@@ -1,5 +1,6 @@
-use core::alloc::AllocError;
 use core::fmt;
+use core::ops::Sub;
+use core::{alloc::AllocError, ops::Add};
 
 use alloc::vec::Vec;
 
@@ -33,7 +34,7 @@ impl Level4PageTable {
 
     /// Translates a virtual address to a physical address mapped by the page
     /// table.
-    pub(super) fn translate_address(&self, addr: VirtAddr) -> Option<PhysPage> {
+    pub(super) fn translate_address(&self, addr: VirtAddr) -> Option<Page<PhysAddr>> {
         let mut current_table = &*self.0;
         let mut current_level = PageTableLevel::Level4;
 
@@ -54,11 +55,11 @@ impl Level4PageTable {
     pub(super) fn map_to(
         &mut self,
         allocator: &mut PhysicalMemoryAllocator,
-        page: VirtPage,
+        page: Page<VirtAddr>,
         map_target: MapTarget,
         parent_flags: PageTableEntryFlags,
         flags: PageTableEntryFlags,
-    ) -> Result<PhysPage, MapError> {
+    ) -> Result<Page<PhysAddr>, MapError> {
         let mut current_table = &mut *self.0;
         let mut current_level = PageTableLevel::Level4;
 
@@ -102,7 +103,7 @@ impl Level4PageTable {
     /// Unmaps a given virtual page and returns the underlying physical page.
     ///
     /// NOTE: this function does not handle deallocation of the physical page.
-    pub(super) fn unmap(&mut self, page: VirtPage) -> Result<PhysPage, UnmapError> {
+    pub(super) fn unmap(&mut self, page: Page<VirtAddr>) -> Result<Page<PhysAddr>, UnmapError> {
         let mut current_table = &mut *self.0;
         let mut current_level = PageTableLevel::Level4;
 
@@ -140,7 +141,7 @@ impl Level4PageTable {
 #[derive(Debug, Clone, Copy)]
 pub(super) enum MapTarget {
     /// Map the virtual page to the given physical page that has already been allocated.
-    ExistingPhysPage(PhysPage),
+    ExistingPhysPage(Page<PhysAddr>),
     /// Allocate a new physical page and map the virtual page to it.
     NewPhysPage,
 }
@@ -150,7 +151,7 @@ impl MapTarget {
         self,
         allocator: &mut PhysicalMemoryAllocator,
         target_page_size: PageSize,
-    ) -> Result<PhysPage, AllocError> {
+    ) -> Result<Page<PhysAddr>, AllocError> {
         match self {
             Self::ExistingPhysPage(page) => {
                 assert!(
@@ -167,7 +168,7 @@ impl MapTarget {
                 );
                 let target_page = allocator.allocate_zeroed_pages(1)?;
                 let target_page_addr = target_page * PAGE_SIZE;
-                Ok(PhysPage {
+                Ok(Page {
                     start_addr: PhysAddr::new(target_page_addr as u64),
                     size: target_page_size,
                 })
@@ -276,7 +277,7 @@ impl PageTableEntry {
                     panic!("found huge page flag on level 1 page table entry! {self:?}")
                 }
             };
-            return PageTableTarget::Page(PhysPage {
+            return PageTableTarget::Page(Page {
                 start_addr: self.address(),
                 size: page_size,
             });
@@ -284,7 +285,7 @@ impl PageTableEntry {
 
         level.next_lower_level().map_or_else(
             || {
-                PageTableTarget::Page(PhysPage {
+                PageTableTarget::Page(Page {
                     start_addr: self.address(),
                     size: PageSize::Size4KiB,
                 })
@@ -300,7 +301,7 @@ impl PageTableEntry {
         self.0 = 0;
     }
 
-    fn set_target_page(&mut self, page: &PhysPage, flags: PageTableEntryFlags) {
+    fn set_target_page(&mut self, page: &Page<PhysAddr>, flags: PageTableEntryFlags) {
         self.set_address(page.start_addr);
         self.set_flags(flags | PageTableEntryFlags::PRESENT);
     }
@@ -332,7 +333,7 @@ pub(crate) enum MapError {
     PhysicalPageAllocationFailed(AllocError),
     #[allow(dead_code)]
     PageAlreadyMapped {
-        existing_target: PhysPage,
+        existing_target: Page<PhysAddr>,
     },
 }
 
@@ -437,20 +438,20 @@ impl PageTableIndex {
 #[derive(Debug)]
 enum PageTableTarget<T> {
     Unmapped,
-    Page(PhysPage),
+    Page(Page<PhysAddr>),
     NextTable { level: PageTableLevel, table: T },
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct PhysPage {
-    pub(crate) start_addr: PhysAddr,
+pub(crate) struct Page<A> {
+    pub(crate) start_addr: A,
     pub(crate) size: PageSize,
 }
 
-impl PhysPage {
-    pub(crate) fn range_exclusive(start: PhysAddr, end: PhysAddr) -> PhysPageRange {
+impl<A: Address> Page<A> {
+    pub(crate) fn range_exclusive(start: A, end: A) -> PageRange<A> {
         let current_addr = start.align_down(PAGE_SIZE as u64);
-        PhysPageRange {
+        PageRange {
             current_addr,
             page_size: PageSize::Size4KiB,
             end_addr_exclusive: end,
@@ -458,68 +459,46 @@ impl PhysPage {
     }
 }
 
-pub(crate) struct PhysPageRange {
-    current_addr: PhysAddr,
+#[derive(Debug)]
+pub(crate) struct PageRange<A> {
+    current_addr: A,
     page_size: PageSize,
-    end_addr_exclusive: PhysAddr,
+    end_addr_exclusive: A,
 }
 
-impl Iterator for PhysPageRange {
-    type Item = PhysPage;
+impl<A: Address> Iterator for PageRange<A> {
+    type Item = Page<A>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_addr >= self.end_addr_exclusive {
             return None;
         }
 
-        let page = PhysPage {
+        let page = Page {
             start_addr: self.current_addr,
             size: self.page_size,
         };
 
-        self.current_addr += self.page_size.size_bytes();
+        self.current_addr = self.current_addr + self.page_size.size_bytes();
         Some(page)
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct VirtPage {
-    pub(crate) start_addr: VirtAddr,
-    pub(crate) size: PageSize,
+pub(crate) trait Address:
+    Copy + Sized + PartialOrd + Add<usize, Output = Self> + Sub<usize, Output = Self>
+{
+    fn align_down(self, align: u64) -> Self;
 }
 
-impl VirtPage {
-    pub(crate) fn range_exclusive(start: VirtAddr, end: VirtAddr) -> VirtPageRange {
-        let current_addr = start.align_down(PAGE_SIZE as u64);
-        VirtPageRange {
-            current_addr,
-            page_size: PageSize::Size4KiB,
-            end_addr_exclusive: end,
-        }
+impl Address for VirtAddr {
+    fn align_down(self, align: u64) -> Self {
+        self.align_down(align)
     }
 }
 
-pub(crate) struct VirtPageRange {
-    current_addr: VirtAddr,
-    page_size: PageSize,
-    end_addr_exclusive: VirtAddr,
-}
-
-impl Iterator for VirtPageRange {
-    type Item = VirtPage;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current_addr >= self.end_addr_exclusive {
-            return None;
-        }
-
-        let page = VirtPage {
-            start_addr: self.current_addr,
-            size: self.page_size,
-        };
-
-        self.current_addr += self.page_size.size_bytes();
-        Some(page)
+impl Address for PhysAddr {
+    fn align_down(self, align: u64) -> Self {
+        self.align_down(align)
     }
 }
 

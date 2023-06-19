@@ -21,8 +21,7 @@ use crate::sync::SpinLock;
 
 use super::{
     page_table::{
-        Level4PageTable, MapError, MapTarget, PageSize, PageTableEntryFlags, PhysPage, UnmapError,
-        VirtPage,
+        Level4PageTable, MapError, MapTarget, Page, PageSize, PageTableEntryFlags, UnmapError,
     },
     KERNEL_PHYSICAL_ALLOCATOR,
 };
@@ -68,7 +67,7 @@ pub(crate) fn kernel_default_page_table_address() -> PhysAddr {
 /// initializing a virtual region that is known not to be backed by memory, like
 /// initializing the kernel heap.
 pub(crate) fn allocate_and_map_pages(
-    pages: impl Iterator<Item = VirtPage>,
+    pages: impl Iterator<Item = Page<VirtAddr>>,
     flags: PageTableEntryFlags,
 ) -> Result<(), MapError> {
     let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
@@ -91,7 +90,7 @@ pub(crate) fn allocate_and_map_pages(
     })
 }
 
-pub(crate) unsafe fn unmap_page(page: VirtPage) -> Result<PhysPage, UnmapError> {
+pub(crate) unsafe fn unmap_page(page: Page<VirtAddr>) -> Result<Page<PhysAddr>, UnmapError> {
     KERNEL_PAGE_TABLE
         .lock()
         .as_mut()
@@ -100,7 +99,7 @@ pub(crate) unsafe fn unmap_page(page: VirtPage) -> Result<PhysPage, UnmapError> 
 }
 
 pub(crate) fn identity_map_physical_pages(
-    phys_pages: impl Iterator<Item = PhysPage>,
+    phys_pages: impl Iterator<Item = Page<PhysAddr>>,
     flags: PageTableEntryFlags,
 ) -> Result<(), MapError> {
     let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
@@ -110,7 +109,7 @@ pub(crate) fn identity_map_physical_pages(
 
     KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
         for phys_page in phys_pages {
-            let virt_page = VirtPage {
+            let virt_page = Page {
                 start_addr: VirtAddr::new(phys_page.start_addr.as_u64()),
                 size: phys_page.size,
             };
@@ -150,11 +149,11 @@ pub(crate) fn test_new_page_table() {
     let target = table.translate_address(target_addr);
     serial_println!("Target of {target_addr:x?}: {target:x?}");
 
-    let map_virt = VirtPage {
+    let map_virt = Page {
         start_addr: VirtAddr::new(0x4_0000_0000),
         size: PageSize::Size4KiB,
     };
-    let map_phys = PhysPage {
+    let map_phys = Page {
         start_addr: PhysAddr::new(0x1_0000_0000),
         size: PageSize::Size4KiB,
     };
@@ -177,7 +176,7 @@ pub(crate) fn test_new_page_table() {
     let unmap_result = table.unmap(map_virt);
     serial_println!("Unmap result: {:?}", unmap_result);
 
-    let map_virt = VirtPage {
+    let map_virt = Page {
         start_addr: VirtAddr::new(0x4_0001_0000),
         size: PageSize::Size4KiB,
     };

@@ -97,6 +97,9 @@ make test
 
 ## TODO
 
+- BUG: Fix `exec /bin/hello` hanging after latest commit adding `Page<A>`.
+  - Tracing with gdb shows us hit a page fault in the userspace `syscall` for some reason.
+  - Adding a `log::warn` before the jump to userspace prevents the hang though (???)
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - Consider combining all crates into kernel again now that we support tests
     - Make sure the bitmap-alloc proptest tests are still useful! Force a few failures. I'm a bit worried that proptest w/ no_std and panic == abort isn't useful
@@ -111,7 +114,6 @@ make test
       - Replace existing mapping functions
       - Add support for huge pages in `map_to`
   - Don't use `usize` so casually in `physical.rs`. Have a `PageNumber` newtype or something.
-  - Make `VirtPage`/`PhysPage` actually `Page<A>` where `A` is PhysAddr, VirtAddr, etc
   - New allocator is slower. Heap used to initialize in milliseconds, and now takes almost a second
     - Consider pages with size in type and more straight-line code for mapping different page sizes instead of current loops, and likely lots of multiplications.
   - Abandon the default limine memory mapping and make our own
