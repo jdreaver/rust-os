@@ -1,6 +1,6 @@
+use core::alloc::AllocError;
 use core::fmt;
 
-use alloc::string::String;
 use alloc::vec::Vec;
 
 use bitflags::bitflags;
@@ -51,7 +51,7 @@ impl Level4PageTable {
         target_page: PhysPage,
         parent_flags: PageTableEntryFlags,
         flags: PageTableEntryFlags,
-    ) -> Result<(), String> {
+    ) -> Result<(), MapError> {
         assert!(
             target_page.size == PageSize::Size4KiB,
             "TODO: support more page sizes"
@@ -181,7 +181,7 @@ impl PageTableEntry {
         target_page: PhysPage,
         parent_flags: PageTableEntryFlags,
         flags: PageTableEntryFlags,
-    ) -> Result<PageTableTargetMut, String> {
+    ) -> Result<PageTableTargetMut, MapError> {
         assert!(
             page.size == PageSize::Size4KiB,
             "TODO: support more page sizes"
@@ -200,17 +200,16 @@ impl PageTableEntry {
             (Some(level), false) => {
                 // We're not at the lowest level, so we need to create a new page table.
                 let new_table_addr = PhysicalBuffer::allocate_zeroed(PAGE_SIZE)
-                    .map_err(|e| format!("Failed to allocate physical buffer: {}", e))?
+                    .map_err(MapError::PhysicalPageAllocationFailed)?
                     .leak();
                 self.set_address(new_table_addr);
                 self.set_flags(parent_flags);
                 let table = unsafe { &mut *(new_table_addr.as_u64() as *mut PageTable) };
                 Ok(PageTableTargetMut::NextTable { level, table })
             }
-            (None, true) => Err(format!(
-                "Virtual page {page:x?} is already mapped to a page at {:?}",
-                self.address()
-            )),
+            (None, true) => Err(MapError::PageAlreadyMapped {
+                existing_target: self.address(),
+            }),
             (None, false) => {
                 // We're at the lowest level, so we can map to a page.
                 //
@@ -233,6 +232,15 @@ impl fmt::Debug for PageTableEntry {
             .field("address", &self.address())
             .finish()
     }
+}
+
+#[derive(Debug)]
+pub(super) enum MapError {
+    PhysicalPageAllocationFailed(AllocError),
+    #[allow(dead_code)]
+    PageAlreadyMapped {
+        existing_target: PhysAddr,
+    },
 }
 
 bitflags! {
