@@ -19,9 +19,12 @@ use crate::boot_info::BootInfo;
 use crate::serial_println;
 use crate::sync::SpinLock;
 
-use super::page_table::{
-    Level4PageTable, MapError, MapTarget, PageSize, PageTableEntryFlags, PhysPage, UnmapError,
-    VirtPage,
+use super::{
+    page_table::{
+        Level4PageTable, MapError, MapTarget, PageSize, PageTableEntryFlags, PhysPage, UnmapError,
+        VirtPage,
+    },
+    KERNEL_PHYSICAL_ALLOCATOR,
 };
 
 pub(crate) const HIGHER_HALF_START: u64 = 0xffff_8000_0000_0000;
@@ -68,19 +71,24 @@ pub(crate) fn allocate_and_map_pages(
     pages: impl Iterator<Item = VirtPage>,
     flags: PageTableEntryFlags,
 ) -> Result<(), MapError> {
-    let mut lock = KERNEL_PAGE_TABLE.lock();
-    let table = lock.as_mut().expect("kernel page table not initialized");
+    let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
+    let table = page_table_lock
+        .as_mut()
+        .expect("kernel page table not initialized");
 
-    for page in pages {
-        table.map_to(
-            page,
-            MapTarget::NewPhysPage,
-            flags,
-            PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
-        )?;
-    }
+    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
+        for page in pages {
+            table.map_to(
+                allocator,
+                page,
+                MapTarget::NewPhysPage,
+                flags,
+                PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
+            )?;
+        }
 
-    Ok(())
+        Ok(())
+    })
 }
 
 pub(crate) unsafe fn unmap_page(page: VirtPage) -> Result<PhysPage, UnmapError> {
@@ -118,12 +126,15 @@ pub(crate) fn test_new_page_table() {
         size: PageSize::Size4KiB,
     };
 
-    let result = table.map_to(
-        map_virt,
-        MapTarget::ExistingPhysPage(map_phys),
-        PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
-        PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
-    );
+    let result = KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
+        table.map_to(
+            allocator,
+            map_virt,
+            MapTarget::ExistingPhysPage(map_phys),
+            PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
+            PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
+        )
+    });
 
     serial_println!("Mapping {map_virt:?} to {map_phys:?}, result: {:?}", result);
 
@@ -137,12 +148,15 @@ pub(crate) fn test_new_page_table() {
         start_addr: VirtAddr::new(0x4_0001_0000),
         size: PageSize::Size4KiB,
     };
-    let result = table.map_to(
-        map_virt,
-        MapTarget::NewPhysPage,
-        PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
-        PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
-    );
+    let result = KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
+        table.map_to(
+            allocator,
+            map_virt,
+            MapTarget::NewPhysPage,
+            PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
+            PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
+        )
+    });
 
     serial_println!("Mapped {map_virt:?}, result: {:?}", result);
 

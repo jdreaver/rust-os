@@ -109,8 +109,10 @@ make test
   - Replace `x86_64` crate page table management with our own
     - Tactical:
       - Replace existing mapping functions
-      - Re-evaluate locking: should we be calling `PhysicalBuffer::allocate_zeroed` which takes a lock underneath, or should we explicitly pass in a `&mut PhysicalAllocator`?
       - Add support for huge pages in `map_to`
+  - Don't use `usize` so casually in `physical.rs`. Have a `PageNumber` newtype or something.
+  - New allocator is slower. Heap used to initialize in milliseconds, and now takes almost a second
+    - Consider pages with size in type and more straight-line code for mapping different page sizes instead of current loops, and likely lots of multiplications.
   - Abandon the default limine memory mapping and make our own
     - Make sure to copy the pages relating to how the kernel is loaded though. Limine did all the hard work parsing the ELF file and set page permissions properly (or so I hope) for e.g. text, data, etc
   - Map all physical memory starting at `0xffff_8000_0000_0000`. Limine just does 4 GiB, but make sure to do it all.
@@ -131,11 +133,7 @@ make test
   - Linux prefers to use physical allocation in the kernel by default (kmalloc) because it is faster than virtual allocation (vmalloc) because vmalloc needs to mess with page tables. Vmalloc is only used when you need a huge chunk of memory that might be hard to get physically contiguous.
   - Linux keeps a 40 byte page struct per physical page of memory. That is way larger than my 1 bit! It only takes 40MB of a 4GB system (assuming 4kB pages) which might be an acceptable tradeoff.
   - Page table concurrency:
-    - Maybe replace SpinLock with Mutex, but add a method to Mutex to allow access via the inner SpinLock (like `spin_lock_no_interrupts()`) so we can access it before we start multitasking
     - Consider representing each PageTableEntry as `AtomicU64`, or in the page table as `AtomicInt<u64, PageTableEntry>`
-    - Consider the interaction with the physical memory allocator. Since that needs to be locked globally, maybe we should bundle it with the kernel page table, or at least be comfortable requiring `&mut` for both of them when doing any work (don't worry about finer grained locking)
-      - Heap allocation is currently super slow, presumably because of taking these locks over and over.
-      - Make sure that if we do allocation ahead of time and not deep in the page table, then we free the physical page if we fail to map to it.
 - Userspace
   - Set up and execute ELF for real in `task_userspace_setup`. Map segments to memory, make a stack, use real start location, etc.
     - Use a fresh page table!

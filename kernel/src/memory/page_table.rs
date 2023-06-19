@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use bitflags::bitflags;
 use x86_64::{PhysAddr, VirtAddr};
 
-use super::physical::{PhysicalBuffer, PAGE_SIZE};
+use super::physical::{PhysicalMemoryAllocator, PAGE_SIZE};
 
 #[derive(Debug)]
 pub(super) struct Level4PageTable(&'static mut PageTable);
@@ -53,6 +53,7 @@ impl Level4PageTable {
 
     pub(super) fn map_to(
         &mut self,
+        allocator: &mut PhysicalMemoryAllocator,
         page: VirtPage,
         map_target: MapTarget,
         parent_flags: PageTableEntryFlags,
@@ -72,7 +73,7 @@ impl Level4PageTable {
                             //
                             // TODO: Check target page size instead of saying lowest level
                             // == make a page.
-                            let target_page = map_target.get_target_page(page.size)?;
+                            let target_page = map_target.get_target_page(allocator, page.size)?;
                             entry.set_target_page(&target_page, flags);
                             // Need to flush the TLB here
                             x86_64::instructions::tlb::flush(page.start_addr);
@@ -80,15 +81,16 @@ impl Level4PageTable {
                         }
                         Some(next_level) => {
                             // We're not at the lowest level, so we need to create a new page table.
-                            let table = entry.allocate_and_map_child_table(parent_flags)?;
+                            let table =
+                                entry.allocate_and_map_child_table(allocator, parent_flags)?;
                             current_table = table;
                             current_level = next_level;
                         }
                     }
                 }
-                PageTableTarget::Page(page) => {
+                PageTableTarget::Page(existing_target) => {
                     return Err(MapError::PageAlreadyMapped {
-                        existing_target: page,
+                        existing_target,
                     })
                 }
                 PageTableTarget::NextTable { level, table } => {
@@ -146,7 +148,11 @@ pub(super) enum MapTarget {
 }
 
 impl MapTarget {
-    fn get_target_page(self, target_page_size: PageSize) -> Result<PhysPage, AllocError> {
+    fn get_target_page(
+        self,
+        allocator: &mut PhysicalMemoryAllocator,
+        target_page_size: PageSize,
+    ) -> Result<PhysPage, AllocError> {
         match self {
             Self::ExistingPhysPage(page) => {
                 assert!(
@@ -161,9 +167,10 @@ impl MapTarget {
                     target_page_size.size_bytes() == PAGE_SIZE,
                     "ERROR: page size must be {PAGE_SIZE} bytes. TODO: support larger pages (and handle alignment requirements!)",
                 );
-                let target_page_addr = PhysicalBuffer::allocate_zeroed_pages(1)?.leak();
+                let target_page = allocator.allocate_zeroed_pages(1)?;
+                let target_page_addr = target_page * PAGE_SIZE;
                 Ok(PhysPage {
-                    start_addr: target_page_addr,
+                    start_addr: PhysAddr::new(target_page_addr as u64),
                     size: target_page_size,
                 })
             }
@@ -260,7 +267,6 @@ impl PageTableEntry {
             return PageTableTarget::Unmapped;
         }
 
-        let target_addr = self.address();
         if self.flags().contains(PageTableEntryFlags::HUGE_PAGE) {
             let page_size = match level {
                 PageTableLevel::Level4 => {
@@ -273,7 +279,7 @@ impl PageTableEntry {
                 }
             };
             return PageTableTarget::Page(PhysPage {
-                start_addr: target_addr,
+                start_addr: self.address(),
                 size: page_size,
             });
         }
@@ -303,12 +309,14 @@ impl PageTableEntry {
 
     fn allocate_and_map_child_table(
         &mut self,
+        allocator: &mut PhysicalMemoryAllocator,
         flags: PageTableEntryFlags,
     ) -> Result<&mut PageTable, AllocError> {
-        let new_table_addr = PhysicalBuffer::allocate_zeroed_pages(1)?.leak();
-        self.set_address(new_table_addr);
+        let new_table_page = allocator.allocate_zeroed_pages(1)?;
+        let new_table_addr = (new_table_page * PAGE_SIZE) as u64;
+        self.set_address(PhysAddr::new(new_table_addr));
         self.set_flags(flags | PageTableEntryFlags::PRESENT);
-        Ok(unsafe { &mut *(new_table_addr.as_u64() as *mut PageTable) })
+        Ok(unsafe { &mut *(new_table_addr as *mut PageTable) })
     }
 }
 

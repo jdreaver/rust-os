@@ -129,6 +129,20 @@ impl PhysicalMemoryAllocator<'_> {
     }
 }
 
+impl PhysicalMemoryAllocator<'_> {
+    pub(super) fn allocate_zeroed_pages(&mut self, num_pages: usize) -> Result<usize, AllocError> {
+        let page = self
+            .allocator
+            .allocate_contiguous(num_pages)
+            .ok_or(AllocError)?;
+        let page_addr = page * PAGE_SIZE;
+        let page_slice =
+            unsafe { core::slice::from_raw_parts_mut(page_addr as *mut u8, num_pages * PAGE_SIZE) };
+        page_slice.fill(0);
+        Ok(page)
+    }
+}
+
 unsafe impl<S: PageSize> FrameAllocator<S> for PhysicalMemoryAllocator<'_> {
     fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
         assert!(
@@ -183,19 +197,9 @@ pub(crate) struct PhysicalBuffer {
 }
 
 impl PhysicalBuffer {
-    // Don't need to expose this b/c allocate_zeroed is safer.
-    fn allocate(min_bytes: usize) -> Result<Self, AllocError> {
-        let num_pages = min_bytes.div_ceil(PAGE_SIZE);
-        Self::allocate_pages(num_pages)
-    }
-
-    fn allocate_pages(num_pages: usize) -> Result<Self, AllocError> {
-        let start_page = KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
-            allocator
-                .allocator
-                .allocate_contiguous(num_pages)
-                .ok_or(AllocError)
-        })?;
+    pub(crate) fn allocate_zeroed_pages(num_pages: usize) -> Result<Self, AllocError> {
+        let start_page = KERNEL_PHYSICAL_ALLOCATOR
+            .with_lock(|allocator| allocator.allocate_zeroed_pages(num_pages))?;
 
         assert!(start_page > 0, "we allocated the zero page, which shouldn't happen since the first page should be reserved");
 
@@ -205,25 +209,14 @@ impl PhysicalBuffer {
         })
     }
 
+    pub(crate) fn allocate_zeroed(min_bytes: usize) -> Result<Self, AllocError> {
+        let num_pages = min_bytes.div_ceil(PAGE_SIZE);
+        Self::allocate_zeroed_pages(num_pages)
+    }
+
     pub(crate) fn as_slice_mut(&mut self) -> &mut [u8] {
         let ptr = self.address().as_u64() as *mut u8;
         unsafe { core::slice::from_raw_parts_mut(ptr, self.len_bytes()) }
-    }
-
-    pub(crate) fn allocate_zeroed(min_bytes: usize) -> Result<Self, AllocError> {
-        let mut buffer = Self::allocate(min_bytes)?;
-        for x in buffer.as_slice_mut() {
-            *x = 0;
-        }
-        Ok(buffer)
-    }
-
-    pub(crate) fn allocate_zeroed_pages(num_pages: usize) -> Result<Self, AllocError> {
-        let mut buffer = Self::allocate_pages(num_pages)?;
-        for x in buffer.as_slice_mut() {
-            *x = 0;
-        }
-        Ok(buffer)
     }
 
     pub(crate) fn address(&self) -> PhysAddr {
@@ -232,12 +225,6 @@ impl PhysicalBuffer {
 
     pub(crate) fn len_bytes(&self) -> usize {
         self.num_pages * PAGE_SIZE
-    }
-
-    pub(crate) fn leak(self) -> PhysAddr {
-        let addr = self.address();
-        core::mem::forget(self);
-        addr
     }
 
     #[allow(dead_code)]
