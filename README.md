@@ -107,9 +107,11 @@ make test
     - maybe some expected failures to ensure we call panic handler?
 - Memory management
   - Add support for huge pages in `map_to`
+  - Add a `TranslateResult` that returns the full frame, flags, and offset into that frame so we don't have to do offset math (like in `userspace.rs`)
   - Don't use `usize` so casually in `physical.rs`. Have a `PageNumber` newtype or something.
   - New allocator is slower. Heap used to initialize in milliseconds, and now takes almost a second
     - Consider pages with size in type and more straight-line code for mapping different page sizes instead of current loops, and likely lots of multiplications.
+    - I think different code paths for different page sizes will also simplify logic. When performing mappings, we know the depth we need to go to ahead of time because we know the page size. The only time we don't know the depth is when translating an arbitrary address.
   - Abandon the default limine memory mapping and make our own
     - Make sure to copy the pages relating to how the kernel is loaded though. Limine did all the hard work parsing the ELF file and set page permissions properly (or so I hope) for e.g. text, data, etc
   - Map all physical memory starting at `0xffff_8000_0000_0000`. Limine just does 4 GiB, but make sure to do it all.
