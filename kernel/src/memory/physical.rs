@@ -239,6 +239,21 @@ impl PhysicalBuffer {
         core::mem::forget(self);
         addr
     }
+
+    #[allow(dead_code)]
+    pub(crate) unsafe fn from_leaked_address(addr: PhysAddr, len_bytes: usize) -> Self {
+        let addr = addr.as_u64();
+
+        assert!(addr > 0, "we allocated the zero page, which shouldn't happen since the first page should be reserved");
+        assert!(addr % PAGE_SIZE as u64 == 0, "address must be page-aligned");
+
+        let start_page = addr as usize / PAGE_SIZE;
+        let num_pages = len_bytes.div_ceil(PAGE_SIZE);
+        Self {
+            start_page,
+            num_pages,
+        }
+    }
 }
 
 impl Drop for PhysicalBuffer {

@@ -90,6 +90,9 @@ pub(crate) fn test_new_page_table() {
     let target = table.translate_address(map_virt.start_addr);
     serial_println!("Target of {target_addr:x?}: {target:x?}");
 
+    let unmap_result = table.unmap(map_virt);
+    serial_println!("Unmap result: {:?}", unmap_result);
+
     let map_virt = VirtPage {
         start_addr: VirtAddr::new(0x4_0001_0000),
         size: PageSize::Size4KiB,
@@ -105,4 +108,7 @@ pub(crate) fn test_new_page_table() {
 
     let target = table.translate_address(map_virt.start_addr);
     serial_println!("Target of {target_addr:x?}: {target:x?}");
+
+    let unmap_result = table.unmap(map_virt);
+    serial_println!("Unmap result: {:?}", unmap_result);
 }

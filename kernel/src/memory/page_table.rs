@@ -93,6 +93,42 @@ impl Level4PageTable {
             }
         }
     }
+
+    /// Unmaps a given virtual page and returns the underlying physical page.
+    ///
+    /// NOTE: this function does not handle deallocation of the physical page.
+    pub(super) fn unmap(&mut self, page: VirtPage) -> Result<PhysPage, UnmapError> {
+        let mut current_table = &mut *self.0;
+        let mut current_level = PageTableLevel::Level4;
+
+        loop {
+            let entry = current_table.address_entry_mut(current_level, page.start_addr);
+            let (entry, target) = entry.target_mut(current_level);
+            match target {
+                PageTableTarget::Unmapped => return Err(UnmapError::PageNotMapped),
+                PageTableTarget::Page(target_page) => {
+                    if target_page.size != page.size {
+                        return Err(UnmapError::PageWrongSize {
+                            expected_size: page.size,
+                            actual_size: target_page.size,
+                        });
+                    }
+                    entry.clear();
+                    x86_64::instructions::tlb::flush(page.start_addr);
+
+                    // TODO: Free the buffer used for this page, if necessary.
+                    // We might need to keep track of if a page was allocated or
+                    // not using the OS-available page table bits.
+
+                    return Ok(target_page);
+                }
+                PageTableTarget::NextTable { level, table } => {
+                    current_table = table;
+                    current_level = level;
+                }
+            }
+        }
+    }
 }
 
 /// Target of the `map_to` operation.
@@ -251,6 +287,10 @@ impl PageTableEntry {
         )
     }
 
+    fn clear(&mut self) {
+        self.0 = 0;
+    }
+
     fn set_target_page(&mut self, page: &PhysPage, flags: PageTableEntryFlags) {
         self.set_address(page.start_addr);
         self.set_flags(flags | PageTableEntryFlags::PRESENT);
@@ -289,6 +329,16 @@ impl From<AllocError> for MapError {
     fn from(e: AllocError) -> Self {
         Self::PhysicalPageAllocationFailed(e)
     }
+}
+
+#[derive(Debug)]
+pub(super) enum UnmapError {
+    PageNotMapped,
+    #[allow(dead_code)]
+    PageWrongSize {
+        expected_size: PageSize,
+        actual_size: PageSize,
+    },
 }
 
 bitflags! {
