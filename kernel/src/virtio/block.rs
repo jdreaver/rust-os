@@ -4,12 +4,14 @@ use alloc::vec::Vec;
 use bitflags::bitflags;
 use core::mem;
 use spin::RwLock;
+use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 use crate::apic::ProcessorID;
 use crate::interrupts::{InterruptHandlerID, InterruptVector};
 use crate::memory::PhysicalBuffer;
 use crate::registers::RegisterRO;
 use crate::sync::{once_channel, OnceReceiver, OnceSender, SpinLock};
+use crate::transmute::try_write_bytes_offset;
 use crate::{register_struct, serial_println, strings};
 
 use super::device::VirtIOInitializedDevice;
@@ -368,7 +370,7 @@ struct RawBlockRequest {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, FromZeroes, FromBytes, AsBytes)]
 struct RawBlockRequestHeader {
     request_type: u32,
     reserved: u32,
@@ -411,26 +413,27 @@ impl RawBlockRequest {
             .expect("failed to allocate block request buffer");
 
         // Copy data, if present
+        let buffer_address = buffer.address();
+        let buffer_bytes = buffer.as_slice_mut();
         if let Some(request_data) = request_data {
             assert!(request_data.len() <= self.data_len as usize);
-            let buffer_slice = buffer.as_slice_mut();
             for (i, byte) in request_data.iter().enumerate() {
-                buffer_slice[i] = *byte;
+                buffer_bytes[i] = *byte;
             }
         }
 
         // Put header right after data
-        unsafe {
-            buffer.write_offset(
-                header_offset as usize,
-                RawBlockRequestHeader {
-                    request_type: self.request_type as u32,
-                    reserved: 0,
-                    sector: self.sector,
-                },
-            );
-        };
-        let header_addr = buffer.address() + u64::from(header_offset);
+        try_write_bytes_offset(
+            buffer_bytes,
+            header_offset as usize,
+            RawBlockRequestHeader {
+                request_type: self.request_type as u32,
+                reserved: 0,
+                sector: self.sector,
+            },
+        )
+        .expect("failed to cast header bytes");
+        let header_addr = buffer_address + u64::from(header_offset);
         let header_desc = ChainedVirtQueueDescriptorElem {
             addr: header_addr,
             len: header_size,
@@ -441,16 +444,15 @@ impl RawBlockRequest {
         // buffer.
         let writeable = self.request_type != BlockRequestType::Out;
         let buffer_desc = ChainedVirtQueueDescriptorElem {
-            addr: buffer.address(),
+            addr: buffer_address,
             len: self.data_len,
             flags: VirtQueueDescriptorFlags::new().with_device_write(writeable),
         };
 
         // Put status right after header
-        unsafe {
-            buffer.write_offset(status_offset as usize, self.status);
-        };
-        let status_addr = buffer.address() + u64::from(status_offset);
+        try_write_bytes_offset(buffer_bytes, status_offset as usize, self.status as u8)
+            .expect("failed to cast header bytes");
+        let status_addr = buffer_address + u64::from(status_offset);
         let status_desc = ChainedVirtQueueDescriptorElem {
             addr: status_addr,
             len: status_size,

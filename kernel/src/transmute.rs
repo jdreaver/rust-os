@@ -32,6 +32,16 @@ pub(crate) fn try_cast_bytes_ref_mut_offset<T: FromBytes + AsBytes>(
     try_cast_bytes_ref_mut(bytes)
 }
 
+pub(crate) fn try_write_bytes_offset<T: FromBytes + AsBytes>(
+    bytes: &mut [u8],
+    offset: usize,
+    value: T,
+) -> Option<()> {
+    let val_ref = try_cast_bytes_ref_mut_offset(bytes, offset)?;
+    *val_ref = value;
+    Some(())
+}
+
 /// Wrapper around a buffer `B` that interprets the underlying bytes as a given
 /// type.
 #[derive(Debug)]
@@ -133,5 +143,9 @@ impl<B: AsRef<[u8]>, T: FromBytes> TransmuteCollection<B, T> {
 impl<B: AsRef<[u8]> + AsMut<[u8]>, T: FromBytes + AsBytes> TransmuteCollection<B, T> {
     pub(crate) fn get_mut(&mut self, offset: usize) -> Option<&mut T> {
         try_cast_bytes_ref_mut_offset(self.buffer.as_mut(), offset)
+    }
+
+    pub(crate) fn write(&mut self, offset: usize, value: T) -> Option<()> {
+        try_write_bytes_offset(self.buffer.as_mut(), offset, value)
     }
 }

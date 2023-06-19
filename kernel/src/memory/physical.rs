@@ -1,5 +1,4 @@
 use core::alloc::AllocError;
-use core::ptr;
 
 use x86_64::structures::paging::{FrameAllocator, FrameDeallocator, PageSize, PhysFrame, Size4KiB};
 use x86_64::PhysAddr;
@@ -221,16 +220,6 @@ impl PhysicalBuffer {
 
     pub(crate) fn len_bytes(&self) -> usize {
         self.num_pages * PAGE_SIZE
-    }
-
-    pub(crate) unsafe fn write_offset<T>(&mut self, offset: usize, val: T) {
-        let buffer_len = self.len_bytes();
-        assert!(
-            offset < self.len_bytes(),
-            "tried to write value at offset {offset} but buffer only has {buffer_len} bytes"
-        );
-        let ptr = (self.address().as_u64() + offset as u64) as *mut T;
-        ptr::write_volatile(ptr, val);
     }
 }
 

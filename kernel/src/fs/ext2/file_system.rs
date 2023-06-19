@@ -171,10 +171,9 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         // Write and flush inode block
         let (mut inodes, inode_offset) =
             self.inode_block(block_group_descriptor, local_inode_index);
-        let inode_ref = inodes
-            .get_mut(inode_offset.0 as usize)
+        inodes
+            .write(inode_offset.0 as usize, inode)
             .expect("failed to cast Inode");
-        *inode_ref = inode;
         inodes.buffer().flush();
     }
 
