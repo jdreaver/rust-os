@@ -111,8 +111,6 @@ make test
       - Replace existing mapping functions
       - Re-evaluate locking: should we be calling `PhysicalBuffer::allocate_zeroed` which takes a lock underneath, or should we explicitly pass in a `&mut PhysicalAllocator`?
       - Add support for huge pages in `map_to`
-      - I don't like `PageTableTarget`, especially because we need `PageTableTargetMut`. Can I get rid of it?
-    - Better terminology: `VirtPage` vs `PhysPage`
     - Ensure we call `invlpg` for the TLB whenever we modify the page table.
     - Abandon the default limine memory mapping and make our own
       - Make sure to copy the pages relating to how the kernel is loaded though. Limine did all the hard work parsing the ELF file and set page permissions properly (or so I hope) for e.g. text, data, etc
