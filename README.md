@@ -97,9 +97,6 @@ make test
 
 ## TODO
 
-- BUG: Fix `exec /bin/hello` hanging after latest commit adding `Page<A>`.
-  - Tracing with gdb shows us hit a page fault in the userspace `syscall` for some reason.
-  - Adding a `log::warn` before the jump to userspace prevents the hang though (???)
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - Consider combining all crates into kernel again now that we support tests
     - Make sure the bitmap-alloc proptest tests are still useful! Force a few failures. I'm a bit worried that proptest w/ no_std and panic == abort isn't useful
@@ -138,6 +135,7 @@ make test
   - Page table concurrency:
     - Consider representing each PageTableEntry as `AtomicU64`, or in the page table as `AtomicInt<u64, PageTableEntry>`
 - Userspace
+  - Be much more careful in `task_userspace_setup` because `jump_to_userspace` doesn't return. Ensure that marking `jump_to_userspace` with return of `-> !` actually solves all my problems. Before I had that I had some puzzling stack corruption.
   - Set up and execute ELF for real in `task_userspace_setup`. Map segments to memory, make a stack, use real start location, etc.
     - Use a fresh page table!
       - Copy all of the higher half entries for the kernel page table.

@@ -78,6 +78,10 @@ pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
     let user_code_segment_idx: u64 = u64::from(gdt::selectors().user_code_selector.0);
     let user_data_segment_idx: u64 = u64::from(gdt::selectors().user_data_selector.0);
 
+    // N.B. It is important that jump_to_userspace is marked as returning !,
+    // which means it never returns, because I _think_ that the compiler will
+    // properly clean up all the other stuff in this function. Before I had `!`
+    // I was getting some intermittent page faults.
     unsafe {
         jump_to_userspace(
             instruction_virt,
@@ -95,7 +99,7 @@ pub(super) unsafe extern "C" fn jump_to_userspace(
     user_stack_pointer: VirtAddr,
     user_code_segment_idx: u64,
     user_data_segment_idx: u64,
-) {
+) -> ! {
     unsafe {
         asm!(
             // Store the kernel stack
