@@ -1,6 +1,6 @@
-use x86_64::structures::paging::mapper::{MapToError, Translate, UnmapError};
+use x86_64::structures::paging::mapper::{MapToError, Translate};
 use x86_64::structures::paging::{
-    FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB,
+    Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB,
 };
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -61,27 +61,6 @@ pub(crate) fn translate_addr(addr: VirtAddr) -> Option<PhysAddr> {
     KERNEL_MAPPER.with_lock(|mapper| mapper.translate_addr(addr))
 }
 
-/// Allocates a physical frame for the given virtual page of memory and maps the
-/// virtual page to the physical frame in the page table. Useful for
-/// initializing a virtual region that is known not to be backed by memory, like
-/// initializing the kernel heap.
-pub(crate) fn allocate_and_map_pages(
-    pages: impl Iterator<Item = Page<Size4KiB>>,
-    flags: PageTableFlags,
-) -> Result<(), MapToError<Size4KiB>> {
-    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
-        KERNEL_MAPPER.with_lock(|mapper| unsafe {
-            for page in pages {
-                let frame = allocator
-                    .allocate_frame()
-                    .ok_or(MapToError::FrameAllocationFailed)?;
-                mapper.map_to(page, frame, flags, allocator)?.flush();
-            }
-            Ok(())
-        })
-    })
-}
-
 pub(crate) fn map_page_to_frame(
     page: Page<Size4KiB>,
     frame: PhysFrame,
@@ -92,14 +71,6 @@ pub(crate) fn map_page_to_frame(
             mapper.map_to(page, frame, flags, allocator)?.flush();
             Ok(())
         })
-    })
-}
-
-pub(crate) unsafe fn unmap_page(page: Page<Size4KiB>) -> Result<(), UnmapError> {
-    KERNEL_MAPPER.with_lock(|mapper| {
-        let (_, flush) = mapper.unmap(page)?;
-        flush.flush();
-        Ok(())
     })
 }
 

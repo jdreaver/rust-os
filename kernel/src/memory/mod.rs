@@ -5,6 +5,7 @@ mod physical;
 mod virt;
 
 pub(crate) use mapping::*;
+pub(crate) use page_table::*;
 pub(crate) use physical::*;
 pub(crate) use virt::*;
 

@@ -117,6 +117,7 @@ make test
   - Deal with deallocating buffers. We can't blindly deallocate every time we unmap because some mapping targets are device MMIO.
     - Perhaps don't allow the `NewPhysPage` mapping target. Or, make sure the caller uses the `PhysPage` result.
     - The kernel stack allocator actually has a bug where it doesn't free its allocated physical memory pages! It is only "freeing" the virtual pages.
+  - Don't do so much unnecessary address <-> page conversions w/ assertions that addresses are aligned. This happens a lot in kernel stack code.
   - Consider a `KernelPhysAddr` that wraps `VirtAddr` and can be converted to `PhysAddr` by just subtracting hard-coded offset (`0xffff_8000_0000_0000`)
     - Be really careful here! Not all kernel memory is mapped as simply as an offset. Only some of it is.
   - Guard pages: consider using one of the special OS-available bits on pages for `GUARD_PAGE`, in case that could simplify our guard page detection logic in the page fault handler. Using these OS-available bits in general to identify the type of page is probably going to be useful.
@@ -133,6 +134,8 @@ make test
     - Maybe replace SpinLock with Mutex, but add a method to Mutex to allow access via the inner SpinLock (like `spin_lock_no_interrupts()`) so we can access it before we start multitasking
     - Consider representing each PageTableEntry as `AtomicU64`, or in the page table as `AtomicInt<u64, PageTableEntry>`
     - Consider the interaction with the physical memory allocator. Since that needs to be locked globally, maybe we should bundle it with the kernel page table, or at least be comfortable requiring `&mut` for both of them when doing any work (don't worry about finer grained locking)
+      - Heap allocation is currently super slow, presumably because of taking these locks over and over.
+      - Make sure that if we do allocation ahead of time and not deep in the page table, then we free the physical page if we fail to map to it.
 - Userspace
   - Set up and execute ELF for real in `task_userspace_setup`. Map segments to memory, make a stack, use real start location, etc.
     - Use a fresh page table!

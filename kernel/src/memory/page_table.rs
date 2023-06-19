@@ -322,7 +322,7 @@ impl fmt::Debug for PageTableEntry {
 }
 
 #[derive(Debug)]
-pub(super) enum MapError {
+pub(crate) enum MapError {
     PhysicalPageAllocationFailed(AllocError),
     #[allow(dead_code)]
     PageAlreadyMapped {
@@ -337,7 +337,7 @@ impl From<AllocError> for MapError {
 }
 
 #[derive(Debug)]
-pub(super) enum UnmapError {
+pub(crate) enum UnmapError {
     PageNotMapped,
     #[allow(dead_code)]
     PageWrongSize {
@@ -349,7 +349,7 @@ pub(super) enum UnmapError {
 bitflags! {
     /// Flags for all levels of page table entries.
     #[derive(Debug, Clone, Copy)]
-    pub(super) struct PageTableEntryFlags: u64 {
+    pub(crate) struct PageTableEntryFlags: u64 {
         /// Indicates if entry is valid. If this bit is unset, the entry is ignored.
         const PRESENT = 1;
 
@@ -436,19 +436,54 @@ enum PageTableTarget<T> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(super) struct PhysPage {
-    pub(super) start_addr: PhysAddr,
-    pub(super) size: PageSize,
+pub(crate) struct PhysPage {
+    pub(crate) start_addr: PhysAddr,
+    pub(crate) size: PageSize,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(super) struct VirtPage {
-    pub(super) start_addr: VirtAddr,
-    pub(super) size: PageSize,
+pub(crate) struct VirtPage {
+    pub(crate) start_addr: VirtAddr,
+    pub(crate) size: PageSize,
+}
+
+impl VirtPage {
+    pub(crate) fn range_exclusive(start: VirtAddr, end: VirtAddr) -> VirtPageRange {
+        assert!(start.as_u64() % PAGE_SIZE as u64 == 0);
+        VirtPageRange {
+            current_addr: start,
+            page_size: PageSize::Size4KiB,
+            end_addr_exclusive: end,
+        }
+    }
+}
+
+pub(crate) struct VirtPageRange {
+    current_addr: VirtAddr,
+    page_size: PageSize,
+    end_addr_exclusive: VirtAddr,
+}
+
+impl Iterator for VirtPageRange {
+    type Item = VirtPage;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_addr >= self.end_addr_exclusive {
+            return None;
+        }
+
+        let page = VirtPage {
+            start_addr: self.current_addr,
+            size: self.page_size,
+        };
+
+        self.current_addr += self.page_size.size_bytes();
+        Some(page)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum PageSize {
+pub(crate) enum PageSize {
     Size4KiB,
     Size2MiB,
     Size1GiB,

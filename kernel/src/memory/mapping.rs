@@ -20,7 +20,8 @@ use crate::serial_println;
 use crate::sync::SpinLock;
 
 use super::page_table::{
-    Level4PageTable, MapTarget, PageSize, PageTableEntryFlags, PhysPage, VirtPage,
+    Level4PageTable, MapError, MapTarget, PageSize, PageTableEntryFlags, PhysPage, UnmapError,
+    VirtPage,
 };
 
 pub(crate) const HIGHER_HALF_START: u64 = 0xffff_8000_0000_0000;
@@ -57,6 +58,37 @@ pub(crate) fn kernel_default_page_table_address() -> PhysAddr {
         .as_ref()
         .expect("kernel page table not initialized")
         .physical_address()
+}
+
+/// Allocates a physical frame for the given virtual page of memory and maps the
+/// virtual page to the physical frame in the page table. Useful for
+/// initializing a virtual region that is known not to be backed by memory, like
+/// initializing the kernel heap.
+pub(crate) fn allocate_and_map_pages(
+    pages: impl Iterator<Item = VirtPage>,
+    flags: PageTableEntryFlags,
+) -> Result<(), MapError> {
+    let mut lock = KERNEL_PAGE_TABLE.lock();
+    let table = lock.as_mut().expect("kernel page table not initialized");
+
+    for page in pages {
+        table.map_to(
+            page,
+            MapTarget::NewPhysPage,
+            flags,
+            PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
+        )?;
+    }
+
+    Ok(())
+}
+
+pub(crate) unsafe fn unmap_page(page: VirtPage) -> Result<PhysPage, UnmapError> {
+    KERNEL_PAGE_TABLE
+        .lock()
+        .as_mut()
+        .expect("kernel page table not initialized")
+        .unmap(page)
 }
 
 pub(crate) fn test_new_page_table() {

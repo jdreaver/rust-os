@@ -1,10 +1,10 @@
 use linked_list_allocator::LockedHeap;
-use x86_64::structures::paging::mapper::MapToError;
-use x86_64::structures::paging::{Page, PageTableFlags, Size4KiB};
 use x86_64::VirtAddr;
 
-use super::mapping::{KERNEL_HEAP_REGION_MAX_SIZE, KERNEL_HEAP_REGION_START};
-use super::virt::allocate_and_map_pages;
+use super::mapping::{
+    allocate_and_map_pages, KERNEL_HEAP_REGION_MAX_SIZE, KERNEL_HEAP_REGION_START,
+};
+use super::page_table::{MapError, PageTableEntryFlags, VirtPage};
 
 /// NOTE: `LockedHeap` uses a spin lock under the hood, so we should ensure we
 /// _never_ do allocations in interrupt handlers, because we can cause a
@@ -18,18 +18,13 @@ const HEAP_SIZE: usize = 10 * 1024 * 1024; // 10 MiB
 
 /// Maps pages for a kernel heap defined by `HEAP_START` and `HEAP_SIZE` and
 /// initializes `ALLOCATOR` with this heap.
-pub(super) fn init() -> Result<(), MapToError<Size4KiB>> {
+pub(super) fn init() -> Result<(), MapError> {
     assert!(HEAP_SIZE < KERNEL_HEAP_REGION_MAX_SIZE as usize);
 
-    let page_range = {
-        let heap_start = VirtAddr::new(HEAP_START as u64);
-        let heap_end = heap_start + HEAP_SIZE as u64 - 1u64;
-        let heap_start_page = Page::containing_address(heap_start);
-        let heap_end_page = Page::containing_address(heap_end);
-        Page::range_inclusive(heap_start_page, heap_end_page)
-    };
-
-    let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+    let heap_start = VirtAddr::new(HEAP_START as u64);
+    let heap_end = heap_start + HEAP_SIZE as u64;
+    let page_range = VirtPage::range_exclusive(heap_start, heap_end);
+    let flags = PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE;
     allocate_and_map_pages(page_range, flags)?;
 
     unsafe {

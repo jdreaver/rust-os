@@ -1,11 +1,11 @@
-use x86_64::structures::paging::mapper::UnmapError;
-use x86_64::structures::paging::page::PageRangeInclusive;
-use x86_64::structures::paging::{Page, PageTableFlags};
 use x86_64::VirtAddr;
 
 use bitmap_alloc::BitmapAllocator;
 
 use crate::memory;
+use crate::memory::{
+    PageSize, PageTableEntryFlags, UnmapError, VirtPage, VirtPageRange, PAGE_SIZE,
+};
 use crate::sync::SpinLock;
 
 /// Size of a kernel stack, including the guard page (so subtract one page to get
@@ -15,7 +15,7 @@ use crate::sync::SpinLock;
 /// debug mode use a ton of the stack. We don't need this much stack in release
 /// mode.
 const KERNEL_STACK_SIZE_PAGES: usize = 16;
-const KERNEL_STACK_SIZE_BYTES: usize = KERNEL_STACK_SIZE_PAGES * memory::PAGE_SIZE;
+const KERNEL_STACK_SIZE_BYTES: usize = KERNEL_STACK_SIZE_PAGES * PAGE_SIZE;
 const KERNEL_STACK_START_VIRT_ADDR: usize = memory::KERNEL_STACK_REGION_START as usize;
 
 const MAX_KERNEL_STACKS: usize = 256;
@@ -68,20 +68,21 @@ impl KernelStackAllocator<'_> {
         // Map the guard page as invalid
         unsafe {
             match memory::unmap_page(stack.guard_page()) {
-                Ok(()) | Err(UnmapError::PageNotMapped) => {}
+                Err(UnmapError::PageNotMapped) => {}
+                Ok(page) => panic!("somehow the guard page was physically mapped! {:?}", page),
                 Err(e) => panic!("failed to unmap kernel stack guard page: {:?}", e),
             }
         }
 
         // Map the physical memory into the virtual address space
         let pages = stack.physically_mapped_pages();
-        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+        let flags = PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE;
         memory::allocate_and_map_pages(pages, flags).expect("failed to map kernel stack pages");
 
         // Zero out the memory
         unsafe {
-            let ptr = start_addr.as_mut_ptr::<u8>().add(memory::PAGE_SIZE);
-            ptr.write_bytes(0, KERNEL_STACK_SIZE_BYTES - memory::PAGE_SIZE);
+            let ptr = start_addr.as_mut_ptr::<u8>().add(PAGE_SIZE);
+            ptr.write_bytes(0, KERNEL_STACK_SIZE_BYTES - PAGE_SIZE);
         };
 
         Some(stack)
@@ -114,14 +115,18 @@ impl KernelStack {
         self.start_addr + KERNEL_STACK_SIZE_BYTES
     }
 
-    fn guard_page(&self) -> Page {
-        Page::containing_address(self.start_addr)
+    fn guard_page(&self) -> VirtPage {
+        assert!(self.start_addr.as_u64() % PAGE_SIZE as u64 == 0);
+        VirtPage {
+            start_addr: self.start_addr,
+            size: PageSize::Size4KiB,
+        }
     }
 
-    fn physically_mapped_pages(&self) -> PageRangeInclusive {
-        let start_page = Page::containing_address(self.start_addr + memory::PAGE_SIZE);
-        let end_page = Page::containing_address(self.start_addr + KERNEL_STACK_SIZE_BYTES - 1_u64);
-        Page::range_inclusive(start_page, end_page)
+    fn physically_mapped_pages(&self) -> VirtPageRange {
+        let start_addr = self.start_addr + PAGE_SIZE;
+        let end_addr = self.start_addr + KERNEL_STACK_SIZE_BYTES;
+        VirtPage::range_exclusive(start_addr, end_addr)
     }
 }
 
@@ -148,6 +153,6 @@ pub(crate) fn is_kernel_guard_page(addr: VirtAddr) -> bool {
 
     // The guard page is the first page in each stack
     let relative_start = addr.as_u64() - KERNEL_STACK_START_VIRT_ADDR as u64;
-    let stack_page_index = relative_start / memory::PAGE_SIZE as u64;
+    let stack_page_index = relative_start / PAGE_SIZE as u64;
     stack_page_index % KERNEL_STACK_SIZE_PAGES as u64 == 0
 }
