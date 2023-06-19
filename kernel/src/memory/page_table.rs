@@ -1,17 +1,13 @@
-use alloc::vec::Vec;
 use core::fmt;
-use core::ops::Index;
 
+use alloc::vec::Vec;
 use bitflags::bitflags;
 use x86_64::{PhysAddr, VirtAddr};
 
-/// A `RawPageTable` with a level. This is the top-level type for this module.
-pub(super) struct PageTable {
-    level: PageTableLevel,
-    table: &'static mut RawPageTable,
-}
+#[derive(Debug)]
+pub(super) struct Level4PageTable(&'static mut PageTable);
 
-impl PageTable {
+impl Level4PageTable {
     /// Loads the page table from the current value of the CR3 register.
     ///
     /// # Safety
@@ -19,71 +15,29 @@ impl PageTable {
     /// This should only be called once to initialize the kernel's page table.
     /// If it is called multiple times there will be multiple mutable references
     /// to the same underlying page table structure.
-    pub(super) unsafe fn level_4_from_cr3() -> Self {
+    pub(super) unsafe fn from_cr3() -> Self {
         let (level_4_table_frame, _) = x86_64::registers::control::Cr3::read();
         let level_4_table_ptr = level_4_table_frame.start_address().as_u64() as *mut _;
-        let table: &mut RawPageTable = unsafe { &mut *level_4_table_ptr };
-        Self {
-            level: PageTableLevel::Level4,
-            table,
-        }
+        let table = unsafe { &mut *level_4_table_ptr };
+        Self(table)
     }
 
-    /// Indexes into the page table given a virtual address. NOTE: this only
-    /// goes one level deep. Use `translate_address` to recursively translate a
-    /// virtual address.
-    fn address_entry(&self, addr: VirtAddr) -> PageTableIndexedEntry {
-        let index = PageTableIndex::from_address(self.level, addr);
-        self.index_entry(index)
-    }
-
-    fn index_entry(&self, index: PageTableIndex) -> PageTableIndexedEntry {
-        PageTableIndexedEntry {
-            level: self.level,
-            index,
-            entry: self.table.0[index.0 as usize],
-        }
-    }
-
-    /// Recursively translates a virtual address to a physical address mapped by
-    /// the page table.
+    /// Translates a virtual address to a physical address mapped by the page
+    /// table.
     pub(super) fn translate_address(&self, addr: VirtAddr) -> Option<PhysicalPage> {
-        let entry = self.address_entry(addr);
-        let target = entry.target()?;
-        match target {
-            PageTableTarget::Page(page) => Some(page),
-            PageTableTarget::NextTable(next_table) => next_table.translate_address(addr),
-        }
-    }
-}
+        let mut current_table = &*self.0;
+        let mut current_level = PageTableLevel::Level4;
 
-impl fmt::Debug for PageTable {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PageTable")
-            .field("level", &self.level)
-            .field(
-                "present_entries",
-                &self.table.present_entries(self.level).collect::<Vec<_>>(),
-            )
-            .finish()
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum PageTableLevel {
-    Level1 = 1,
-    Level2,
-    Level3,
-    Level4,
-}
-
-impl PageTableLevel {
-    fn next_lower_level(self) -> Option<Self> {
-        match self {
-            Self::Level4 => Some(Self::Level3),
-            Self::Level3 => Some(Self::Level2),
-            Self::Level2 => Some(Self::Level1),
-            Self::Level1 => None,
+        loop {
+            let entry = current_table.address_entry(current_level, addr);
+            let target = entry.target(current_level)?;
+            match target {
+                PageTableTarget::Page(page) => return Some(page),
+                PageTableTarget::NextTable { level, table } => {
+                    current_table = table;
+                    current_level = level;
+                }
+            }
         }
     }
 }
@@ -96,112 +50,30 @@ const NUM_PAGE_TABLE_ENTRIES: usize = 512;
 /// See 4.5 4-LEVEL PAGING AND 5-LEVEL PAGING
 #[derive(Clone)]
 #[repr(C, align(4096))]
-struct RawPageTable([PageTableEntry; NUM_PAGE_TABLE_ENTRIES]);
+struct PageTable {
+    entries: [PageTableEntry; NUM_PAGE_TABLE_ENTRIES],
+}
 
-impl RawPageTable {
-    fn entries(&self, level: PageTableLevel) -> impl Iterator<Item = PageTableIndexedEntry> + '_ {
-        self.0
+impl PageTable {
+    /// Indexes into the page table given a virtual address. NOTE: this only
+    /// goes one level deep. Use `translate_address` to recursively translate a
+    /// virtual address.
+    fn address_entry(&self, level: PageTableLevel, addr: VirtAddr) -> &PageTableEntry {
+        let index = PageTableIndex::from_address(level, addr);
+        &self.entries[index.0 as usize]
+    }
+}
+
+impl fmt::Debug for PageTable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let present_entries = self
+            .entries
             .iter()
             .enumerate()
-            .map(move |(i, entry)| PageTableIndexedEntry {
-                level,
-                index: PageTableIndex::new(i as u16),
-                entry: *entry,
-            })
-    }
-
-    fn present_entries(
-        &self,
-        level: PageTableLevel,
-    ) -> impl Iterator<Item = PageTableIndexedEntry> + '_ {
-        self.entries(level)
-            .filter(|entry| entry.entry.flags().contains(PageTableEntryFlags::PRESENT))
-    }
-}
-
-impl Index<PageTableIndex> for RawPageTable {
-    type Output = PageTableEntry;
-
-    fn index(&self, index: PageTableIndex) -> &Self::Output {
-        self.0
-            .get(index.0 as usize)
-            .expect("failed to get entry, somehow index was over 512")
-    }
-}
-
-/// Simply a `PageTableEntry` with additional context about its level and
-/// location in the page table.
-struct PageTableIndexedEntry {
-    level: PageTableLevel,
-    index: PageTableIndex,
-    entry: PageTableEntry,
-}
-
-impl PageTableIndexedEntry {
-    /// Start address of the region the page table points to.
-    fn virtual_address(&self) -> VirtAddr {
-        let shift = (self.level as u64 - 1) * 9 + 12;
-        let raw_addr = u64::from(self.index.0) << shift;
-        let sign_extended = sign_extend_virtual_address(raw_addr);
-        VirtAddr::new(sign_extended)
-    }
-
-    fn target(self) -> Option<PageTableTarget> {
-        if !self.entry.flags().contains(PageTableEntryFlags::PRESENT) {
-            return None;
-        }
-
-        let target_addr = self.entry.address();
-        if self.entry.flags().contains(PageTableEntryFlags::HUGE_PAGE) {
-            let page_size = match self.level {
-                PageTableLevel::Level4 => {
-                    panic!("found huge page flag on level 4 page table entry! {self:?}")
-                }
-                PageTableLevel::Level3 => PageSize::Size1GiB,
-                PageTableLevel::Level2 => PageSize::Size2MiB,
-                PageTableLevel::Level1 => {
-                    panic!("found huge page flag on level 1 page table entry! {self:?}")
-                }
-            };
-            return Some(PageTableTarget::Page(PhysicalPage {
-                start_addr: target_addr,
-                size: page_size,
-            }));
-        }
-
-        self.level.next_lower_level().map_or(
-            Some(PageTableTarget::Page(PhysicalPage {
-                start_addr: target_addr,
-                size: PageSize::Size4KiB,
-            })),
-            |next_level| {
-                let table = unsafe { &mut *(target_addr.as_u64() as *mut RawPageTable) };
-                Some(PageTableTarget::NextTable(PageTable {
-                    level: next_level,
-                    table,
-                }))
-            },
-        )
-    }
-}
-
-fn sign_extend_virtual_address(address: u64) -> u64 {
-    const SIGN_BIT: u64 = 0x0000_8000_0000_0000;
-    const SIGN_MASK: u64 = 0xFFFF_8000_0000_0000;
-
-    if (address & SIGN_BIT) == 0 {
-        return address;
-    }
-    (address | SIGN_BIT) | SIGN_MASK
-}
-
-impl fmt::Debug for PageTableIndexedEntry {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PageTableIndexedEntry")
-            .field("level", &self.level)
-            .field("index", &self.index)
-            .field("virtual_address", &self.virtual_address())
-            .field("entry", &self.entry)
+            .filter(|(_, e)| e.is_present())
+            .collect::<Vec<_>>();
+        f.debug_struct("PageTable")
+            .field("present_entries", &present_entries)
             .finish()
     }
 }
@@ -217,6 +89,45 @@ impl PageTableEntry {
 
     fn address(self) -> PhysAddr {
         PhysAddr::new(self.0 & 0x000f_ffff_ffff_f000)
+    }
+
+    fn is_present(self) -> bool {
+        self.flags().contains(PageTableEntryFlags::PRESENT)
+    }
+
+    fn target(&self, level: PageTableLevel) -> Option<PageTableTarget> {
+        if !self.is_present() {
+            return None;
+        }
+
+        let target_addr = self.address();
+        if self.flags().contains(PageTableEntryFlags::HUGE_PAGE) {
+            let page_size = match level {
+                PageTableLevel::Level4 => {
+                    panic!("found huge page flag on level 4 page table entry! {self:?}")
+                }
+                PageTableLevel::Level3 => PageSize::Size1GiB,
+                PageTableLevel::Level2 => PageSize::Size2MiB,
+                PageTableLevel::Level1 => {
+                    panic!("found huge page flag on level 1 page table entry! {self:?}")
+                }
+            };
+            return Some(PageTableTarget::Page(PhysicalPage {
+                start_addr: target_addr,
+                size: page_size,
+            }));
+        }
+
+        level.next_lower_level().map_or(
+            Some(PageTableTarget::Page(PhysicalPage {
+                start_addr: target_addr,
+                size: PageSize::Size4KiB,
+            })),
+            |level| {
+                let table = unsafe { &mut *(target_addr.as_u64() as *mut PageTable) };
+                Some(PageTableTarget::NextTable { level, table })
+            },
+        )
     }
 }
 
@@ -312,9 +223,12 @@ impl PageTableIndex {
 
 /// What a page table entry points to.
 #[derive(Debug)]
-enum PageTableTarget {
+enum PageTableTarget<'a> {
     Page(PhysicalPage),
-    NextTable(PageTable),
+    NextTable {
+        level: PageTableLevel,
+        table: &'a PageTable,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -328,4 +242,41 @@ pub(super) enum PageSize {
     Size4KiB,
     Size2MiB,
     Size1GiB,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PageTableLevel {
+    Level1 = 1,
+    Level2,
+    Level3,
+    Level4,
+}
+
+impl PageTableLevel {
+    fn next_lower_level(self) -> Option<Self> {
+        match self {
+            Self::Level4 => Some(Self::Level3),
+            Self::Level3 => Some(Self::Level2),
+            Self::Level2 => Some(Self::Level1),
+            Self::Level1 => None,
+        }
+    }
+}
+
+/// Start address of the region the page table entry points to.
+fn page_table_entry_virtual_address(level: PageTableLevel, index: PageTableIndex) -> VirtAddr {
+    let shift = (level as u64 - 1) * 9 + 12;
+    let raw_addr = u64::from(index.0) << shift;
+    let sign_extended = sign_extend_virtual_address(raw_addr);
+    VirtAddr::new(sign_extended)
+}
+
+fn sign_extend_virtual_address(address: u64) -> u64 {
+    const SIGN_BIT: u64 = 0x0000_8000_0000_0000;
+    const SIGN_MASK: u64 = 0xFFFF_8000_0000_0000;
+
+    if (address & SIGN_BIT) == 0 {
+        return address;
+    }
+    (address | SIGN_BIT) | SIGN_MASK
 }

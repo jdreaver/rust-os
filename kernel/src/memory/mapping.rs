@@ -19,7 +19,7 @@ use crate::boot_info::BootInfo;
 use crate::serial_println;
 use crate::sync::SpinLock;
 
-use super::page_table::PageTable;
+use super::page_table::Level4PageTable;
 
 pub(crate) const HIGHER_HALF_START: u64 = 0xffff_8000_0000_0000;
 
@@ -31,7 +31,7 @@ pub(crate) const KERNEL_STACK_REGION_MAX_SIZE: u64 = 0xffff_1000_0000_0000;
 
 pub(crate) const KERNEL_TEXT_DATA_REGION_START: u64 = 0xffff_ffff_8000_0000;
 
-static KERNEL_PAGE_TABLE: SpinLock<Option<PageTable>> = SpinLock::new(None);
+static KERNEL_PAGE_TABLE: SpinLock<Option<Level4PageTable>> = SpinLock::new(None);
 
 pub(super) fn init(boot_info_data: &BootInfo) {
     assert!(
@@ -45,7 +45,7 @@ pub(super) fn init(boot_info_data: &BootInfo) {
 
     let mut lock = KERNEL_PAGE_TABLE.lock();
     assert!(lock.is_none(), "kernel page table already initialized");
-    let page_table = unsafe { PageTable::level_4_from_cr3() };
+    let page_table = unsafe { Level4PageTable::from_cr3() };
     lock.replace(page_table);
 }
 
@@ -53,7 +53,7 @@ pub(crate) fn test_new_page_table() {
     let mut lock = KERNEL_PAGE_TABLE.lock();
     let table = lock.as_mut().expect("kernel page table not initialized");
 
-    serial_println!("{table:#x?}");
+    serial_println!("{table:#?}");
 
     let target_addr = VirtAddr::new(0x1234);
     let target = table.translate_address(target_addr);
