@@ -6,18 +6,23 @@ use bitflags::bitflags;
 use x86_64::{PhysAddr, VirtAddr};
 
 /// A `RawPageTable` with a level. This is the top-level type for this module.
-#[derive(Clone)]
 pub(crate) struct PageTable {
     level: PageTableLevel,
-    table: &'static RawPageTable,
+    table: &'static mut RawPageTable,
 }
 
 impl PageTable {
     /// Loads the page table from the current value of the CR3 register.
-    pub(crate) fn level_4_from_cr3() -> Self {
+    ///
+    /// # Safety
+    ///
+    /// This should only be called once to initialize the kernel's page table.
+    /// If it is called multiple times there will be multiple mutable references
+    /// to the same underlying page table structure.
+    pub(crate) unsafe fn level_4_from_cr3() -> Self {
         let (level_4_table_frame, _) = x86_64::registers::control::Cr3::read();
-        let level_4_table_ptr = level_4_table_frame.start_address().as_u64() as *const _;
-        let table: &RawPageTable = unsafe { &*level_4_table_ptr };
+        let level_4_table_ptr = level_4_table_frame.start_address().as_u64() as *mut _;
+        let table: &mut RawPageTable = unsafe { &mut *level_4_table_ptr };
         Self {
             level: PageTableLevel::Level4,
             table,
@@ -43,18 +48,11 @@ impl PageTable {
     /// Recursively translates a virtual address to a physical address mapped by
     /// the page table.
     pub(crate) fn translate_address(&self, addr: VirtAddr) -> Option<PhysicalPage> {
-        let mut table = self.clone();
-        loop {
-            let entry = table.address_entry(addr);
-            let target = entry.target()?;
-            match target {
-                PageTableTarget::Page(page) => {
-                    return Some(page);
-                }
-                PageTableTarget::NextTable(next_table) => {
-                    table = next_table;
-                }
-            }
+        let entry = self.address_entry(addr);
+        let target = entry.target()?;
+        match target {
+            PageTableTarget::Page(page) => Some(page),
+            PageTableTarget::NextTable(next_table) => next_table.translate_address(addr),
         }
     }
 }
@@ -177,7 +175,7 @@ impl PageTableIndexedEntry {
                 size: PageSize::Size4KiB,
             })),
             |next_level| {
-                let table = unsafe { &*(target_addr.as_u64() as *const RawPageTable) };
+                let table = unsafe { &mut *(target_addr.as_u64() as *mut RawPageTable) };
                 Some(PageTableTarget::NextTable(PageTable {
                     level: next_level,
                     table,
