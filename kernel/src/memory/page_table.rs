@@ -28,7 +28,7 @@ impl Level4PageTable {
 
     /// Translates a virtual address to a physical address mapped by the page
     /// table.
-    pub(super) fn translate_address(&self, addr: VirtAddr) -> Option<PhysicalPage> {
+    pub(super) fn translate_address(&self, addr: VirtAddr) -> Option<PhysPage> {
         let mut current_table = &*self.0;
         let mut current_level = PageTableLevel::Level4;
 
@@ -47,13 +47,13 @@ impl Level4PageTable {
 
     pub(super) fn map_to(
         &mut self,
-        page: PhysicalPage,
-        addr: VirtAddr,
+        page: VirtPage,
+        target_page: PhysPage,
         parent_flags: PageTableEntryFlags,
         flags: PageTableEntryFlags,
     ) -> Result<(), String> {
         assert!(
-            page.size == PageSize::Size4KiB,
+            target_page.size == PageSize::Size4KiB,
             "TODO: support more page sizes"
         );
 
@@ -61,8 +61,8 @@ impl Level4PageTable {
         let mut current_level = PageTableLevel::Level4;
 
         loop {
-            let entry = current_table.address_entry_mut(current_level, addr);
-            let target = entry.map_to(current_level, page, addr, parent_flags, flags)?;
+            let entry = current_table.address_entry_mut(current_level, page.start_addr);
+            let target = entry.map_to(current_level, page, target_page, parent_flags, flags)?;
             match target {
                 PageTableTargetMut::Page(_) => return Ok(()),
                 PageTableTargetMut::NextTable { level, table } => {
@@ -156,14 +156,14 @@ impl PageTableEntry {
                     panic!("found huge page flag on level 1 page table entry! {self:?}")
                 }
             };
-            return Some(PageTableTarget::Page(PhysicalPage {
+            return Some(PageTableTarget::Page(PhysPage {
                 start_addr: target_addr,
                 size: page_size,
             }));
         }
 
         level.next_lower_level().map_or(
-            Some(PageTableTarget::Page(PhysicalPage {
+            Some(PageTableTarget::Page(PhysPage {
                 start_addr: target_addr,
                 size: PageSize::Size4KiB,
             })),
@@ -177,8 +177,8 @@ impl PageTableEntry {
     pub(super) fn map_to(
         &mut self,
         level: PageTableLevel,
-        page: PhysicalPage,
-        addr: VirtAddr,
+        page: VirtPage,
+        target_page: PhysPage,
         parent_flags: PageTableEntryFlags,
         flags: PageTableEntryFlags,
     ) -> Result<PageTableTargetMut, String> {
@@ -208,7 +208,7 @@ impl PageTableEntry {
                 Ok(PageTableTargetMut::NextTable { level, table })
             }
             (None, true) => Err(format!(
-                "Virtual address {addr:x?} is already mapped to a page at {:?}",
+                "Virtual page {page:x?} is already mapped to a page at {:?}",
                 self.address()
             )),
             (None, false) => {
@@ -216,11 +216,11 @@ impl PageTableEntry {
                 //
                 // TODO: Check target page size instead of saying lowest level
                 // == make a page.
-                self.set_address(page.start_addr);
+                self.set_address(target_page.start_addr);
                 self.set_flags(parent_flags | flags);
                 // Need to flush the TLB here
-                x86_64::instructions::tlb::flush(addr);
-                Ok(PageTableTargetMut::Page(page))
+                x86_64::instructions::tlb::flush(page.start_addr);
+                Ok(PageTableTargetMut::Page(target_page))
             }
         }
     }
@@ -319,7 +319,7 @@ impl PageTableIndex {
 /// What a page table entry points to.
 #[derive(Debug)]
 enum PageTableTarget<'a> {
-    Page(PhysicalPage),
+    Page(PhysPage),
     NextTable {
         level: PageTableLevel,
         table: &'a PageTable,
@@ -328,7 +328,7 @@ enum PageTableTarget<'a> {
 
 #[derive(Debug)]
 enum PageTableTargetMut<'a> {
-    Page(PhysicalPage),
+    Page(PhysPage),
     NextTable {
         level: PageTableLevel,
         table: &'a mut PageTable,
@@ -336,8 +336,14 @@ enum PageTableTargetMut<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(super) struct PhysicalPage {
+pub(super) struct PhysPage {
     pub(super) start_addr: PhysAddr,
+    pub(super) size: PageSize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct VirtPage {
+    pub(super) start_addr: VirtAddr,
     pub(super) size: PageSize,
 }
 

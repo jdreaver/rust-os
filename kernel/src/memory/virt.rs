@@ -76,7 +76,7 @@ pub(crate) fn translate_addr(addr: VirtAddr) -> Option<PhysAddr> {
 /// initializing a virtual region that is known not to be backed by memory, like
 /// initializing the kernel heap.
 pub(crate) fn allocate_and_map_pages(
-    pages: impl Iterator<Item = Page>,
+    pages: impl Iterator<Item = Page<Size4KiB>>,
     flags: PageTableFlags,
 ) -> Result<(), MapToError<Size4KiB>> {
     KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
@@ -93,7 +93,7 @@ pub(crate) fn allocate_and_map_pages(
 }
 
 pub(crate) fn map_page_to_frame(
-    page: Page,
+    page: Page<Size4KiB>,
     frame: PhysFrame,
     flags: PageTableFlags,
 ) -> Result<(), MapToError<Size4KiB>> {
@@ -106,7 +106,7 @@ pub(crate) fn map_page_to_frame(
 }
 
 /// Maps a page to a non-existent frame.
-pub(crate) unsafe fn map_guard_page(page: Page) -> Result<(), MapToError<Size4KiB>> {
+pub(crate) unsafe fn map_guard_page(page: Page<Size4KiB>) -> Result<(), MapToError<Size4KiB>> {
     KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
         KERNEL_MAPPER.with_lock(|mapper| unsafe {
             let frame = PhysFrame::containing_address(PhysAddr::new(0));
@@ -120,7 +120,7 @@ pub(crate) unsafe fn map_guard_page(page: Page) -> Result<(), MapToError<Size4Ki
     })
 }
 
-pub(crate) unsafe fn unmap_page(page: Page) -> Result<(), UnmapError> {
+pub(crate) unsafe fn unmap_page(page: Page<Size4KiB>) -> Result<(), UnmapError> {
     KERNEL_MAPPER.with_lock(|mapper| {
         let (_, flush) = mapper.unmap(page)?;
         flush.flush();
