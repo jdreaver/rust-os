@@ -108,7 +108,6 @@ make test
 - Memory management
   - Replace `x86_64` crate page table management with our own
     - Tactical:
-      - Refactor new `map_to` methods
       - Replace existing mapping functions
       - Re-evaluate locking: should we be calling `PhysicalBuffer::allocate_zeroed` which takes a lock underneath, or should we explicitly pass in a `&mut PhysicalAllocator`?
       - Add support for huge pages in `map_to`
@@ -123,6 +122,7 @@ make test
   - Ensure we use `KernelPhysAddr` and mapping to higher half reserved stuff like PCI addresses, LAPIC, etc (I think? does that work or do we need identity mapping?)
   - Make it trivial to create a userspace page table.
     - Make kernel page table cloneable: fill entire top half (even if most level 3 page tables are empty), and zero out bottom half. That means we only use `KernelPhysAddr`.
+      - Zeroing out bottom half means we likely don't want any sort of "identity map" function with `PhysAddr`
     - Since bottom half of kernel page table should be empty, after cloning we can fill in userspace segments into bottom half.
   - Once new page tables are in, re-examine visibility of all types and functions. Only expose what is needed out of `memory` (e.g. we probably don't need other modules touching raw page tables)
   - Linux prefers to use physical allocation in the kernel by default (kmalloc) because it is faster than virtual allocation (vmalloc) because vmalloc needs to mess with page tables. Vmalloc is only used when you need a huge chunk of memory that might be hard to get physically contiguous.

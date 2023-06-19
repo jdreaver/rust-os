@@ -168,7 +168,7 @@ impl PageTableEntry {
                 size: PageSize::Size4KiB,
             })),
             |level| {
-                let table = unsafe { &mut *(target_addr.as_u64() as *mut PageTable) };
+                let table = unsafe { &*(target_addr.as_u64() as *mut PageTable) };
                 Some(PageTableTarget::NextTable { level, table })
             },
         )
@@ -187,43 +187,40 @@ impl PageTableEntry {
             "TODO: support more page sizes"
         );
 
-        if !self.is_present() {
-            // TODO: Check target page size here
-            return match level.next_lower_level() {
-                None => {
-                    // We're at the lowest level, so we can map to a page.
-                    self.set_address(page.start_addr);
-                    self.set_flags(parent_flags | flags);
-                    // Need to flush the TLB here
-                    x86_64::instructions::tlb::flush(addr);
-                    Ok(PageTableTargetMut::Page(page))
-                }
-                Some(level) => {
-                    // We're not at the lowest level, so we need to create a new page table.
-                    let new_table_addr = PhysicalBuffer::allocate_zeroed(PAGE_SIZE)
-                        .map_err(|e| format!("Failed to allocate physical buffer: {}", e))?
-                        .leak();
-                    self.set_address(new_table_addr);
-                    self.set_flags(parent_flags | flags);
-                    let table = unsafe { &mut *(new_table_addr.as_u64() as *mut PageTable) };
-                    Ok(PageTableTargetMut::NextTable { level, table })
-                }
-            };
-        }
-
         assert!(
             !self.flags().contains(PageTableEntryFlags::HUGE_PAGE),
             "TODO: support huge pages"
         );
 
-        match level.next_lower_level() {
-            None => Err(format!(
+        match (level.next_lower_level(), self.is_present()) {
+            (Some(level), true) => {
+                let table = unsafe { &mut *(self.address().as_u64() as *mut PageTable) };
+                Ok(PageTableTargetMut::NextTable { level, table })
+            }
+            (Some(level), false) => {
+                // We're not at the lowest level, so we need to create a new page table.
+                let new_table_addr = PhysicalBuffer::allocate_zeroed(PAGE_SIZE)
+                    .map_err(|e| format!("Failed to allocate physical buffer: {}", e))?
+                    .leak();
+                self.set_address(new_table_addr);
+                self.set_flags(parent_flags);
+                let table = unsafe { &mut *(new_table_addr.as_u64() as *mut PageTable) };
+                Ok(PageTableTargetMut::NextTable { level, table })
+            }
+            (None, true) => Err(format!(
                 "Virtual address {addr:x?} is already mapped to a page at {:?}",
                 self.address()
             )),
-            Some(level) => {
-                let table = unsafe { &mut *(self.address().as_u64() as *mut PageTable) };
-                Ok(PageTableTargetMut::NextTable { level, table })
+            (None, false) => {
+                // We're at the lowest level, so we can map to a page.
+                //
+                // TODO: Check target page size instead of saying lowest level
+                // == make a page.
+                self.set_address(page.start_addr);
+                self.set_flags(parent_flags | flags);
+                // Need to flush the TLB here
+                x86_64::instructions::tlb::flush(addr);
+                Ok(PageTableTargetMut::Page(page))
             }
         }
     }
