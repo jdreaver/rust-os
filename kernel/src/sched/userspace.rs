@@ -4,7 +4,7 @@ use core::arch::asm;
 use x86_64::registers::rflags::RFlags;
 use x86_64::VirtAddr;
 
-use crate::memory::{MapError, Page, PageSize, PageTableEntryFlags};
+use crate::memory::{MapError, Page, PageSize, PageTableEntryFlags, TranslateResult};
 use crate::{elf, gdt, memory, percpu, vfs};
 
 static DUMMY_USERSPACE_STACK: &[u8] = &[0; 4096];
@@ -46,7 +46,10 @@ pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
 
     // Map our fake code to userspace addresses that userspace has access to
     let instruction_ptr_virt = VirtAddr::new(instruction_ptr as u64);
-    let instruction_ptr_phys = memory::translate_addr(instruction_ptr_virt).unwrap();
+    let TranslateResult::Mapped(instruction_mapping) = memory::translate_addr(instruction_ptr_virt) else {
+        panic!("instruction pointer not mapped")
+    };
+    let instruction_ptr_phys = instruction_mapping.physical_address();
     let instruction_ptr_page_start = VirtAddr::new(0x2_0000_0000);
     let instruction_ptr_phys_page =
         Page::containing_address(instruction_ptr_phys, PageSize::Size4KiB);
@@ -70,12 +73,13 @@ pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
         }
     }
 
-    let instruction_virt_offset =
-        instruction_ptr_phys.as_u64() - instruction_ptr_phys_page.start_addr.as_u64();
-    let instruction_virt = instruction_ptr_page_start + instruction_virt_offset;
+    let instruction_virt = instruction_ptr_page_start + instruction_mapping.offset;
 
     let stack_ptr_start = VirtAddr::new(DUMMY_USERSPACE_STACK.as_ptr() as u64);
-    let stack_ptr_phys = memory::translate_addr(stack_ptr_start).unwrap();
+    let TranslateResult::Mapped(stack_mapping) = memory::translate_addr(stack_ptr_start) else {
+        panic!("stack pointer not mapped")
+    };
+    let stack_ptr_phys = stack_mapping.physical_address();
     let stack_ptr_page_start = VirtAddr::new(0x2_1000_0000);
     let stack_ptr_virt_page = Page {
         start_addr: stack_ptr_page_start,

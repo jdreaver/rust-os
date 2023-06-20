@@ -107,7 +107,6 @@ make test
     - maybe some expected failures to ensure we call panic handler?
 - Memory management
   - Add support for huge pages in `map_to`
-  - Add a `TranslateResult` that returns the full frame, flags, and offset into that frame so we don't have to do offset math (like in `userspace.rs`)
   - Don't use `usize` so casually in `physical.rs`. Have a `PageNumber` newtype or something.
   - New allocator is slower. Heap used to initialize in milliseconds, and now takes almost a second
     - Consider pages with size in type and more straight-line code for mapping different page sizes instead of current loops, and likely lots of multiplications.
@@ -115,7 +114,7 @@ make test
   - Abandon the default limine memory mapping and make our own
     - Make sure to copy the pages relating to how the kernel is loaded though. Limine did all the hard work parsing the ELF file and set page permissions properly (or so I hope) for e.g. text, data, etc
   - Map all physical memory starting at `0xffff_8000_0000_0000`. Limine just does 4 GiB, but make sure to do it all.
-  - Deal with deallocating buffers. We can't blindly deallocate every time we unmap because some mapping targets are device MMIO.
+  - Deal with freeing buffers used for mapping. We can't blindly deallocate every time we unmap because some mapping targets are device MMIO.
     - Perhaps don't allow the `NewPhysPage` mapping target. Or, make sure the caller uses the `PhysPage` result.
     - The kernel stack allocator actually has a bug where it doesn't free its allocated physical memory pages! It is only "freeing" the virtual pages.
   - Don't do so much unnecessary address <-> page conversions w/ assertions that addresses are aligned. This happens a lot in kernel stack code.

@@ -19,12 +19,11 @@ use crate::boot_info::BootInfo;
 use crate::serial_println;
 use crate::sync::SpinLock;
 
-use super::{
-    page_table::{
-        Level4PageTable, MapError, MapTarget, Page, PageSize, PageTableEntryFlags, UnmapError,
-    },
-    KERNEL_PHYSICAL_ALLOCATOR,
+use super::page_table::{
+    Level4PageTable, MapError, MapTarget, Page, PageSize, PageTableEntryFlags, TranslateResult,
+    UnmapError,
 };
+use super::physical::KERNEL_PHYSICAL_ALLOCATOR;
 
 pub(crate) const HIGHER_HALF_START: u64 = 0xffff_8000_0000_0000;
 
@@ -63,7 +62,7 @@ pub(crate) fn kernel_default_page_table_address() -> PhysAddr {
 }
 
 /// Translate a given physical address to a virtual address, if possible.
-pub(crate) fn translate_addr(addr: VirtAddr) -> Option<PhysAddr> {
+pub(crate) fn translate_addr(addr: VirtAddr) -> TranslateResult {
     KERNEL_PAGE_TABLE
         .lock_disable_interrupts()
         .as_ref()

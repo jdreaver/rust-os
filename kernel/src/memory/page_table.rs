@@ -32,15 +32,9 @@ impl Level4PageTable {
         PhysAddr::new(table_ptr)
     }
 
-    pub(super) fn translate_address(&self, addr: VirtAddr) -> Option<PhysAddr> {
-        let page = self.translate_address_page(addr)?;
-        let addr_offset = addr.as_u64() % page.size.size_bytes() as u64;
-        Some(page.start_addr + addr_offset)
-    }
-
     /// Translates a virtual address to a physical page mapped by the page
     /// table.
-    pub(super) fn translate_address_page(&self, addr: VirtAddr) -> Option<Page<PhysAddr>> {
+    pub(super) fn translate_address(&self, addr: VirtAddr) -> TranslateResult {
         let mut current_table = &*self.0;
         let mut current_level = PageTableLevel::Level4;
 
@@ -48,8 +42,15 @@ impl Level4PageTable {
             let entry = current_table.address_entry(current_level, addr);
             let target = entry.target(current_level);
             match target {
-                PageTableTarget::Unmapped => return None,
-                PageTableTarget::Page(page) => return Some(page),
+                PageTableTarget::Unmapped => return TranslateResult::Unmapped,
+                PageTableTarget::Page { page, flags } => {
+                    let offset = addr.as_u64() % page.size.size_bytes() as u64;
+                    return TranslateResult::Mapped(AddressPageMapping {
+                        page,
+                        flags,
+                        offset,
+                    });
+                }
                 PageTableTarget::NextTable { level, table } => {
                     current_table = table;
                     current_level = level;
@@ -99,8 +100,11 @@ impl Level4PageTable {
                         }
                     }
                 }
-                PageTableTarget::Page(existing_target) => {
-                    return Err(MapError::PageAlreadyMapped { existing_target })
+                PageTableTarget::Page { page, flags } => {
+                    return Err(MapError::PageAlreadyMapped {
+                        existing_target: page,
+                        flags,
+                    })
                 }
                 PageTableTarget::NextTable { level, table } => {
                     current_table = table;
@@ -122,7 +126,10 @@ impl Level4PageTable {
             let (entry, target) = entry.target_mut(current_level);
             match target {
                 PageTableTarget::Unmapped => return Err(UnmapError::PageNotMapped),
-                PageTableTarget::Page(target_page) => {
+                PageTableTarget::Page {
+                    page: target_page,
+                    flags: _,
+                } => {
                     if target_page.size != page.size {
                         return Err(UnmapError::PageWrongSize {
                             expected_size: page.size,
@@ -144,6 +151,27 @@ impl Level4PageTable {
                 }
             }
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum TranslateResult {
+    Unmapped,
+    Mapped(AddressPageMapping),
+}
+
+/// Result of mapping a virtual address to a page.
+#[derive(Debug, Clone)]
+pub(crate) struct AddressPageMapping {
+    pub(crate) page: Page<PhysAddr>,
+    #[allow(dead_code)]
+    pub(crate) flags: PageTableEntryFlags,
+    pub(crate) offset: u64,
+}
+
+impl AddressPageMapping {
+    pub(crate) fn physical_address(&self) -> PhysAddr {
+        self.page.start_addr + self.offset
     }
 }
 
@@ -276,7 +304,8 @@ impl PageTableEntry {
             return PageTableTarget::Unmapped;
         }
 
-        if self.flags().contains(PageTableEntryFlags::HUGE_PAGE) {
+        let flags = self.flags();
+        if flags.contains(PageTableEntryFlags::HUGE_PAGE) {
             let page_size = match level {
                 PageTableLevel::Level4 => {
                     panic!("found huge page flag on level 4 page table entry! {self:?}")
@@ -287,18 +316,22 @@ impl PageTableEntry {
                     panic!("found huge page flag on level 1 page table entry! {self:?}")
                 }
             };
-            return PageTableTarget::Page(Page {
-                start_addr: self.address(),
-                size: page_size,
-            });
+            return PageTableTarget::Page {
+                page: Page {
+                    start_addr: self.address(),
+                    size: page_size,
+                },
+                flags,
+            };
         }
 
         level.next_lower_level().map_or_else(
-            || {
-                PageTableTarget::Page(Page {
+            || PageTableTarget::Page {
+                page: Page {
                     start_addr: self.address(),
                     size: PageSize::Size4KiB,
-                })
+                },
+                flags,
             },
             |level| {
                 let table = load_table(self.address());
@@ -344,6 +377,7 @@ pub(crate) enum MapError {
     #[allow(dead_code)]
     PageAlreadyMapped {
         existing_target: Page<PhysAddr>,
+        flags: PageTableEntryFlags,
     },
 }
 
@@ -448,8 +482,14 @@ impl PageTableIndex {
 #[derive(Debug)]
 enum PageTableTarget<T> {
     Unmapped,
-    Page(Page<PhysAddr>),
-    NextTable { level: PageTableLevel, table: T },
+    Page {
+        page: Page<PhysAddr>,
+        flags: PageTableEntryFlags,
+    },
+    NextTable {
+        level: PageTableLevel,
+        table: T,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
