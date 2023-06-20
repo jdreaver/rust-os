@@ -76,6 +76,7 @@ use alloc::string::String;
 use apic::ProcessorID;
 
 pub fn start() -> ! {
+    serial::init();
     logging::init();
 
     let boot_info_data = boot_info::boot_info();

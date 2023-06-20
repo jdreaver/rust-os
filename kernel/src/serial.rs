@@ -1,9 +1,8 @@
 use core::fmt::Write;
 
-use lazy_static::lazy_static;
 use x86_64::instructions::port::{PortRead, PortWrite};
 
-use crate::ansiterm;
+use crate::{ansiterm, sync::InitCell};
 
 /// Reads and writes to a serial port. See <https://wiki.osdev.org/Serial_Ports>
 ///
@@ -119,9 +118,17 @@ pub(crate) struct SerialWriter();
 
 impl Write for SerialWriter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        SERIAL1.write_str_bytes(s);
+        SERIAL1
+            .get()
+            .expect("SERIAL1 not initialized")
+            .write_str_bytes(s);
         Ok(())
     }
+}
+
+pub(crate) fn init() {
+    SERIAL1.init(init_serial_port(COM1_PORT));
+    SERIAL2.init(init_serial_port(COM2_PORT));
 }
 
 fn init_serial_port(com_port: u16) -> SerialPort {
@@ -159,10 +166,8 @@ fn init_serial_port(com_port: u16) -> SerialPort {
     serial_port
 }
 
-lazy_static! {
-    static ref SERIAL1: SerialPort = init_serial_port(COM1_PORT);
-    static ref SERIAL2: SerialPort = init_serial_port(COM2_PORT);
-}
+static SERIAL1: InitCell<SerialPort> = InitCell::new();
+static SERIAL2: InitCell<SerialPort> = InitCell::new();
 
 /// Fetch the global serial writer for use in `write!` macros.
 ///
@@ -215,10 +220,10 @@ macro_rules! serial_println {
 }
 
 pub(crate) fn serial1_write_byte(byte: u8) {
-    SERIAL1.write(byte);
+    SERIAL1.get().expect("SERIAL1 not initialized").write(byte);
 }
 
 /// Read the next byte from the serial port.
 pub(crate) fn serial1_read_byte() -> u8 {
-    SERIAL1.read()
+    SERIAL1.get().expect("SERIAL1 not initialized").read()
 }
