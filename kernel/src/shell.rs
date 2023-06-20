@@ -3,8 +3,6 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
-use uefi::table::{Runtime, SystemTable};
-
 use crate::block;
 use crate::fs::{ext2, sysfs};
 use crate::hpet::Milliseconds;
@@ -418,25 +416,6 @@ fn run_command(command: &Command) {
             let boot_info_data = boot_info::boot_info();
             serial_println!("limine boot info:\n{boot_info_data:#x?}");
             boot_info::print_limine_memory_map();
-
-            if let Some(system_table_addr) = boot_info_data.efi_system_table_address {
-                unsafe {
-                    let system_table =
-                        SystemTable::<Runtime>::from_ptr(system_table_addr.as_mut_ptr())
-                            .expect("failed to create EFI system table");
-                    serial_println!(
-                        "EFI runtime services:\n{:#?}",
-                        system_table.runtime_services()
-                    );
-
-                    for entry in system_table.config_table() {
-                        if entry.guid == uefi::table::cfg::ACPI2_GUID {
-                            // This should match the limine RSDP address
-                            serial_println!("EFI config table ACPI2 entry: {entry:#X?}");
-                        }
-                    }
-                };
-            }
         }
         Command::PrintACPI => {
             serial_println!("Printing ACPI info...");

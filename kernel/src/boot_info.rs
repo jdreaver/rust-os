@@ -21,7 +21,7 @@ pub(crate) struct BootInfo {
     pub(crate) higher_half_direct_map_offset: VirtAddr,
     pub(crate) _kernel_address_physical_base: PhysAddr,
     pub(crate) kernel_address_virtual_base: VirtAddr,
-    pub(crate) efi_system_table_address: Option<VirtAddr>,
+    pub(crate) _efi_system_table_address: Option<VirtAddr>,
     rsdp_address: Option<VirtAddr>,
     #[allow(dead_code)] // TODO: Remove dead_code modifier. Currently only used in tests
     pub(crate) framebuffer: &'static mut limine::LimineFramebuffer,
@@ -149,7 +149,7 @@ pub(crate) fn boot_info() -> &'static BootInfo {
             higher_half_direct_map_offset,
             _kernel_address_physical_base: PhysAddr::new(kernel_address.physical_base),
             kernel_address_virtual_base: VirtAddr::new(kernel_address.virtual_base),
-            efi_system_table_address: limine_efi_system_table_address(),
+            _efi_system_table_address: limine_efi_system_table_address(),
             rsdp_address: limine_rsdp_address(),
             framebuffer,
             _x2apic_enabled: smp_info.flags & 1 == 1,

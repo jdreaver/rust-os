@@ -134,9 +134,7 @@ make test
   - Page table concurrency:
     - Consider representing each PageTableEntry as `AtomicU64`, or in the page table as `AtomicInt<u64, PageTableEntry>`
 - Userspace
-  - Ensure userspace page fault properly throws an error. Currently nothing gets printed.
-  - Be much more careful in `task_userspace_setup` because `jump_to_userspace` doesn't return. Ensure that marking `jump_to_userspace` with return of `-> !` actually solves all my problems. Before I had that I had some puzzling stack corruption.
-    - Actually I think the breakage was just the code being pushed off the page.
+  - Ensure userspace page fault properly throws an error. Currently nothing gets printed. We hang on the first `log::error` call.
   - Set up and execute ELF for real in `task_userspace_setup`. Map segments to memory, make a stack, use real start location, etc.
     - Use a fresh page table!
       - Copy all of the higher half entries for the kernel page table.
@@ -167,6 +165,7 @@ make test
 - Task start safety: find a way to make casting the `arg: *const ()` pointer way safer. It is easy to mess up.
 - Arc memory leak detection:
   - Calling `run_scheduler()` (or more specifically `switch_to_task`) while holding an `Arc` reference (especially `Arc<Task>`) can cause a memory leak because we might switch away from the given task forever. Currently I manually `drop` things before calling these functions. Is there a way I could make calling `run_scheduler` basically impossible?
+    - Same problem happens when jumping to userspace for the first time.
   - Find a way to detect leaked tasks, or maybe debug `Arc` leaks in general.
 - Networking
 - Filesystem
