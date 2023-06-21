@@ -151,7 +151,7 @@ make test
   - Create a type showing the intended memory mapping of a process and turn that into a page table. This should make it easier to reason about the memory map.
 - Ensure kernel pages are not marked as `USER_ACCESSIBLE`. I think the `x86_64` allocator, or limine, is doing it by default
 - Per CPU
-  - Linker layout: consider moving all of my `#[naked]` ASM into a separate assembly file so we can reference linker variables, like `gs:my_cpuvar_offset`. Then we can use the linker script to create percpu sections like Linux (see Linux's `PERCPU_VADDR` and `PERCPU_INIT` in the x86 `vmlinux.lds.S` and `vmlinux.lds.h`)
+  - Linker layout: if we use `sym` in `asm!` we can reference the memory location of linker variables, like `gs:{my_cpuvar_offset}`. Then we can use the linker script to create percpu sections like Linux (see Linux's `PERCPU_VADDR` and `PERCPU_INIT` in the x86 `vmlinux.lds.S` and `vmlinux.lds.h`)
     - Maybe make a macro/struct like [thread_local](https://doc.rust-lang.org/std/macro.thread_local.html) and <https://doc.rust-lang.org/std/thread/struct.LocalKey.html>
   - Have per CPU macros assert that types are correct.
   - Arrays: have a helper macro to create a `MAX_CPUS`-sized array
@@ -565,3 +565,9 @@ Linux VFS:
 - <https://docs.kernel.org/core-api/this_cpu_ops.html>
 - <https://elixir.bootlin.com/linux/latest/source/include/linux/percpu.h>
 - <https://elixir.bootlin.com/linux/latest/source/arch/x86/include/asm/percpu.h>
+- Useful info about `swapgs`:
+  - <https://elixir.bootlin.com/linux/v6.3.7/source/Documentation/x86/entry_64.rst>
+  - <https://elixir.bootlin.com/linux/v6.3.7/source/arch/x86/entry/entry_64.S#L1054>
+- `PERCPU_VADDR` is references in the x86 linker script to set up percpu area and make offsets look zero-based from start of percpu region
+  - <https://elixir.bootlin.com/linux/v6.3.7/source/include/asm-generic/vmlinux.lds.h#L1067>
+  - <https://elixir.bootlin.com/linux/v6.3.7/source/arch/x86/kernel/vmlinux.lds.S#L223>
