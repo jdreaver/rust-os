@@ -9,6 +9,7 @@
 use x86_64::VirtAddr;
 
 use crate::apic::ProcessorID;
+use crate::serial_println;
 
 /// Macro to create a per CPU variable with various functions to access it.
 #[macro_export]
@@ -204,10 +205,15 @@ pub(crate) fn init_current_cpu(processor_id: ProcessorID) {
     let per_cpu_start = unsafe { core::ptr::addr_of!(_percpu_start) as usize };
     let per_cpu_end = unsafe { core::ptr::addr_of!(_percpu_end) as usize };
     let per_cpu_area_size = per_cpu_end - per_cpu_start;
-    assert!(
-        this_cpu_area.len() <= per_cpu_area_size,
-        "Per CPU area is too small. Need to increase PER_CPU_AREA_SIZE_BYTES"
-    );
+
+    if this_cpu_area.len() < per_cpu_area_size {
+        // Panic might fail to print here since we are so early in the boot process
+        serial_println!(
+            "Going to panic! Per CPU area is too small {}. Need to increase PER_CPU_AREA_SIZE_BYTES to at least {per_cpu_area_size}",
+            this_cpu_area.len()
+        );
+        panic!("Per CPU area is too small. Need to increase PER_CPU_AREA_SIZE_BYTES to at least {per_cpu_area_size}");
+    }
 
     // Store the per-CPU area in the GSBASE register so `gs:{offset}` points to
     // per-CPU variables.
