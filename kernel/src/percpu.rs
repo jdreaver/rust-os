@@ -217,7 +217,7 @@ pub(crate) fn init_current_cpu(processor_id: ProcessorID) {
 
     // Store the per-CPU area in the GSBASE register so `gs:{offset}` points to
     // per-CPU variables.
-    let addr = VirtAddr::new(core::ptr::addr_of!(this_cpu_area) as u64);
+    let addr = VirtAddr::new(this_cpu_area.as_ptr() as u64);
     x86_64::registers::model_specific::GsBase::write(addr);
     set_per_cpu_PROCESSOR_ID(processor_id.0);
 }
