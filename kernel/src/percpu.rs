@@ -14,15 +14,15 @@ use crate::serial_println;
 /// Macro to create a per CPU variable with various functions to access it.
 #[macro_export]
 macro_rules! raw_define_per_cpu {
-    ($(#[$($attrss:tt)*])* $name:ident, $type:ty, $mov_size:literal, $inc_dec_size:literal, $reg_class:ident) => {
+    ($(#[$($attrss:tt)*])* $vis:vis $name:ident, $type:ty, $mov_size:literal, $inc_dec_size:literal, $reg_class:ident) => {
         #[link_section = ".percpu"]
         $(#[$($attrss)*])*
-        pub(super) static $name: $type = 0;
+        $vis static $name: $type = 0;
 
         ::paste::paste! {
             #[allow(dead_code)]
             #[allow(non_snake_case)]
-            fn [<get_per_cpu_ $name>]() -> $type {
+            $vis fn [<get_per_cpu_ $name>]() -> $type {
                 let val: $type;
                 unsafe {
                     core::arch::asm!(
@@ -39,7 +39,7 @@ macro_rules! raw_define_per_cpu {
         ::paste::paste! {
             #[allow(dead_code)]
             #[allow(non_snake_case)]
-            fn [<set_per_cpu_ $name>](x: $type) {
+            $vis fn [<set_per_cpu_ $name>](x: $type) {
                 unsafe {
                     core::arch::asm!(
                         concat!("mov gs:{0}, {1:", $mov_size, "}"),
@@ -54,7 +54,7 @@ macro_rules! raw_define_per_cpu {
         ::paste::paste! {
             #[allow(dead_code)]
             #[allow(non_snake_case)]
-            fn [<inc_per_cpu_ $name>]() {
+            $vis fn [<inc_per_cpu_ $name>]() {
                 unsafe {
                     core::arch::asm!(
                         concat!("inc ", $inc_dec_size, " ptr gs:{}"),
@@ -68,7 +68,7 @@ macro_rules! raw_define_per_cpu {
         ::paste::paste! {
             #[allow(dead_code)]
             #[allow(non_snake_case)]
-            fn [<dec_per_cpu_ $name>]() {
+            $vis fn [<dec_per_cpu_ $name>]() {
                 unsafe {
                     core::arch::asm!(
                         concat!("dec ", $inc_dec_size, " ptr gs:{}"),
@@ -87,29 +87,29 @@ macro_rules! raw_define_per_cpu {
 
 #[macro_export]
 macro_rules! raw_define_per_cpu_1 {
-    ($(#[$($attrss:tt)*])* $name:ident, $type:ty) => {
-        $crate::raw_define_per_cpu!($(#[$($attrss)*])* $name, $type, "", "byte", reg_byte);
+    ($(#[$($attrss:tt)*])* $vis:vis $name:ident, $type:ty) => {
+        $crate::raw_define_per_cpu!($(#[$($attrss)*])* $vis $name, $type, "", "byte", reg_byte);
     };
 }
 
 #[macro_export]
 macro_rules! raw_define_per_cpu_2 {
-    ($(#[$($attrss:tt)*])* $name:ident, $type:ty) => {
-        $crate::raw_define_per_cpu!($(#[$($attrss)*])* $name, $type, "x", "word", reg);
+    ($(#[$($attrss:tt)*])* $vis:vis $name:ident, $type:ty) => {
+        $crate::raw_define_per_cpu!($(#[$($attrss)*])* $vis $name, $type, "x", "word", reg);
     };
 }
 
 #[macro_export]
 macro_rules! raw_define_per_cpu_4 {
-    ($(#[$($attrss:tt)*])* $name:ident, $type:ty) => {
-        $crate::raw_define_per_cpu!($(#[$($attrss)*])* $name, $type, "e", "dword", reg);
+    ($(#[$($attrss:tt)*])* $vis:vis $name:ident, $type:ty) => {
+        $crate::raw_define_per_cpu!($(#[$($attrss)*])* $vis $name, $type, "e", "dword", reg);
     };
 }
 
 #[macro_export]
 macro_rules! raw_define_per_cpu_8 {
-    ($(#[$($attrss:tt)*])* $name:ident, $type:ty) => {
-        $crate::raw_define_per_cpu!($(#[$($attrss)*])* $name, $type, "", "qword", reg);
+    ($(#[$($attrss:tt)*])* $vis:vis $name:ident, $type:ty) => {
+        $crate::raw_define_per_cpu!($(#[$($attrss)*])* $vis $name, $type, "", "qword", reg);
     };
 }
 
@@ -119,36 +119,36 @@ macro_rules! raw_define_per_cpu_8 {
 
 #[macro_export]
 macro_rules! define_per_cpu_u8 {
-    ($(#[$($attrss:tt)*])* $name:ident) => {
-        $crate::raw_define_per_cpu_1!($(#[$($attrss)*])* $name, u8);
+    ($(#[$($attrss:tt)*])* $vis:vis $name:ident) => {
+        $crate::raw_define_per_cpu_1!($(#[$($attrss)*])* $vis $name, u8);
     };
 }
 
 #[macro_export]
 macro_rules! define_per_cpu_u16 {
-    ($(#[$($attrss:tt)*])* $name:ident) => {
-        $crate::raw_define_per_cpu_2!($(#[$($attrss)*])* $name, u16);
+    ($(#[$($attrss:tt)*])* $vis:vis $name:ident) => {
+        $crate::raw_define_per_cpu_2!($(#[$($attrss)*])* $vis $name, u16);
     };
 }
 
 #[macro_export]
 macro_rules! define_per_cpu_u32 {
-    ($(#[$($attrss:tt)*])* $name:ident) => {
-        $crate::raw_define_per_cpu_4!($(#[$($attrss)*])* $name, u32);
+    ($(#[$($attrss:tt)*])* $vis:vis $name:ident) => {
+        $crate::raw_define_per_cpu_4!($(#[$($attrss)*])* $vis $name, u32);
     };
 }
 
 #[macro_export]
 macro_rules! define_per_cpu_i64 {
-    ($(#[$($attrss:tt)*])* $name:ident) => {
-        $crate::raw_define_per_cpu_8!($(#[$($attrss)*])* $name, i64);
+    ($(#[$($attrss:tt)*])* $vis:vis $name:ident) => {
+        $crate::raw_define_per_cpu_8!($(#[$($attrss)*])* $vis $name, i64);
     };
 }
 
 #[macro_export]
 macro_rules! define_per_cpu_u64 {
-    ($(#[$($attrss:tt)*])* $name:ident) => {
-        $crate::raw_define_per_cpu_8!($(#[$($attrss)*])* $name, u64);
+    ($(#[$($attrss:tt)*])* $vis:vis $name:ident) => {
+        $crate::raw_define_per_cpu_8!($(#[$($attrss)*])* $vis $name, u64);
     };
 }
 

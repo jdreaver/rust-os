@@ -151,7 +151,6 @@ make test
   - Create a type showing the intended memory mapping of a process and turn that into a page table. This should make it easier to reason about the memory map.
 - Ensure kernel pages are not marked as `USER_ACCESSIBLE`. I think the `x86_64` allocator, or limine, is doing it by default
 - Per CPU
-  - Have visibility specifier instead of hard-coding `pub(super)`
   - Disable preemption while we are using a per cpu variable
     - In get function, wrap value in a PreemptGuard (can use existing one, just wrap value) that will decrement preemption count when dropped.
     - Ensure the guard function is not `Send` so it can't be sent across threads to another CPU on accident.

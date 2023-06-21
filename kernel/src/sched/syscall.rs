@@ -30,7 +30,7 @@ pub(super) fn syscall_init() {
 
 define_per_cpu_u64!(
     /// Used during syscalls to store and restore the top of the kernel stack.
-    TOP_OF_KERNEL_STACK
+    pub(super) TOP_OF_KERNEL_STACK
 );
 
 #[naked]
