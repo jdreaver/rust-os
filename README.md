@@ -98,6 +98,8 @@ make test
 ## TODO
 
 - BUG: using `log` methods inside the page fault handler when running a userspace program throws another page fault because the logger SpinLock uses a `percpu` variable for preempt_count. We segfault on the `incl gs:0xc` to increment `preempt_count` because GSBASE is 0 in userspace.
+  - Linux has an `error_entry` assembly function that "swaps GS and CR3 if needed" <https://elixir.bootlin.com/linux/v6.3.7/source/arch/x86/entry/entry_64.S#L1054>
+    - Linux always uses a "negative" gsbase for the kernel (since kernel gsbase is in the higher half), so it is easy to test <https://elixir.bootlin.com/linux/v6.3.7/source/Documentation/x86/entry_64.rst>
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - Consider combining all crates into kernel again now that we support tests
     - Make sure the bitmap-alloc proptest tests are still useful! Force a few failures. I'm a bit worried that proptest w/ no_std and panic == abort isn't useful
@@ -152,6 +154,8 @@ make test
   - Create a type showing the intended memory mapping of a process and turn that into a page table. This should make it easier to reason about the memory map.
 - Ensure kernel pages are not marked as `USER_ACCESSIBLE`. I think the `x86_64` allocator, or limine, is doing it by default
 - Per CPU
+  - Linker layout: consider moving all of my `#[naked]` ASM into a separate assembly file so we can reference linker variables, like `gs:my_cpuvar_offset`. Then we can use the linker script to create percpu sections like Linux (see Linux's `PERCPU_VADDR` and `PERCPU_INIT` in the x86 `vmlinux.lds.S` and `vmlinux.lds.h`)
+    - Maybe make a macro/struct like [thread_local](https://doc.rust-lang.org/std/macro.thread_local.html) and <https://doc.rust-lang.org/std/thread/struct.LocalKey.html>
   - Have per CPU macros assert that types are correct.
   - Arrays: have a helper macro to create a `MAX_CPUS`-sized array
     - Have getter function that (in this order): disables preemption, gets current processor ID, gets the value in the array, and wraps it in a guard that will decrement preemption count when dropped.
@@ -161,6 +165,12 @@ make test
   - Encapsulation: it would be great to be able to have private per CPU vars. For example, a module could declare a CPU var, and the central `percpu` module ensures space gets allocated for it and it has an offset, but otherwise nothing is allowed to touch it outside of the module it is declared in.
     - Idea that might make this easier: all variables could take up 8 byte "slots" (they can't exceed 8 bytes of course). Then we just need to statically have slot offsets, which could be done in an enum, but we could codegen all of the getters/setters/inc/dec function in a module somewhere else.
   - Automatic conversion to/from primitive types. Allow loading `TaskId` directly instead of needing to use `u32`.
+  - Logging dependency on percpu:
+    - Consider making init dependencies more explicit, by passing around a thing that was initialized, or even dumb tokens like `struct PerCPUInitialized;`.
+    - Dep exists because the logger uses a spin lock, which modifies the percpu variable, logging depends on percpu being set up. Ensure percpu is set up before logging, or disable the logging spin locks until bootstrapping is done.
+    - Maybe add debug_assert! calls ensuring percpu has been initialized before any percpu vars are used. (Make sure they get removed in release builds)
+    - Linux has an early printk function, maybe for stuff like this?
+    - Logging in already "slow" by kernel standards. Maybe it is okay to do some boolean check to take locks or not.
 - Task start safety: find a way to make casting the `arg: *const ()` pointer way safer. It is easy to mess up.
 - Arc memory leak detection:
   - Calling `run_scheduler()` (or more specifically `switch_to_task`) while holding an `Arc` reference (especially `Arc<Task>`) can cause a memory leak because we might switch away from the given task forever. Currently I manually `drop` things before calling these functions. Is there a way I could make calling `run_scheduler` basically impossible?
@@ -204,6 +214,10 @@ make test
 - Consider storing task context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>. This makes it easier to manipulate during setup.
 - Pre-process DWARF info to use for stack traces so we don't need to keep frame pointers around (we currently have `-C force-frame-pointers=yes`)
   - Do something like Linux's ORC <https://blogs.oracle.com/linux/post/unwinding-stack-frame-pointers-and-orc>
+- Driver model:
+  - Make a proper device and driver model like Linux. Then we can more easily populate sysfs, the PCI setup code can be less ad hoc (and more focused), mounting should be easier, etc.
+  - Research kobject and sysfs
+  - Linux has a simple match function on each driver on a bus. To find the right driver for a device, the bus iterates over all registered drivers and calls match, and matches to the first driver that returns 1.
 - VirtIO improvements:
   - Create a physically contiguous heap, or slab allocator, or something for virtio buffer requests so we don't waste an entire page per tiny allocation.
     - Ensure we are still satisfying any alignment requirements for buffers. Read the spec!
@@ -435,6 +449,8 @@ Other higher-level Linux resources:
 - <https://linux-kernel-labs.github.io/refs/heads/master/lectures/interrupts.html>
 - <http://books.gigatux.nl/mirror/kerneldevelopment/0672327201/ch06lev1sec6.html>
 - <https://0xax.gitbooks.io/linux-insides/content/Interrupts/linux-interrupts-8.html>
+- <https://elixir.bootlin.com/linux/v6.3.7/source/Documentation/x86/entry_64.rst>
+- <https://github.com/torvalds/linux/blob/master/arch/x86/entry/entry_64.S>
 
 ### Multi-tasking and context switching
 
