@@ -13,6 +13,7 @@ PHDRS
     rodata  PT_LOAD    FLAGS((1 << 2)) ;            /* Read only */
     data    PT_LOAD    FLAGS((1 << 1) | (1 << 2)) ; /* Write + Read */
     dynamic PT_DYNAMIC FLAGS((1 << 1) | (1 << 2)) ; /* Write + Read */
+    percpu  PT_DYNAMIC FLAGS((1 << 1) | (1 << 2)) ; /* Write + Read */
 }
 
 SECTIONS
@@ -52,6 +53,16 @@ SECTIONS
     .debug_gdb_scripts : {
         KEEP(*(.debug_gdb_scripts))
     } :rodata
+
+    /* The percpu section starts at a vaddr of 0 so that all of the percpu */
+    /* variables have addresses that are an _offset_ into the percpu section. */
+    _percpu_load = .;
+    .percpu 0 : AT(_percpu_load) {
+        _percpu_start = .;
+        *(.percpu)
+        _percpu_end = .;
+    } :percpu
+    . = _percpu_load + SIZEOF(.percpu);
 
     /* Move to the next memory page for .data */
     . += CONSTANT(MAXPAGESIZE);

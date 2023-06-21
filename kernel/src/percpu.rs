@@ -16,6 +16,165 @@ use crate::apic::ProcessorID;
 use crate::barrier::barrier;
 use crate::memory::HIGHER_HALF_START;
 
+//
+// Experiment using linker variables for percpu area
+//
+
+extern "C" {
+    static _percpu_start: u8;
+    static _percpu_end: u8;
+    static _percpu_load: u8;
+}
+
+#[allow(dead_code)]
+pub(crate) fn test_linker_percpu() {
+    log::warn!("_percpu_load: {:p}", unsafe {
+        core::ptr::addr_of!(_percpu_load)
+    });
+    log::warn!("_percpu_start: {:p}", unsafe {
+        core::ptr::addr_of!(_percpu_start)
+    });
+    log::warn!("MY_PERCPU_U8 = {:p}", &MY_PERCPU_U8);
+    log::warn!("MY_PERCPU_U16 = {:p}", &MY_PERCPU_U16);
+    log::warn!("MY_PERCPU_U32 = {:p}", &MY_PERCPU_U32);
+    log::warn!("MY_PERCPU_I64 = {:p}", &MY_PERCPU_I64);
+    log::warn!("MY_PERCPU_U64 = {:p}", &MY_PERCPU_U64);
+    log::warn!("_percpu_end: {:p}", unsafe {
+        core::ptr::addr_of!(_percpu_end)
+    });
+}
+
+macro_rules! raw_define_per_cpu {
+    ($name:ident, $type:ty, $mov_size:literal, $inc_dec_size:literal, $reg_class:ident) => {
+        #[link_section = ".percpu"]
+        static $name: $type = 0;
+
+        paste! {
+            #[allow(dead_code)]
+            #[allow(non_snake_case)]
+            fn [<get_per_cpu_ $name>]() -> $type {
+                let val: $type;
+                unsafe {
+                    asm!(
+                        concat!("mov {0:", $mov_size, "}, gs:{1}"),
+                        out($reg_class) val,
+                        sym $name,
+                        options(nomem, nostack, preserves_flags),
+                    );
+                }
+                val
+            }
+        }
+
+        paste! {
+            #[allow(dead_code)]
+            #[allow(non_snake_case)]
+            fn [<set_per_cpu_ $name>](x: $type) {
+                unsafe {
+                    asm!(
+                        concat!("mov gs:{0}, {1:", $mov_size, "}"),
+                        sym $name,
+                        in($reg_class) x,
+                        options(nomem, nostack, preserves_flags),
+                    );
+                }
+            }
+        }
+
+        paste! {
+            #[allow(dead_code)]
+            #[allow(non_snake_case)]
+            fn [<inc_per_cpu_ $name>]() {
+                unsafe {
+                    asm!(
+                        concat!("inc ", $inc_dec_size, " ptr gs:{}"),
+                        sym $name,
+                        options(nomem, nostack, preserves_flags),
+                    );
+                }
+            }
+        }
+
+        paste! {
+            #[allow(dead_code)]
+            #[allow(non_snake_case)]
+            fn [<dec_per_cpu_ $name>]() {
+                unsafe {
+                    asm!(
+                        concat!("dec ", $inc_dec_size, " ptr gs:{}"),
+                        sym $name,
+                        options(nomem, nostack, preserves_flags),
+                    );
+                }
+            }
+        }
+    };
+}
+
+macro_rules! raw_define_per_cpu_1 {
+    ($name:ident, $type:ty) => {
+        raw_define_per_cpu!($name, $type, "", "byte", reg_byte);
+    };
+}
+
+macro_rules! raw_define_per_cpu_2 {
+    ($name:ident, $type:ty) => {
+        raw_define_per_cpu!($name, $type, "x", "word", reg);
+    };
+}
+
+macro_rules! raw_define_per_cpu_4 {
+    ($name:ident, $type:ty) => {
+        raw_define_per_cpu!($name, $type, "e", "dword", reg);
+    };
+}
+
+macro_rules! raw_define_per_cpu_8 {
+    ($name:ident, $type:ty) => {
+        raw_define_per_cpu!($name, $type, "", "qword", reg);
+    };
+}
+
+macro_rules! define_per_cpu_u8 {
+    ($name:ident) => {
+        raw_define_per_cpu_1!($name, u8);
+    };
+}
+
+macro_rules! define_per_cpu_u16 {
+    ($name:ident) => {
+        raw_define_per_cpu_2!($name, u16);
+    };
+}
+
+macro_rules! define_per_cpu_u32 {
+    ($name:ident) => {
+        raw_define_per_cpu_4!($name, u32);
+    };
+}
+
+macro_rules! define_per_cpu_i64 {
+    ($name:ident) => {
+        raw_define_per_cpu_8!($name, i64);
+    };
+}
+
+macro_rules! define_per_cpu_u64 {
+    ($name:ident) => {
+        raw_define_per_cpu_8!($name, u64);
+    };
+}
+
+define_per_cpu_u8!(MY_PERCPU_U8);
+define_per_cpu_u16!(MY_PERCPU_U16);
+define_per_cpu_u32!(MY_PERCPU_U32);
+define_per_cpu_i64!(MY_PERCPU_I64);
+define_per_cpu_u64!(MY_PERCPU_U64);
+
+//
+// End experiment
+//
+
 /// Maximum number of CPUs the kernel supports.
 ///
 /// N.B. This is a u8 because LAPIC IDs are u8s, and we use those as processor
