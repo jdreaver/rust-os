@@ -130,7 +130,7 @@ pub(super) unsafe extern "C" fn jump_to_userspace(
             // mess with our GS base.
             "swapgs",
             // Set up and execute iretq
-            "push rcx",      // Fourth arg, stack segment
+            "push rcx",      // Fourth arg, data segment
             "push rsi",      // Second arg, stack pointer
             "push {rflags}", // rflags
             "push rdx",      // Third arg, code segment
@@ -167,6 +167,9 @@ pub(super) unsafe extern "C" fn jump_to_userspace(
 unsafe extern "C" fn dummy_hacky_userspace_task() {
     unsafe {
         asm!(
+            // Call interrupt for fun
+            "int3",
+            // Call syscall
             "mov rdi, 0x1111",
             "mov rsi, 0x2222",
             "mov rdx, 0x3333",

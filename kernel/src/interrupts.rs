@@ -96,7 +96,9 @@ fn init_idt() {
     idt.debug.set_handler_fn(debug_handler);
     idt.non_maskable_interrupt
         .set_handler_fn(non_maskable_interrupt_handler);
-    idt.breakpoint.set_handler_fn(breakpoint_handler);
+    idt.breakpoint
+        .set_handler_fn(breakpoint_handler)
+        .set_privilege_level(x86_64::PrivilegeLevel::Ring3);
     idt.overflow.set_handler_fn(overflow_handler);
     idt.bound_range_exceeded
         .set_handler_fn(bound_range_exceeded_handler);

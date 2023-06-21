@@ -83,6 +83,18 @@ fn create_tss() -> TaskStateSegment {
     // fault.
     let mut tss = TaskStateSegment::new();
 
+    // RSP0, used when switching to kernel (ring 0 == RSP0) stack on privilege
+    // level change.
+    tss.privilege_stack_table[0] = {
+        const STACK_SIZE: usize = 4096 * 5;
+        static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
+
+        let stack_start = VirtAddr::from_ptr(unsafe { &STACK });
+        #[allow(clippy::let_and_return)]
+        let stack_end = stack_start + STACK_SIZE;
+        stack_end
+    };
+
     // TODO: DRY setting up these TSS stacks.
     tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] = {
         const STACK_SIZE: usize = 4096 * 5;
