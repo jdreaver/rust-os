@@ -22,7 +22,25 @@ macro_rules! raw_define_per_cpu {
         ::paste::paste! {
             #[allow(dead_code)]
             #[allow(non_snake_case)]
-            $vis fn [<get_per_cpu_ $name>]() -> $type {
+            /// Get the per CPU variable but wrap it in a `PreemptGuard` to
+            /// disable preemption while it is alive. This prevents us from
+            /// accidentally using the variable on the wrong CPU if the current
+            /// task gets moved.
+            $vis fn [<get_per_cpu_ $name>]() -> $crate::sched::PreemptGuard<$type> {
+                let val = [<get_per_cpu_no_guard_ $name>]();
+                $crate::sched::PreemptGuard::new(val)
+            }
+        }
+
+        ::paste::paste! {
+            #[allow(dead_code)]
+            #[allow(non_snake_case)]
+            /// Get the per CPU variable but without disabling preemption. This
+            /// is useful inside the scheduler itself, where preemption is
+            /// disabled, and in other places where we preemption is okay, like
+            /// when we get the current task ID (which is still valid if we get
+            /// preempted).
+            $vis fn [<get_per_cpu_no_guard_ $name>]() -> $type {
                 let val: $type;
                 unsafe {
                     core::arch::asm!(
@@ -227,6 +245,6 @@ define_per_cpu_u8!(
     PROCESSOR_ID
 );
 
-pub(crate) fn get_processor_id() -> ProcessorID {
-    ProcessorID(get_per_cpu_PROCESSOR_ID())
+pub(crate) fn get_processor_id_no_guard() -> ProcessorID {
+    ProcessorID(get_per_cpu_no_guard_PROCESSOR_ID())
 }

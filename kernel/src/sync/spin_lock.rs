@@ -20,7 +20,7 @@ impl<T> SpinLock<T> {
 
     pub(crate) fn lock(&self) -> SpinLockGuard<'_, T> {
         // Ordering is important! Disable preemption before taking the lock.
-        let preempt_guard = PreemptGuard::new();
+        let preempt_guard = PreemptGuard::new(());
         SpinLockGuard {
             guard: self.mutex.lock(),
             _interrupt_guard: InterruptGuard {
@@ -48,7 +48,7 @@ impl<T> SpinLock<T> {
     /// is released.
     pub(crate) fn lock_disable_interrupts(&self) -> SpinLockGuard<'_, T> {
         // Ordering is important! Disable preemption before taking the lock.
-        let preempt_guard = PreemptGuard::new();
+        let preempt_guard = PreemptGuard::new(());
 
         let saved_intpt_flag = x86_64::instructions::interrupts::are_enabled();
 
@@ -81,7 +81,7 @@ pub(crate) struct SpinLockGuard<'a, T: ?Sized + 'a> {
     _interrupt_guard: InterruptGuard,
     // We want to drop preemption after dropping the lock and enabling
     // interrupts.
-    _preempt_guard: Option<PreemptGuard>,
+    _preempt_guard: Option<PreemptGuard<()>>,
 }
 
 impl<'a, T> Deref for SpinLockGuard<'a, T> {

@@ -9,7 +9,7 @@ use crate::sync::SpinLock;
 use crate::{define_per_cpu_u32, define_per_cpu_u8};
 use crate::{percpu, tick};
 
-use super::preempt::{get_preempt_count, set_preempt_count};
+use super::preempt::{get_preempt_count_no_guard, set_preempt_count};
 use super::task::{
     DesiredTaskState, KernelTaskStartFunction, Task, TaskExitCode, TaskId, TaskKernelStackPointer,
     TASKS,
@@ -109,7 +109,7 @@ pub(crate) fn per_cpu_init() {
     syscall::syscall_init();
 
     // Set the current CPU's idle task.
-    let processor_id = percpu::get_processor_id();
+    let processor_id = percpu::get_processor_id_no_guard();
     let idle_task_id = TASKS.lock_disable_interrupts().new_task(
         format!("CPU {processor_id:?} __IDLE_TASK__"),
         idle_task_start,
@@ -120,7 +120,9 @@ pub(crate) fn per_cpu_init() {
 }
 
 pub(crate) fn current_task_id() -> TaskId {
-    let id = get_per_cpu_CURRENT_TASK_ID();
+    // No guard is okay because task ID will live on stack of current task, and
+    // preemption wouldn't change that.
+    let id = get_per_cpu_no_guard_CURRENT_TASK_ID();
     TaskId(id)
 }
 
@@ -202,10 +204,11 @@ pub(crate) fn run_scheduler() {
 }
 
 fn check_current_task_needs_preemption() -> bool {
-    let processor_id = percpu::get_processor_id();
-    let idle_task_id = TaskId(get_per_cpu_IDLE_TASK_ID());
+    // no guard because we are in scheduler, and preemption is disabled
+    let processor_id = percpu::get_processor_id_no_guard();
+    let idle_task_id = TaskId(get_per_cpu_no_guard_IDLE_TASK_ID());
 
-    let preempt_count = get_preempt_count();
+    let preempt_count = get_preempt_count_no_guard();
     let current_task = current_task();
     let task_id = current_task.id;
 
@@ -242,8 +245,8 @@ fn task_swap_parameters(
     TaskKernelStackPointer,
     PhysAddr,
 )> {
-    let processor_id = percpu::get_processor_id();
-    let idle_task_id = TaskId(get_per_cpu_IDLE_TASK_ID());
+    let processor_id = percpu::get_processor_id_no_guard();
+    let idle_task_id = TaskId(get_per_cpu_no_guard_IDLE_TASK_ID());
 
     run_queue.remove_killed_pending_tasks();
     let prev_task = current_task();
@@ -301,7 +304,7 @@ fn task_swap_parameters(
 
 /// If the scheduler needs to run, then run it.
 pub(crate) fn run_scheduler_if_needed() {
-    if get_per_cpu_NEEDS_RESCHEDULE() > 0 {
+    if get_per_cpu_no_guard_NEEDS_RESCHEDULE() > 0 {
         run_scheduler();
     }
 }

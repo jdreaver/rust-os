@@ -151,11 +151,7 @@ make test
   - Create a type showing the intended memory mapping of a process and turn that into a page table. This should make it easier to reason about the memory map.
 - Ensure kernel pages are not marked as `USER_ACCESSIBLE`. I think the `x86_64` allocator, or limine, is doing it by default
 - Per CPU
-  - Disable preemption while we are using a per cpu variable
-    - In get function, wrap value in a PreemptGuard (can use existing one, just wrap value) that will decrement preemption count when dropped.
-    - Ensure the guard function is not `Send` so it can't be sent across threads to another CPU on accident.
-    - Maybe have a helper to take locks for multiple CPUs in a consistent way to prevent deadlocks, like ordering by processor ID. (Linux scheduler code does this for per CPU run queues)
-  - Automatic conversion to/from primitive types. Allow loading `TaskId` directly instead of needing to use `u32`.
+  - Maybe have a helper to take locks for multiple CPUs in a consistent way to prevent deadlocks, like ordering by processor ID. (Linux scheduler code does this for per CPU run queues)
   - Logging dependency on percpu:
     - Consider making init dependencies more explicit, by passing around a thing that was initialized, or even dumb tokens like `struct PerCPUInitialized;`.
     - Dep exists because the logger uses a spin lock, which modifies the percpu variable, logging depends on percpu being set up. Ensure percpu is set up before logging, or disable the logging spin locks until bootstrapping is done.
