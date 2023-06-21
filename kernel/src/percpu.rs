@@ -14,6 +14,7 @@ use x86_64::VirtAddr;
 
 use crate::apic::ProcessorID;
 use crate::barrier::barrier;
+use crate::memory::HIGHER_HALF_START;
 
 /// Maximum number of CPUs the kernel supports.
 ///
@@ -219,3 +220,16 @@ pub(crate) const PER_CPU_SYSCALL_TOP_OF_KERNEL_STACK: u64 =
     offset_of!(GSRegisterVars, syscall_top_of_kernel_stack) as u64;
 // get_per_cpu!(syscall_top_of_kernel_stack, u64);
 // set_per_cpu!(syscall_top_of_kernel_stack, u64);
+
+/// Tests if the current gsbase is the kernel's gsbase. This is needed in
+/// exception handlers, which can be called from userspace, so they know to do
+/// swapgs.
+///
+/// See <https://elixir.bootlin.com/linux/v6.3.7/source/Documentation/x86/entry_64.rst>
+pub(crate) fn gsbase_is_kernel() -> bool {
+    // Assume that if the virtual address for GSBASE is above
+    // `HIGHER_HALF_START` (which should be 0xffff_8000_0000_0000) then we are
+    // in the kernel.
+    let gsbase = x86_64::registers::model_specific::GsBase::read();
+    gsbase >= VirtAddr::new(HIGHER_HALF_START)
+}

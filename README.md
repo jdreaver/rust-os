@@ -97,9 +97,6 @@ make test
 
 ## TODO
 
-- BUG: using `log` methods inside the page fault handler when running a userspace program throws another page fault because the logger SpinLock uses a `percpu` variable for preempt_count. We segfault on the `incl gs:0xc` to increment `preempt_count` because GSBASE is 0 in userspace.
-  - Linux has an `error_entry` assembly function that "swaps GS and CR3 if needed" <https://elixir.bootlin.com/linux/v6.3.7/source/arch/x86/entry/entry_64.S#L1054>
-    - Linux always uses a "negative" gsbase for the kernel (since kernel gsbase is in the higher half), so it is easy to test <https://elixir.bootlin.com/linux/v6.3.7/source/Documentation/x86/entry_64.rst>
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - Consider combining all crates into kernel again now that we support tests
     - Make sure the bitmap-alloc proptest tests are still useful! Force a few failures. I'm a bit worried that proptest w/ no_std and panic == abort isn't useful

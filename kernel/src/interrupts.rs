@@ -2,8 +2,10 @@ use core::sync::atomic::{AtomicU8, Ordering};
 
 use paste::paste;
 use seq_macro::seq;
+use x86_64::registers::control::Cr2;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
+use crate::percpu::gsbase_is_kernel;
 use crate::sched::is_kernel_guard_page;
 use crate::sync::SpinLock;
 use crate::{apic, gdt, logging, sched};
@@ -217,43 +219,68 @@ pub(crate) fn install_interrupt_reserved_vector(
 }
 
 extern "x86-interrupt" fn divide_error_handler(stack_frame: InterruptStackFrame) {
-    panic!("EXCEPTION: DIVIDE ERROR\nStack Frame: {stack_frame:#?}");
+    with_swapgs_accounting(|| {
+        panic!("EXCEPTION: DIVIDE ERROR\nStack Frame: {stack_frame:#?}");
+    });
 }
 
 extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
-    panic!("EXCEPTION: DEBUG\nStack Frame: {stack_frame:#?}");
+    with_swapgs_accounting(|| {
+        panic!("EXCEPTION: DEBUG\nStack Frame: {stack_frame:#?}");
+    });
 }
 
 extern "x86-interrupt" fn non_maskable_interrupt_handler(stack_frame: InterruptStackFrame) {
-    panic!("EXCEPTION: NON MASKABLE INTERRUPT\nStack Frame: {stack_frame:#?}");
+    with_swapgs_accounting(|| {
+        panic!("EXCEPTION: NON MASKABLE INTERRUPT\nStack Frame: {stack_frame:#?}");
+    });
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
-    logging::force_unlock_logger();
-    log::warn!("EXCEPTION: BREAKPOINT");
-    log::warn!("{stack_frame:#?}");
+    with_swapgs_accounting(|| {
+        logging::force_unlock_logger();
+        log::warn!("EXCEPTION: BREAKPOINT");
+        log::warn!("{stack_frame:#?}");
+    });
 }
 
 extern "x86-interrupt" fn overflow_handler(stack_frame: InterruptStackFrame) {
-    panic!("EXCEPTION: OVERFLOW\nStack Frame: {stack_frame:#?}");
+    with_swapgs_accounting(|| {
+        panic!("EXCEPTION: OVERFLOW\nStack Frame: {stack_frame:#?}");
+    });
 }
 
 extern "x86-interrupt" fn bound_range_exceeded_handler(stack_frame: InterruptStackFrame) {
-    panic!("EXCEPTION: BOUND RANGE EXCEEDED\nStack Frame: {stack_frame:#?}");
+    with_swapgs_accounting(|| {
+        panic!("EXCEPTION: BOUND RANGE EXCEEDED\nStack Frame: {stack_frame:#?}");
+    });
 }
 
 extern "x86-interrupt" fn invalid_opcode_handler(stack_frame: InterruptStackFrame) {
-    panic!("EXCEPTION: INVALID_OPCODE\nStack Frame: {stack_frame:#?}");
+    with_swapgs_accounting(|| {
+        panic!("EXCEPTION: INVALID_OPCODE\nStack Frame: {stack_frame:#?}");
+    });
 }
 
 extern "x86-interrupt" fn device_not_available_handler(stack_frame: InterruptStackFrame) {
-    panic!("EXCEPTION: DEVICE NOT AVAILABLE\nStack Frame: {stack_frame:#?}");
+    with_swapgs_accounting(|| {
+        panic!("EXCEPTION: DEVICE NOT AVAILABLE\nStack Frame: {stack_frame:#?}");
+    });
 }
 
 extern "x86-interrupt" fn double_fault_handler(
     stack_frame: InterruptStackFrame,
     _error_code: u64,
 ) -> ! {
+    // (can't use with_swapgs_accounting here because of -> ! return type)
+    // Perform swapgs if we came from userspace
+    let came_from_kernel = gsbase_is_kernel();
+    if !came_from_kernel {
+        unsafe {
+            x86_64::instructions::segmentation::GS::swap();
+        };
+    }
+
     panic!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
 }
 
@@ -261,91 +288,138 @@ extern "x86-interrupt" fn invalid_tss_handler(
     stack_frame: InterruptStackFrame,
     selector_index: u64,
 ) {
-    panic!(
-        "EXCEPTION: INVALID TSS\nSelector Index: {selector_index}\nStack Frame: {stack_frame:#?}"
-    );
+    with_swapgs_accounting(|| {
+        panic!("EXCEPTION: INVALID TSS\nSelector Index: {selector_index}\nStack Frame: {stack_frame:#?}");
+    });
 }
 
 extern "x86-interrupt" fn segment_not_present_handler(
     stack_frame: InterruptStackFrame,
     selector_index: u64,
 ) {
-    panic!(
-        "EXCEPTION: SEGMENT NOT PRESENT\nSelector Index: {selector_index}\nStack Frame: {stack_frame:#?}"
-    );
+    with_swapgs_accounting(|| {
+        panic!("EXCEPTION: SEGMENT NOT PRESENT\nSelector Index: {selector_index}\nStack Frame: {stack_frame:#?}");
+    });
 }
 
 extern "x86-interrupt" fn stack_segment_fault_handler(
     stack_frame: InterruptStackFrame,
     selector_index: u64,
 ) {
-    panic!(
-        "EXCEPTION: STACK_SEGMENT_FAULT\nSelector Index: {selector_index}\nStack Frame: {stack_frame:#?}"
-    );
+    with_swapgs_accounting(|| {
+        panic!("EXCEPTION: STACK_SEGMENT_FAULT\nSelector Index: {selector_index}\nStack Frame: {stack_frame:#?}");
+    });
 }
 
 extern "x86-interrupt" fn general_protection_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: u64,
 ) {
-    panic!(
-        "EXCEPTION: GENERAL PROTECTION FAULT\nError code: {error_code}\nStack Frame: {stack_frame:#?}"
-    );
+    with_swapgs_accounting(|| {
+        panic!("EXCEPTION: GENERAL PROTECTION FAULT\nError code: {error_code}\nStack Frame: {stack_frame:#?}");
+    });
 }
 
 extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    use x86_64::registers::control::Cr2;
+    with_swapgs_accounting(|| {
+        logging::force_unlock_logger();
+        log::error!("EXCEPTION: PAGE FAULT");
+        let accessed_address = Cr2::read();
+        if is_kernel_guard_page(accessed_address) {
+            log::error!("KERNEL GUARD PAGE WAS ACCESSED, LIKELY A STACK OVERFLOW!!!");
+        }
+        log::error!("Accessed Address (CR2): {:?}", accessed_address);
+        log::error!("Error Code: {error_code:?}");
+        log::error!("{stack_frame:#?}");
+    });
 
-    logging::force_unlock_logger();
-    log::error!("EXCEPTION: PAGE FAULT");
-    let accessed_address = Cr2::read();
-    if is_kernel_guard_page(accessed_address) {
-        log::error!("KERNEL GUARD PAGE WAS ACCESSED, LIKELY A STACK OVERFLOW!!!");
-    }
-    log::error!("Accessed Address (CR2): {:?}", accessed_address);
-    log::error!("Error Code: {error_code:?}");
-    log::error!("{stack_frame:#?}");
     loop {
         x86_64::instructions::hlt();
     }
 }
 
 extern "x86-interrupt" fn x87_floating_point_handler(stack_frame: InterruptStackFrame) {
-    panic!("EXCEPTION: X87 FLOATING POINT\nStack Frame: {stack_frame:#?}");
+    with_swapgs_accounting(|| {
+        panic!("EXCEPTION: X87 FLOATING POINT\nStack Frame: {stack_frame:#?}");
+    });
 }
 
 extern "x86-interrupt" fn alignment_check_handler(
     stack_frame: InterruptStackFrame,
     _error_code: u64,
 ) {
-    panic!("EXCEPTION: ALIGNMENT CHECK\nStack Frame: {stack_frame:#?}");
+    with_swapgs_accounting(|| {
+        panic!("EXCEPTION: ALIGNMENT CHECK\nStack Frame: {stack_frame:#?}");
+    });
 }
 
 extern "x86-interrupt" fn machine_check_handler(stack_frame: InterruptStackFrame) -> ! {
+    // (can't use with_swapgs_accounting here because of -> ! return type)
+    // Perform swapgs if we came from userspace
+    let came_from_kernel = gsbase_is_kernel();
+    if !came_from_kernel {
+        unsafe {
+            x86_64::instructions::segmentation::GS::swap();
+        };
+    }
+
     panic!("EXCEPTION: MACHINE CHECK\nStack Frame: {stack_frame:#?}");
 }
 
 extern "x86-interrupt" fn simd_floating_point_handler(stack_frame: InterruptStackFrame) {
-    panic!("EXCEPTION: SIMD FLOATING POINT\nStack Frame: {stack_frame:#?}");
+    with_swapgs_accounting(|| {
+        panic!("EXCEPTION: SIMD FLOATING POINT\nStack Frame: {stack_frame:#?}");
+    });
 }
 
 extern "x86-interrupt" fn virtualization_handler(stack_frame: InterruptStackFrame) {
-    panic!("EXCEPTION: VIRTUALIZATION\nStack Frame: {stack_frame:#?}");
+    with_swapgs_accounting(|| {
+        panic!("EXCEPTION: VIRTUALIZATION\nStack Frame: {stack_frame:#?}");
+    });
 }
 
 extern "x86-interrupt" fn vmm_communication_exception_handler(
     stack_frame: InterruptStackFrame,
     vmexit_error_code: u64,
 ) {
-    panic!("EXCEPTION: VMM COMMUNICATION\nVM exit error code: {vmexit_error_code}\nStack Frame: {stack_frame:#?}");
+    with_swapgs_accounting(|| {
+        panic!("EXCEPTION: VMM COMMUNICATION\nVM exit error code: {vmexit_error_code}\nStack Frame: {stack_frame:#?}");
+    });
 }
 
 extern "x86-interrupt" fn security_exception_handler(
     stack_frame: InterruptStackFrame,
     error_code: u64,
 ) {
-    panic!("EXCEPTION: SECURITY\nError code: {error_code}\nStack Frame: {stack_frame:#?}");
+    with_swapgs_accounting(|| {
+        panic!("EXCEPTION: SECURITY\nError code: {error_code}\nStack Frame: {stack_frame:#?}");
+    });
+}
+
+/// Runs swapgs if necessary because we came from userspace.
+fn with_swapgs_accounting<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    // Perform swapgs if we came from userspace
+    let came_from_kernel = gsbase_is_kernel();
+    if !came_from_kernel {
+        unsafe {
+            x86_64::instructions::segmentation::GS::swap();
+        };
+    }
+
+    let ret = f();
+
+    // Perform swapgs again if going back to userspace.
+    if !came_from_kernel {
+        unsafe {
+            x86_64::instructions::segmentation::GS::swap();
+        };
+    }
+
+    ret
 }
