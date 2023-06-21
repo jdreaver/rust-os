@@ -2,7 +2,7 @@ use core::ops::{Deref, DerefMut};
 
 use spin::mutex::{SpinMutex, SpinMutexGuard};
 
-use crate::percpu::PreemptGuard;
+use crate::sched::PreemptGuard;
 
 /// Wrapper around `spin::mutex::SpinMutex` with some added features, like
 /// handling disabling and enabling interrupts.

@@ -4,8 +4,9 @@ use paste::paste;
 use seq_macro::seq;
 use x86_64::registers::control::Cr2;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
+use x86_64::VirtAddr;
 
-use crate::percpu::gsbase_is_kernel;
+use crate::memory::HIGHER_HALF_START;
 use crate::sched::is_kernel_guard_page;
 use crate::sync::SpinLock;
 use crate::{apic, gdt, logging, sched};
@@ -399,6 +400,19 @@ extern "x86-interrupt" fn security_exception_handler(
     with_swapgs_accounting(|| {
         panic!("EXCEPTION: SECURITY\nError code: {error_code}\nStack Frame: {stack_frame:#?}");
     });
+}
+
+/// Tests if the current gsbase is the kernel's gsbase. This is needed in
+/// exception handlers, which can be called from userspace, so they know to do
+/// swapgs.
+///
+/// See <https://elixir.bootlin.com/linux/v6.3.7/source/Documentation/x86/entry_64.rst>
+fn gsbase_is_kernel() -> bool {
+    // Assume that if the virtual address for GSBASE is above
+    // `HIGHER_HALF_START` (which should be 0xffff_8000_0000_0000) then we are
+    // in the kernel.
+    let gsbase = x86_64::registers::model_specific::GsBase::read();
+    gsbase >= VirtAddr::new(HIGHER_HALF_START)
 }
 
 /// Runs swapgs if necessary because we came from userspace.

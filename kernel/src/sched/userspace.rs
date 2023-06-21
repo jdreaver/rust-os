@@ -5,7 +5,9 @@ use x86_64::registers::rflags::RFlags;
 use x86_64::VirtAddr;
 
 use crate::memory::{MapError, Page, PageSize, PageTableEntryFlags, TranslateResult};
-use crate::{elf, gdt, memory, percpu, vfs};
+use crate::{elf, gdt, memory, vfs};
+
+use super::syscall::TOP_OF_KERNEL_STACK;
 
 static DUMMY_USERSPACE_STACK: &[u8] = &[0; 4096];
 
@@ -136,7 +138,7 @@ pub(super) unsafe extern "C" fn jump_to_userspace(
             "push rdx",      // Third arg, code segment
             "push rdi",      // First arg, instruction pointer
             "iretq",
-            kernel_stack = const percpu::PER_CPU_SYSCALL_TOP_OF_KERNEL_STACK,
+            kernel_stack = sym TOP_OF_KERNEL_STACK,
             rflags = const RFlags::INTERRUPT_FLAG.bits(),
             options(noreturn),
         )

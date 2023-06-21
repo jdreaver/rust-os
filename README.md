@@ -151,16 +151,11 @@ make test
   - Create a type showing the intended memory mapping of a process and turn that into a page table. This should make it easier to reason about the memory map.
 - Ensure kernel pages are not marked as `USER_ACCESSIBLE`. I think the `x86_64` allocator, or limine, is doing it by default
 - Per CPU
-  - Linker layout: if we use `sym` in `asm!` we can reference the memory location of linker variables, like `gs:{my_cpuvar_offset}`. Then we can use the linker script to create percpu sections like Linux (see Linux's `PERCPU_VADDR` and `PERCPU_INIT` in the x86 `vmlinux.lds.S` and `vmlinux.lds.h`)
-    - Maybe make a macro/struct like [thread_local](https://doc.rust-lang.org/std/macro.thread_local.html) and <https://doc.rust-lang.org/std/thread/struct.LocalKey.html>
-  - Have per CPU macros assert that types are correct.
-  - Arrays: have a helper macro to create a `MAX_CPUS`-sized array
-    - Have getter function that (in this order): disables preemption, gets current processor ID, gets the value in the array, and wraps it in a guard that will decrement preemption count when dropped.
+  - Have visibility specifier instead of hard-coding `pub(super)`
+  - Disable preemption while we are using a per cpu variable
+    - In get function, wrap value in a PreemptGuard (can use existing one, just wrap value) that will decrement preemption count when dropped.
     - Ensure the guard function is not `Send` so it can't be sent across threads to another CPU on accident.
     - Maybe have a helper to take locks for multiple CPUs in a consistent way to prevent deadlocks, like ordering by processor ID. (Linux scheduler code does this for per CPU run queues)
-    - Ensure array elements are cache aligned! We can use `#[repr(align(64))]` and just assert the alignment is >= 64 in the macros.
-  - Encapsulation: it would be great to be able to have private per CPU vars. For example, a module could declare a CPU var, and the central `percpu` module ensures space gets allocated for it and it has an offset, but otherwise nothing is allowed to touch it outside of the module it is declared in.
-    - Idea that might make this easier: all variables could take up 8 byte "slots" (they can't exceed 8 bytes of course). Then we just need to statically have slot offsets, which could be done in an enum, but we could codegen all of the getters/setters/inc/dec function in a module somewhere else.
   - Automatic conversion to/from primitive types. Allow loading `TaskId` directly instead of needing to use `u32`.
   - Logging dependency on percpu:
     - Consider making init dependencies more explicit, by passing around a thing that was initialized, or even dumb tokens like `struct PerCPUInitialized;`.

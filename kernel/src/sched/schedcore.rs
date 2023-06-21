@@ -6,8 +6,10 @@ use x86_64::PhysAddr;
 
 use crate::hpet::Milliseconds;
 use crate::sync::SpinLock;
+use crate::{define_per_cpu_u32, define_per_cpu_u8};
 use crate::{percpu, tick};
 
+use super::preempt::{get_preempt_count, set_preempt_count};
 use super::task::{
     DesiredTaskState, KernelTaskStartFunction, Task, TaskExitCode, TaskId, TaskKernelStackPointer,
     TASKS,
@@ -24,7 +26,7 @@ pub(super) unsafe fn force_unlock_scheduler() {
     // N.B. Ordering is important. Don't re-enable interrupts until the spinlock
     // is released or else we could get an interrupt + a deadlock.
     x86_64::instructions::interrupts::enable();
-    percpu::set_per_cpu_preempt_count(0);
+    set_preempt_count(0);
 }
 
 /// Stores pending tasks that may or may not want to be scheduled.
@@ -92,22 +94,33 @@ pub(crate) fn global_init() {
     stack::stack_init();
 }
 
+define_per_cpu_u32!(
+    /// The `TaskId` of the currently running task.
+    CURRENT_TASK_ID
+);
+
+define_per_cpu_u32!(
+    /// The `TaskId` for the idle task for the current CPU. Every CPU has its
+    /// own idle task.
+    IDLE_TASK_ID
+);
+
 pub(crate) fn per_cpu_init() {
     syscall::syscall_init();
 
     // Set the current CPU's idle task.
-    let processor_id = percpu::get_per_cpu_processor_id();
+    let processor_id = percpu::get_processor_id();
     let idle_task_id = TASKS.lock_disable_interrupts().new_task(
-        format!("CPU {processor_id} __IDLE_TASK__"),
+        format!("CPU {processor_id:?} __IDLE_TASK__"),
         idle_task_start,
         core::ptr::null(),
     );
-    percpu::set_per_cpu_idle_task_id(idle_task_id.0);
-    percpu::set_per_cpu_current_task_id(idle_task_id.0);
+    set_per_cpu_IDLE_TASK_ID(idle_task_id.0);
+    set_per_cpu_CURRENT_TASK_ID(idle_task_id.0);
 }
 
 pub(crate) fn current_task_id() -> TaskId {
-    let id = percpu::get_per_cpu_current_task_id();
+    let id = get_per_cpu_CURRENT_TASK_ID();
     TaskId(id)
 }
 
@@ -157,9 +170,16 @@ pub(crate) fn new_task(name: String, start_fn: KernelTaskStartFunction, arg: *co
 /// How much time a task gets to run before being preempted.
 const DEFAULT_TIME_SLICE: Milliseconds = Milliseconds::new(100);
 
+define_per_cpu_u8!(
+    /// When nonzero, the scheduler needs to run. This is set in contexts that
+    /// can't run the scheduler (like interrupts), or in places that want to
+    /// indicate the scheduler should run, but don't want it to run immediately.
+    NEEDS_RESCHEDULE
+);
+
 pub(crate) fn run_scheduler() {
     // Set needs_reschedule to false if it hasn't been set already.
-    percpu::set_per_cpu_needs_reschedule(0);
+    set_per_cpu_NEEDS_RESCHEDULE(0);
 
     // N.B. This function is split up into sub functions to ensure values are
     // dropped before we hit `switch_to_task`.
@@ -182,10 +202,10 @@ pub(crate) fn run_scheduler() {
 }
 
 fn check_current_task_needs_preemption() -> bool {
-    let processor_id = percpu::get_per_cpu_processor_id();
-    let idle_task_id = TaskId(percpu::get_per_cpu_idle_task_id());
+    let processor_id = percpu::get_processor_id();
+    let idle_task_id = TaskId(get_per_cpu_IDLE_TASK_ID());
 
-    let preempt_count = percpu::get_per_cpu_preempt_count();
+    let preempt_count = get_preempt_count();
     let current_task = current_task();
     let task_id = current_task.id;
 
@@ -197,7 +217,7 @@ fn check_current_task_needs_preemption() -> bool {
     );
     if preempt_count > 0 {
         log::warn!(
-            "CPU {processor_id}: {task_id:?} preempt_count is {}, not preempting",
+            "CPU {processor_id:?}: {task_id:?} preempt_count is {}, not preempting",
             preempt_count
         );
         return false;
@@ -222,8 +242,8 @@ fn task_swap_parameters(
     TaskKernelStackPointer,
     PhysAddr,
 )> {
-    let processor_id = percpu::get_per_cpu_processor_id();
-    let idle_task_id = TaskId(percpu::get_per_cpu_idle_task_id());
+    let processor_id = percpu::get_processor_id();
+    let idle_task_id = TaskId(get_per_cpu_IDLE_TASK_ID());
 
     run_queue.remove_killed_pending_tasks();
     let prev_task = current_task();
@@ -241,7 +261,7 @@ fn task_swap_parameters(
         // Otherwise, switch to the idle task.
         idle_task_id
     };
-    percpu::set_per_cpu_current_task_id(next_task_id.0);
+    set_per_cpu_CURRENT_TASK_ID(next_task_id.0);
 
     // Store the previous task ID in pending task list, unless it is the
     // idle task.
@@ -268,7 +288,7 @@ fn task_swap_parameters(
         return None;
     }
     log::info!(
-        "SCHEDULER: (CPU {}) Switching from '{}' {:?} to '{}' {:?}",
+        "SCHEDULER: (CPU {:?}) Switching from '{}' {:?} to '{}' {:?}",
         processor_id,
         prev_task.name,
         prev_task.id,
@@ -281,7 +301,7 @@ fn task_swap_parameters(
 
 /// If the scheduler needs to run, then run it.
 pub(crate) fn run_scheduler_if_needed() {
-    if percpu::get_per_cpu_needs_reschedule() > 0 {
+    if get_per_cpu_NEEDS_RESCHEDULE() > 0 {
         run_scheduler();
     }
 }
@@ -296,7 +316,7 @@ pub(crate) fn scheduler_tick(time_between_ticks: Milliseconds) {
 
     // If the task has run out of time, we need to run the scheduler.
     if slice == Milliseconds::new(0) {
-        percpu::set_per_cpu_needs_reschedule(1);
+        set_per_cpu_NEEDS_RESCHEDULE(1);
     }
 }
 
@@ -333,7 +353,7 @@ pub(super) fn kill_current_task(exit_code: TaskExitCode) {
 /// Puts the current task to sleep and returns the current task ID, but does
 /// _not_ run the scheduler.
 fn go_to_sleep_no_run_scheduler() -> TaskId {
-    percpu::set_per_cpu_needs_reschedule(1);
+    set_per_cpu_NEEDS_RESCHEDULE(1);
     let current_task = current_task();
     current_task.desired_state.swap(DesiredTaskState::Sleeping);
     current_task.id
@@ -343,7 +363,7 @@ fn go_to_sleep_no_run_scheduler() -> TaskId {
 pub(crate) fn awaken_task(task_id: TaskId) {
     let task = TASKS.lock_disable_interrupts().get_task_assert(task_id);
     task.desired_state.swap(DesiredTaskState::ReadyToRun);
-    percpu::set_per_cpu_needs_reschedule(1);
+    set_per_cpu_NEEDS_RESCHEDULE(1);
 }
 
 /// Waits until the given task is finished.

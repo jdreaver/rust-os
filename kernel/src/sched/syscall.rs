@@ -4,7 +4,7 @@ use x86_64::registers::rflags::RFlags;
 use x86_64::VirtAddr;
 
 use crate::sched::TaskExitCode;
-use crate::{percpu, sched};
+use crate::{define_per_cpu_u64, sched};
 
 pub(super) fn syscall_init() {
     // N.B. There is some other initialization done when setting up the GDT for
@@ -27,6 +27,11 @@ pub(super) fn syscall_init() {
     let syscall_handler_addr = VirtAddr::new(syscall_handler as usize as u64);
     x86_64::registers::model_specific::LStar::write(syscall_handler_addr);
 }
+
+define_per_cpu_u64!(
+    /// Used during syscalls to store and restore the top of the kernel stack.
+    TOP_OF_KERNEL_STACK
+);
 
 #[naked]
 pub(super) unsafe extern "C" fn syscall_handler() {
@@ -80,7 +85,7 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             "pop r11",
             "pop rcx",
             "sysretq",
-            kernel_stack = const percpu::PER_CPU_SYSCALL_TOP_OF_KERNEL_STACK,
+            kernel_stack = sym TOP_OF_KERNEL_STACK,
             syscall_handler_inner = sym syscall_handler_inner,
             options(noreturn),
         )
