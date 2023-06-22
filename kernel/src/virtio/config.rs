@@ -211,7 +211,9 @@ impl VirtIOPCICapabilityHeader {
 
         Some(Self {
             device_config_body,
-            registers: VirtIOPCICapabilityHeaderRegisters::from_address(header.address()),
+            registers: VirtIOPCICapabilityHeaderRegisters::from_address(
+                header.address().as_u64() as usize
+            ),
         })
     }
 

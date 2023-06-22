@@ -156,7 +156,7 @@ fn global_setup(boot_info_data: &boot_info::BootInfo) {
     sched::global_init();
 
     unsafe {
-        hpet::init(acpi_info.hpet_info().base_address);
+        hpet::init(acpi_info.hpet_address());
     };
 
     keyboard::init_keyboard();

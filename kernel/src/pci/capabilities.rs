@@ -4,6 +4,7 @@ use bitfield_struct::bitfield;
 
 use crate::apic::ProcessorID;
 use crate::interrupts::InterruptVector;
+use crate::memory::KernPhysAddr;
 use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW};
 
@@ -16,7 +17,7 @@ pub(crate) enum PCIDeviceCapability {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PCIDeviceCapabilityHeader {
-    config_base_address: usize,
+    config_base_address: KernPhysAddr,
     registers: PCIDeviceCapabilityHeaderRegisters,
 }
 
@@ -30,13 +31,13 @@ impl PCIDeviceCapabilityHeader {
     /// # Safety
     ///
     /// Both `config_region_base` and `offset` must be valid.
-    pub(super) unsafe fn new(config_base_address: usize, offset: u8) -> Option<Self> {
+    pub(super) unsafe fn new(config_base_address: KernPhysAddr, offset: u8) -> Option<Self> {
         if offset == 0 {
             return None;
         }
 
         let address = config_base_address + usize::from(offset);
-        let registers = PCIDeviceCapabilityHeaderRegisters::from_address(address);
+        let registers = PCIDeviceCapabilityHeaderRegisters::from_address(address.as_u64() as usize);
 
         Some(Self {
             config_base_address,
@@ -55,8 +56,8 @@ impl PCIDeviceCapabilityHeader {
         }
     }
 
-    pub(crate) fn address(&self) -> usize {
-        self.registers.address
+    pub(crate) fn address(&self) -> KernPhysAddr {
+        KernPhysAddr::new(self.registers.address as u64)
     }
 
     fn next_capability(&self) -> Option<Self> {
@@ -112,7 +113,9 @@ impl MSIXCapability {
             return None;
         }
 
-        let registers = unsafe { MSIXCapabilityRegisters::from_address(capability.address()) };
+        let registers = unsafe {
+            MSIXCapabilityRegisters::from_address(capability.address().as_u64() as usize)
+        };
 
         Some(Self { registers })
     }

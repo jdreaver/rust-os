@@ -68,7 +68,7 @@ impl ACPIInfo {
 
     /// Asserts that the interrupt model is APIC, and returns the APIC info data
     /// structure.
-    pub(crate) fn apic_info(&self) -> Apic {
+    fn apic_info(&self) -> Apic {
         let interrupt_model = self
             .tables
             .platform_info()
@@ -81,8 +81,34 @@ impl ACPIInfo {
         }
     }
 
-    pub(crate) fn hpet_info(&self) -> HpetInfo {
+    pub(crate) fn lapic_address(&self) -> KernPhysAddr {
+        let apic_info = self.apic_info();
+        let lapic_address = PhysAddr::new(apic_info.local_apic_address);
+        KernPhysAddr::from(lapic_address)
+    }
+
+    pub(crate) fn ioapic_info(&self, ioapic_index: usize) -> IOApicInfo {
+        let apic_info = self.apic_info();
+        let io_apic = apic_info
+            .io_apics
+            .get(ioapic_index)
+            .expect("IOAPIC not found");
+        let ioapic_address = PhysAddr::new(u64::from(io_apic.address));
+        IOApicInfo {
+            id: io_apic.id,
+            address: KernPhysAddr::from(ioapic_address),
+            global_system_interrupt_base: io_apic.global_system_interrupt_base,
+        }
+    }
+
+    fn hpet_info(&self) -> HpetInfo {
         HpetInfo::new(&self.tables).expect("failed to get HPET info")
+    }
+
+    pub(crate) fn hpet_address(&self) -> KernPhysAddr {
+        let hpet = self.hpet_info();
+        let addr = PhysAddr::new(hpet.base_address as u64);
+        KernPhysAddr::from(addr)
     }
 
     pub(crate) fn processor_info(&self) -> ProcessorInfo {
@@ -94,6 +120,12 @@ impl ACPIInfo {
             .processor_info
             .expect("failed to get ACPI processor info")
     }
+}
+
+pub(crate) struct IOApicInfo {
+    pub(crate) id: u8,
+    pub(crate) address: KernPhysAddr,
+    pub(crate) global_system_interrupt_base: u32,
 }
 
 /// We need to implement `acpi::AcpiHandler` to use the `acpi` crate. This is

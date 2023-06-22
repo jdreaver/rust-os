@@ -123,7 +123,10 @@ impl PhysicalMemoryAllocator<'_> {
     {
         let allocator =
             bootstrap_allocator(PAGE_SIZE, memory_regions, |bitmap_addr, bitmap_len| {
-                let ptr = bitmap_addr as *mut u64;
+                // Make sure to use a kernel physical address pointer
+                let phys_addr = PhysAddr::new(bitmap_addr as u64);
+                let kern_phys_addr = KernPhysAddr::from_phys_addr(phys_addr);
+                let ptr = kern_phys_addr.as_u64() as *mut u64;
                 core::slice::from_raw_parts_mut(ptr, bitmap_len)
             });
         Self { allocator }

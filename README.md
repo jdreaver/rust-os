@@ -106,7 +106,6 @@ make test
     - Spawn a bunch of processes and hope we don't crash?
     - maybe some expected failures to ensure we call panic handler?
 - Memory management
-  - Finish hooking up `KernPhysAddr`: hpet, physical memory allocator, PCI device capabilities
   - Consider having `registers.rs` stuff explicitly take a `PhysAddr`, `KernPhysAddr`, or `VirtAddr`. Converting to u64 is error prone right now.
     - At the very least it should probably be `VirtAddr` since that is the most general. We shouldn't be doing pointer math on `PhysAddr`. Except would there ever be registers outside of the `KernPhysAddr` range? Hmm. Could make it a type parameter?
   - Add support for huge pages in `map_to`

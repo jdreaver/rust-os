@@ -1,11 +1,9 @@
 use core::fmt;
 
 use bitfield_struct::bitfield;
-use x86_64::PhysAddr;
 
 use crate::acpi::ACPIInfo;
 use crate::interrupts::InterruptVector;
-use crate::memory::KernPhysAddr;
 use crate::register_struct;
 use crate::registers::RegisterRW;
 use crate::sync::InitCell;
@@ -59,17 +57,11 @@ struct IOAPIC {
 
 impl IOAPIC {
     fn from_acpi_info(acpi_info: &ACPIInfo) -> Self {
-        let apic_info = acpi_info.apic_info();
-        let io_apic = apic_info
-            .io_apics
-            .get(0)
-            .expect("no IOAPICS found from ACPI");
-        let ioapic_address = PhysAddr::new(u64::from(io_apic.address));
-        let ioapic_address = KernPhysAddr::from(ioapic_address);
-        let registers = unsafe { IOAPICRegisters::from_address(ioapic_address.as_u64() as usize) };
+        let ioapic = acpi_info.ioapic_info(0);
+        let registers = unsafe { IOAPICRegisters::from_address(ioapic.address.as_u64() as usize) };
         Self {
-            id: io_apic.id,
-            global_system_interrupt_base: io_apic.global_system_interrupt_base,
+            id: ioapic.id,
+            global_system_interrupt_base: ioapic.global_system_interrupt_base,
             registers,
         }
     }

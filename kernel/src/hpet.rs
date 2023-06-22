@@ -4,13 +4,14 @@ use core::ops::Add;
 use bitfield_struct::bitfield;
 
 use crate::interrupts::{InterruptHandler, InterruptHandlerID};
+use crate::memory::KernPhysAddr;
 use crate::registers::{RegisterRO, RegisterRW};
 use crate::sync::InitCell;
 use crate::{interrupts, ioapic, register_struct};
 
 static HPET: InitCell<HPET> = InitCell::new();
 
-pub(crate) unsafe fn init(hpet_apic_base_address: usize) {
+pub(crate) unsafe fn init(hpet_apic_base_address: KernPhysAddr) {
     let hpet = unsafe { HPET::from_base_address(hpet_apic_base_address) };
     HPET.init(hpet);
 }
@@ -118,9 +119,9 @@ register_struct!(
 impl HPET {
     /// Constructs an `HPET` from the given base address, which can be found in
     /// the HPET ACPI table.
-    unsafe fn from_base_address(address: usize) -> Self {
+    unsafe fn from_base_address(address: KernPhysAddr) -> Self {
         Self {
-            registers: HpetRegisters::from_address(address),
+            registers: HpetRegisters::from_address(address.as_u64() as usize),
         }
     }
 

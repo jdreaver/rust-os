@@ -86,7 +86,6 @@ impl PCIDeviceConfig {
     /// Caller must ensure that `base_address` is a valid pointer to a PCI
     /// Express extended configuration mechanism memory region.
     unsafe fn new(location: PCIDeviceLocation) -> Option<Self> {
-        let address = location.device_base_address().as_u64() as usize;
         #[allow(unused_unsafe)]
         // If the vendor ID is 0xFFFF, then there is no device at this location.
         let device_id = unsafe { PCIConfigDeviceID::new(location) };
@@ -94,7 +93,11 @@ impl PCIDeviceConfig {
             return None;
         }
 
-        let common_registers = unsafe { PCIDeviceCommonConfigRegisters::from_address(address) };
+        let common_registers = unsafe {
+            PCIDeviceCommonConfigRegisters::from_address(
+                location.device_base_address().as_u64() as usize
+            )
+        };
 
         Some(Self {
             location,
@@ -133,7 +136,7 @@ impl PCIDeviceConfig {
 
         let cap_ptr = unsafe {
             PCIDeviceCapabilityHeader::new(
-                self.common_registers.address,
+                KernPhysAddr::new(self.common_registers.address as u64),
                 self.common_registers.capabilities_pointer().read(),
             )
         };
