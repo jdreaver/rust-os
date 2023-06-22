@@ -156,10 +156,13 @@ impl PhysicalMemoryAllocator<'_> {
 
         let phys_addr = PhysAddr::new((page * PAGE_SIZE) as u64);
         let start_addr = KernPhysAddr::from(phys_addr);
-        let page_slice = unsafe {
-            core::slice::from_raw_parts_mut(start_addr.as_mut_ptr::<u8>(), num_pages * PAGE_SIZE)
+        unsafe {
+            // N.B. `write_bytes` is a highly optimized way to write zeroes.
+            // Making a slice and doing `slice.fill(0)` is supposed to optimize
+            // to this, but it doesn't seem to when compiling in debug mode and
+            // it makes page table allocation very slow.
+            start_addr.as_mut_ptr::<u8>().write_bytes(0, num_pages * PAGE_SIZE);
         };
-        page_slice.fill(0);
 
         let start_page = Page::from_start_addr(start_addr, PageSize::Size4KiB);
         Ok(PageRange::new(start_page, num_pages))
