@@ -500,15 +500,6 @@ pub(crate) struct Page<A> {
 }
 
 impl<A: Address> Page<A> {
-    pub(crate) fn range_exclusive(start: A, end: A) -> PageRange<A> {
-        let current_addr = start.align_down(PAGE_SIZE as u64);
-        PageRange {
-            current_addr,
-            page_size: PageSize::Size4KiB,
-            end_addr_exclusive: end,
-        }
-    }
-
     pub(crate) fn containing_address(addr: A, size: PageSize) -> Self {
         let start_addr = addr.align_down(size.size_bytes() as u64);
         Self { start_addr, size }
@@ -517,25 +508,50 @@ impl<A: Address> Page<A> {
 
 #[derive(Debug)]
 pub(crate) struct PageRange<A> {
-    current_addr: A,
+    // TODO: This should be start_page: Page<A>, not start_addr
+    start_addr: A,
     page_size: PageSize,
     end_addr_exclusive: A,
 }
 
-impl<A: Address> Iterator for PageRange<A> {
+impl<A: Address> PageRange<A> {
+    pub(crate) fn exclusive(start: A, end: A) -> Self {
+        let start_addr = start.align_down(PAGE_SIZE as u64);
+        Self {
+            start_addr,
+            page_size: PageSize::Size4KiB,
+            end_addr_exclusive: end,
+        }
+    }
+
+    pub(crate) fn iter(&self) -> PageRangeIter<A> {
+        PageRangeIter {
+            range: self,
+            current_addr: self.start_addr,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct PageRangeIter<'a, A> {
+    range: &'a PageRange<A>,
+    current_addr: A,
+}
+
+impl<'a, A: Address> Iterator for PageRangeIter<'a, A> {
     type Item = Page<A>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current_addr >= self.end_addr_exclusive {
+        if self.current_addr >= self.range.end_addr_exclusive {
             return None;
         }
 
         let page = Page {
             start_addr: self.current_addr,
-            size: self.page_size,
+            size: self.range.page_size,
         };
 
-        self.current_addr = self.current_addr + self.page_size.size_bytes();
+        self.current_addr = self.current_addr + self.range.page_size.size_bytes();
         Some(page)
     }
 }

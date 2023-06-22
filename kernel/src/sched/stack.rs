@@ -75,7 +75,8 @@ impl KernelStackAllocator<'_> {
         // Map the physical memory into the virtual address space
         let pages = stack.physically_mapped_pages();
         let flags = PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE;
-        memory::allocate_and_map_pages(pages, flags).expect("failed to map kernel stack pages");
+        memory::allocate_and_map_pages(pages.iter(), flags)
+            .expect("failed to map kernel stack pages");
 
         // Zero out the memory
         unsafe {
@@ -91,7 +92,7 @@ impl KernelStackAllocator<'_> {
             / KERNEL_STACK_SIZE_BYTES as u64;
         self.allocator.free_contiguous(stack_index as usize, 1);
 
-        for page in stack.physically_mapped_pages() {
+        for page in stack.physically_mapped_pages().iter() {
             unsafe {
                 memory::unmap_page(page).expect("failed to unmap kernel stack page");
             };
@@ -124,7 +125,7 @@ impl KernelStack {
     fn physically_mapped_pages(&self) -> PageRange<VirtAddr> {
         let start_addr = self.start_addr + PAGE_SIZE;
         let end_addr = self.start_addr + KERNEL_STACK_SIZE_BYTES;
-        Page::range_exclusive(start_addr, end_addr)
+        PageRange::exclusive(start_addr, end_addr)
     }
 }
 

@@ -106,8 +106,12 @@ make test
     - Spawn a bunch of processes and hope we don't crash?
     - maybe some expected failures to ensure we call panic handler?
 - Memory management
+  - `Page` type improvements
+    - Make typed page sizes like the x86_64 crate does
+    - Make `PageRange` not `Iterator`, make it a concrete thing.
+    - Use `PageRange` in `PhysicalBuffer` Don't do so much unnecessary address <-> page conversions w/ assertions that addresses are aligned. This happens a lot in kernel stack code.
+    - Use `PageRange` in `PhysicalBuffer` (fixes: Don't use `usize` so casually in `physical.rs`. Have a `PageNumber` newtype or something.)
   - Add support for huge pages in `map_to`
-  - Don't use `usize` so casually in `physical.rs`. Have a `PageNumber` newtype or something.
   - New allocator is slower. Heap used to initialize in milliseconds, and now takes almost a second
     - Consider pages with size in type and more straight-line code for mapping different page sizes instead of current loops, and likely lots of multiplications.
     - I think different code paths for different page sizes will also simplify logic. When performing mappings, we know the depth we need to go to ahead of time because we know the page size. The only time we don't know the depth is when translating an arbitrary address.
@@ -118,7 +122,6 @@ make test
   - Deal with freeing buffers used for mapping. We can't blindly deallocate every time we unmap because some mapping targets are device MMIO.
     - Perhaps don't allow the `NewPhysPage` mapping target. Or, make sure the caller uses the `PhysPage` result.
     - The kernel stack allocator actually has a bug where it doesn't free its allocated physical memory pages! It is only "freeing" the virtual pages.
-  - Don't do so much unnecessary address <-> page conversions w/ assertions that addresses are aligned. This happens a lot in kernel stack code.
   - Make our own `PhysAddr` and don't allow it to be converted to a pointer via `as_ptr()` (the x86_64 one doesn't have this btw)
   - Consider removing `as_u64` for all address types, because it makes mistakes too easy.
   - Guard pages: consider using one of the special OS-available bits on pages for `GUARD_PAGE`, in case that could simplify our guard page detection logic in the page fault handler. Using these OS-available bits in general to identify the type of page is probably going to be useful.
