@@ -67,6 +67,10 @@ impl Level4PageTable {
         map_target: MapTarget,
         flags: PageTableEntryFlags,
     ) -> Result<Page<KernPhysAddr>, MapError> {
+        if page.size() == PageSize::Size4KiB {
+            return self.map_to_4kib(allocator, page, map_target, flags);
+        }
+
         let mut current_table = &mut *self.0;
         let mut current_level = PageTableLevel::Level4;
 
@@ -114,6 +118,120 @@ impl Level4PageTable {
             }
         }
     }
+
+    pub(super) fn map_to_4kib(
+        &mut self,
+        allocator: &mut PhysicalMemoryAllocator,
+        page: Page<VirtAddr>,
+        map_target: MapTarget,
+        flags: PageTableEntryFlags,
+    ) -> Result<Page<KernPhysAddr>, MapError> {
+        let parent_flags = flags
+            & (PageTableEntryFlags::PRESENT
+                | PageTableEntryFlags::WRITABLE
+                | PageTableEntryFlags::USER_ACCESSIBLE);
+
+        let addr = page.start_addr();
+
+        let p4_entry = self.0.address_entry_mut(PageTableLevel::Level4, addr);
+        let p3 = p4_entry.get_next_table(allocator, parent_flags)?;
+
+        let p3_entry = p3.address_entry_mut(PageTableLevel::Level3, addr);
+        let p2 = p3_entry.get_next_table(allocator, parent_flags)?;
+
+        let p2_entry = p2.address_entry_mut(PageTableLevel::Level2, addr);
+        let p1 = p2_entry.get_next_table(allocator, parent_flags)?;
+
+        let p1_entry = p1.address_entry_mut(PageTableLevel::Level1, addr);
+        let (p1_entry, target) = p1_entry.target_mut(PageTableLevel::Level1);
+        let PageTableTarget::Unmapped = target else {panic!("p1 is not a Unmapped")};
+
+        let target_page = map_target.get_target_page(allocator, page.size())?;
+        p1_entry.set_target_page(&target_page, flags);
+        // Need to flush the TLB here
+        page.flush();
+        Ok(target_page)
+    }
+
+    // pub(super) fn map_to_4kib(
+    //     &mut self,
+    //     allocator: &mut PhysicalMemoryAllocator,
+    //     page: Page<VirtAddr>,
+    //     map_target: MapTarget,
+    //     flags: PageTableEntryFlags,
+    // ) -> Result<Page<KernPhysAddr>, MapError> {
+    //     let parent_flags = flags
+    //         & (PageTableEntryFlags::PRESENT
+    //             | PageTableEntryFlags::WRITABLE
+    //             | PageTableEntryFlags::USER_ACCESSIBLE);
+
+    //     let addr = page.start_addr();
+
+    //     let p4_entry = self.0.address_entry_mut(PageTableLevel::Level4, addr);
+    //     let (p4_entry, target) = p4_entry.target_mut(PageTableLevel::Level4);
+    //     let p3 = match target {
+    //         PageTableTarget::NextTable {
+    //             level: _,
+    //             table: p3,
+    //         } => p3,
+    //         PageTableTarget::Unmapped => {
+    //             p4_entry.allocate_and_map_child_table(allocator, parent_flags)?
+    //         }
+    //         PageTableTarget::Page { page, flags } => {
+    //             return Err(MapError::PageAlreadyMapped {
+    //                 existing_target: page,
+    //                 flags,
+    //             })
+    //         }
+    //     };
+
+    //     let p3_entry = p3.address_entry_mut(PageTableLevel::Level3, addr);
+    //     let (p3_entry, target) = p3_entry.target_mut(PageTableLevel::Level3);
+    //     let p2 = match target {
+    //         PageTableTarget::NextTable {
+    //             level: _,
+    //             table: p2,
+    //         } => p2,
+    //         PageTableTarget::Unmapped => {
+    //             p3_entry.allocate_and_map_child_table(allocator, parent_flags)?
+    //         }
+    //         PageTableTarget::Page { page, flags } => {
+    //             return Err(MapError::PageAlreadyMapped {
+    //                 existing_target: page,
+    //                 flags,
+    //             })
+    //         }
+    //     };
+
+    //     let p2_entry = p2.address_entry_mut(PageTableLevel::Level2, addr);
+    //     let (p2_entry, target) = p2_entry.target_mut(PageTableLevel::Level2);
+    //     // log::warn!("p2_entry: {:x?}, target: {:x?}", p2_entry, target);
+    //     let p1 = match target {
+    //         PageTableTarget::NextTable {
+    //             level: _,
+    //             table: p1,
+    //         } => p1,
+    //         PageTableTarget::Unmapped => {
+    //             p2_entry.allocate_and_map_child_table(allocator, parent_flags)?
+    //         }
+    //         PageTableTarget::Page { page, flags } => {
+    //             return Err(MapError::PageAlreadyMapped {
+    //                 existing_target: page,
+    //                 flags,
+    //             })
+    //         }
+    //     };
+
+    //     let p1_entry = p1.address_entry_mut(PageTableLevel::Level1, addr);
+    //     let (p1_entry, target) = p1_entry.target_mut(PageTableLevel::Level1);
+    //     let PageTableTarget::Unmapped = target else {panic!("p1 is not a Unmapped")};
+
+    //     let target_page = map_target.get_target_page(allocator, page.size())?;
+    //     p1_entry.set_target_page(&target_page, flags);
+    //     // Need to flush the TLB here
+    //     page.flush();
+    //     Ok(target_page)
+    // }
 
     /// Unmaps a given virtual page and returns the underlying physical page.
     ///
@@ -280,6 +398,29 @@ impl PageTableEntry {
 
     fn target(&self, level: PageTableLevel) -> PageTableTarget<&PageTable> {
         self.target_inner(level, |addr| unsafe { &*(addr.as_ptr::<PageTable>()) })
+    }
+
+    fn get_next_table(
+        &mut self,
+        allocator: &mut PhysicalMemoryAllocator,
+        flags: PageTableEntryFlags,
+    ) -> Result<&mut PageTable, MapError> {
+        if !self.is_present() {
+            let table = self.allocate_and_map_child_table(allocator, flags)?;
+            return Ok(table);
+        }
+
+        if flags.contains(PageTableEntryFlags::HUGE_PAGE) {
+            return Err(MapError::PageAlreadyMapped {
+                existing_target: Page::from_start_addr(self.address(), PageSize::Size4KiB),
+                flags,
+            });
+        }
+
+        let table = unsafe {
+            &mut *(self.address().as_mut_ptr::<PageTable>())
+        };
+        Ok(table)
     }
 
     fn target_mut(

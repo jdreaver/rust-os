@@ -107,12 +107,46 @@ pub(crate) fn allocate_and_map_pages(
     let table = page_table_lock
         .as_mut()
         .expect("kernel page table not initialized");
+    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
+        for page in pages {
+            table.map_to_4kib(allocator, page, MapTarget::NewPhysPage, flags)?;
+        }
+
+        Ok(())
+    })
+}
+
+pub(crate) fn x86_allocate_and_map_pages(
+    pages: impl Iterator<Item = x86_64::structures::paging::Page<x86_64::structures::paging::Size4KiB>>,
+    flags: x86_64::structures::paging::PageTableFlags,
+) -> Result<(), x86_64::structures::paging::mapper::MapToError<x86_64::structures::paging::Size4KiB>>
+{
+    use x86_64::structures::paging::FrameAllocator;
+    use x86_64::structures::paging::mapper::{MapToError, Mapper};
+
+    let (level_4_table_frame, _) = x86_64::registers::control::Cr3::read();
+
+    let phys = level_4_table_frame.start_address();
+    let virt = VirtAddr::new(KERNEL_PHYSICAL_MAPPING_START + phys.as_u64());
+    let page_table_ptr: *mut x86_64::structures::paging::PageTable = virt.as_mut_ptr();
+    let level_4_table = unsafe { &mut *page_table_ptr };
+    let mut mapper = unsafe {
+        x86_64::structures::paging::mapper::OffsetPageTable::new(
+            level_4_table,
+            VirtAddr::new(KERNEL_PHYSICAL_MAPPING_START),
+        )
+    };
 
     KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
         for page in pages {
-            table.map_to(allocator, page, MapTarget::NewPhysPage, flags)?;
+            let frame = allocator
+                .allocate_frame()
+                .ok_or(MapToError::FrameAllocationFailed)?;
+            // let x86_page = x86_64::structures::paging::Page::from_start_address(VirtAddr::from(page.start_addr()));
+            unsafe {
+                mapper.map_to(page, frame, flags, allocator)?.flush();
+            }
         }
-
         Ok(())
     })
 }

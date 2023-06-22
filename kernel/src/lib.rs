@@ -104,6 +104,47 @@ pub fn start() -> ! {
 
     tick::global_init();
 
+    // TEST CODE time a bit allocation
+
+    use crate::memory::{allocate_and_map_pages, Page, PageRange, PageSize, PageTableEntryFlags};
+    use x86_64::VirtAddr;
+    let alloc_size = 100 * 1024 * 1024;
+
+    log::warn!("test start");
+    let start_ms = hpet::elapsed_milliseconds();
+
+
+    let alloc_start_addr = VirtAddr::new(0xffff_a000_0000_0000);
+    let alloc_start = Page::containing_address(alloc_start_addr, PageSize::Size4KiB);
+    let page_range = PageRange::from_bytes_inclusive(alloc_start, alloc_size);
+    let flags = PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE;
+    allocate_and_map_pages(page_range.iter(), flags).expect("allocation failed");
+
+    let end_ms = hpet::elapsed_milliseconds();
+    let total_ms = u64::from(end_ms) - u64::from(start_ms);
+
+    log::warn!("took {total_ms}ms to allocate {alloc_size} bytes");
+
+    log::warn!("test x86_64 start");
+    let start_ms = hpet::elapsed_milliseconds();
+
+    let alloc_start_addr = VirtAddr::new(0xffff_b000_0000_0000);
+    let page_range = PageRange::from_bytes_inclusive(alloc_start, alloc_size);
+    let page_range = x86_64::structures::paging::Page::range_inclusive(
+        x86_64::structures::paging::Page::containing_address(alloc_start_addr),
+        x86_64::structures::paging::Page::containing_address(alloc_start_addr + (alloc_size - 1)),
+    );
+    use x86_64::structures::paging::PageTableFlags;
+    let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+    memory::x86_allocate_and_map_pages(page_range, flags).expect("allocation failed");
+
+    let end_ms = hpet::elapsed_milliseconds();
+    let total_ms = u64::from(end_ms) - u64::from(start_ms);
+
+    log::warn!("x86_64 took {total_ms}ms to allocate {alloc_size} bytes");
+
+    // END TEST CODE
+
     sched::start_multitasking(
         String::from("shell"),
         shell::run_serial_shell,

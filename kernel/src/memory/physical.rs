@@ -173,6 +173,30 @@ impl PhysicalMemoryAllocator<'_> {
     }
 }
 
+unsafe impl<S: x86_64::structures::paging::PageSize> x86_64::structures::paging::FrameAllocator<S> for PhysicalMemoryAllocator<'_> {
+    fn allocate_frame(&mut self) -> Option<x86_64::structures::paging::PhysFrame<S>> {
+        assert!(
+            S::SIZE as usize % PAGE_SIZE == 0,
+            "frame size {:?} must be a multiple of page size {}",
+            S::SIZE,
+            PAGE_SIZE
+        );
+        let num_pages = S::SIZE as usize / PAGE_SIZE;
+        let frame_page = self.allocator.allocate_contiguous(num_pages)?;
+        let frame_address = PhysAddr::new(frame_page as u64 * PAGE_SIZE as u64);
+
+        let slice_addr = KernPhysAddr::from(frame_address);
+        let page_slice = unsafe {
+            core::slice::from_raw_parts_mut(slice_addr.as_mut_ptr::<u8>(), num_pages * PAGE_SIZE)
+        };
+        page_slice.fill(0);
+
+
+        let frame: x86_64::structures::paging::PhysFrame<S> = x86_64::structures::paging::PhysFrame::containing_address(frame_address);
+        Some(frame)
+    }
+}
+
 /// Physically contiguous buffer of memory. Allocates by page, so it can
 /// allocate more memory than requested. Useful for e.g. Direct Memory Access
 /// (DMA) like with VirtIO buffers.
