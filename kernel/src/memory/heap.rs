@@ -4,7 +4,7 @@ use x86_64::VirtAddr;
 use super::mapping::{
     allocate_and_map_pages, KERNEL_HEAP_REGION_MAX_SIZE, KERNEL_HEAP_REGION_START,
 };
-use super::page::{PageRange, PageSize};
+use super::page::{Page, PageRange, PageSize};
 use super::page_table::{MapError, PageTableEntryFlags};
 
 /// NOTE: `LockedHeap` uses a spin lock under the hood, so we should ensure we
@@ -22,9 +22,9 @@ const HEAP_SIZE: usize = 10 * 1024 * 1024; // 10 MiB
 pub(super) fn init() -> Result<(), MapError> {
     assert!(HEAP_SIZE < KERNEL_HEAP_REGION_MAX_SIZE as usize);
 
-    let heap_start = VirtAddr::new(HEAP_START as u64);
-    let heap_end = heap_start + HEAP_SIZE as u64;
-    let page_range = PageRange::exclusive(heap_start, heap_end, PageSize::Size4KiB);
+    let heap_start_addr = VirtAddr::new(HEAP_START as u64);
+    let heap_start = Page::containing_address(heap_start_addr, PageSize::Size4KiB);
+    let page_range = PageRange::from_bytes_inclusive(heap_start, HEAP_SIZE);
     let flags = PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE;
     allocate_and_map_pages(page_range.iter(), flags)?;
 

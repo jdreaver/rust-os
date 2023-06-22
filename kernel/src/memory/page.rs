@@ -4,7 +4,6 @@ use core::ops::Sub;
 use x86_64::{PhysAddr, VirtAddr};
 
 use super::address::KernPhysAddr;
-use super::physical::PAGE_SIZE;
 
 /// A `Page` is a page of memory of a given address type `A` (e.g. `VirtAddr`,
 /// `PhysAddr`, etc).
@@ -42,40 +41,36 @@ impl Page<VirtAddr> {
 
 #[derive(Debug)]
 pub(crate) struct PageRange<A> {
-    start_addr: A,
-    end_addr_exclusive: A,
-    page_size: PageSize,
+    start: Page<A>,
+    num_pages: usize,
 }
 
 impl<A: Address> PageRange<A> {
-    pub(crate) fn exclusive(start: A, end: A, page_size: PageSize) -> Self {
-        let start_addr = start.align_down(PAGE_SIZE as u64);
-        Self {
-            start_addr,
-            end_addr_exclusive: end,
-            page_size,
-        }
+    pub(crate) fn new(start: Page<A>, num_pages: usize) -> Self {
+        Self { start, num_pages }
+    }
+
+    pub(crate) fn from_bytes_inclusive(start: Page<A>, num_bytes: usize) -> Self {
+        let num_pages = num_bytes.div_ceil(start.size.size_bytes());
+        Self { start, num_pages }
     }
 
     pub(crate) fn start_addr(&self) -> A {
-        self.start_addr
+        self.start.start_addr
     }
 
     pub(crate) fn page_size(&self) -> PageSize {
-        self.page_size
+        self.start.size
     }
 
     pub(crate) fn num_pages(&self) -> usize {
-        let bytes_diff = self.end_addr_exclusive.as_u64() - self.start_addr.as_u64();
-        let page_size = self.page_size.size_bytes();
-        assert!(bytes_diff as usize % page_size == 0);
-        bytes_diff as usize / page_size
+        self.num_pages
     }
 
     pub(crate) fn iter(&self) -> PageRangeIter<A> {
         PageRangeIter {
             range: self,
-            current_addr: self.start_addr,
+            current_page: 0,
         }
     }
 }
@@ -83,23 +78,25 @@ impl<A: Address> PageRange<A> {
 #[derive(Debug)]
 pub(crate) struct PageRangeIter<'a, A> {
     range: &'a PageRange<A>,
-    current_addr: A,
+    current_page: usize,
 }
 
 impl<'a, A: Address> Iterator for PageRangeIter<'a, A> {
     type Item = Page<A>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current_addr >= self.range.end_addr_exclusive {
+        if self.current_page >= self.range.num_pages {
             return None;
         }
 
+        let start_addr =
+            self.range.start.start_addr + self.current_page * self.range.start.size.size_bytes();
         let page = Page {
-            start_addr: self.current_addr,
-            size: self.range.page_size,
+            start_addr,
+            size: self.range.start.size,
         };
 
-        self.current_addr = self.current_addr + self.range.page_size.size_bytes();
+        self.current_page += 1;
         Some(page)
     }
 }

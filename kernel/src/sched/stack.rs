@@ -13,6 +13,7 @@ use crate::sync::SpinLock;
 /// debug mode use a ton of the stack. We don't need this much stack in release
 /// mode.
 const KERNEL_STACK_SIZE_PAGES: usize = 16;
+const KERNEL_STACK_PHYS_PAGES: usize = KERNEL_STACK_SIZE_PAGES - 1;
 const KERNEL_STACK_SIZE_BYTES: usize = KERNEL_STACK_SIZE_PAGES * PAGE_SIZE;
 const KERNEL_STACK_START_VIRT_ADDR: usize = memory::KERNEL_STACK_REGION_START as usize;
 
@@ -121,8 +122,8 @@ impl KernelStack {
 
     fn physically_mapped_pages(&self) -> PageRange<VirtAddr> {
         let start_addr = self.start_addr + PAGE_SIZE;
-        let end_addr = self.start_addr + KERNEL_STACK_SIZE_BYTES;
-        PageRange::exclusive(start_addr, end_addr, PageSize::Size4KiB)
+        let start_page = Page::from_start_addr(start_addr, PageSize::Size4KiB);
+        PageRange::new(start_page, KERNEL_STACK_PHYS_PAGES)
     }
 }
 
