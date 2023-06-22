@@ -93,11 +93,8 @@ impl PCIDeviceConfig {
             return None;
         }
 
-        let common_registers = unsafe {
-            PCIDeviceCommonConfigRegisters::from_address(
-                location.device_base_address().as_u64() as usize
-            )
-        };
+        let common_registers =
+            unsafe { PCIDeviceCommonConfigRegisters::from_address(location.device_base_address()) };
 
         Some(Self {
             location,
@@ -136,7 +133,7 @@ impl PCIDeviceConfig {
 
         let cap_ptr = unsafe {
             PCIDeviceCapabilityHeader::new(
-                KernPhysAddr::new(self.common_registers.address as u64),
+                self.common_registers.address,
                 self.common_registers.capabilities_pointer().read(),
             )
         };
@@ -292,7 +289,7 @@ pub(crate) struct PCIDeviceConfigType0 {
 
 impl PCIDeviceConfigType0 {
     unsafe fn from_common_config(common_config: PCIDeviceConfig) -> Self {
-        let address = common_config.location.device_base_address().as_u64() as usize;
+        let address = common_config.location.device_base_address();
         Self {
             common_config,
             registers: PCIDeviceConfigType0Registers::from_address(address),
@@ -523,7 +520,7 @@ impl MSIXConfig {
             table_offset,
             table_region_size as u64,
         );
-        let table = unsafe { MSIXTable::new(table_address.as_u64() as usize, table_size) };
+        let table = unsafe { MSIXTable::new(table_address, table_size) };
 
         let pba_offset_bits = capability.registers.pending_bit_array_offset().read();
         let pba_bar_idx = pba_offset_bits.bar_indicator_register();

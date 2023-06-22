@@ -58,7 +58,7 @@ struct IOAPIC {
 impl IOAPIC {
     fn from_acpi_info(acpi_info: &ACPIInfo) -> Self {
         let ioapic = acpi_info.ioapic_info(0);
-        let registers = unsafe { IOAPICRegisters::from_address(ioapic.address.as_u64() as usize) };
+        let registers = unsafe { IOAPICRegisters::from_address(ioapic.address) };
         Self {
             id: ioapic.id,
             global_system_interrupt_base: ioapic.global_system_interrupt_base,

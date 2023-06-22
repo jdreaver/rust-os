@@ -37,7 +37,7 @@ impl PCIDeviceCapabilityHeader {
         }
 
         let address = config_base_address + usize::from(offset);
-        let registers = PCIDeviceCapabilityHeaderRegisters::from_address(address.as_u64() as usize);
+        let registers = PCIDeviceCapabilityHeaderRegisters::from_address(address);
 
         Some(Self {
             config_base_address,
@@ -57,7 +57,7 @@ impl PCIDeviceCapabilityHeader {
     }
 
     pub(crate) fn address(&self) -> KernPhysAddr {
-        KernPhysAddr::new(self.registers.address as u64)
+        self.registers.address
     }
 
     fn next_capability(&self) -> Option<Self> {
@@ -113,9 +113,7 @@ impl MSIXCapability {
             return None;
         }
 
-        let registers = unsafe {
-            MSIXCapabilityRegisters::from_address(capability.address().as_u64() as usize)
-        };
+        let registers = unsafe { MSIXCapabilityRegisters::from_address(capability.address()) };
 
         Some(Self { registers })
     }
@@ -207,12 +205,12 @@ impl fmt::Debug for MSIXPendingBitArrayOffset {
 
 #[derive(Debug)]
 pub(crate) struct MSIXTable {
-    address: usize,
+    address: KernPhysAddr,
     table_size: u16,
 }
 
 impl MSIXTable {
-    pub(super) unsafe fn new(address: usize, table_size: u16) -> Self {
+    pub(super) unsafe fn new(address: KernPhysAddr, table_size: u16) -> Self {
         Self {
             address,
             table_size,

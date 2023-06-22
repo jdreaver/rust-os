@@ -26,7 +26,7 @@ register_struct!(
 
 impl PCIConfigDeviceID {
     pub(crate) unsafe fn new(location: PCIDeviceLocation) -> Self {
-        let address = location.device_base_address().as_u64() as usize;
+        let address = location.device_base_address();
         let registers = PCIConfigDeviceIDRegisters::from_address(address);
         Self { registers }
     }

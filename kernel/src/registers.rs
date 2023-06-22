@@ -1,10 +1,12 @@
 use core::fmt::Debug;
 use core::marker::PhantomData;
 
+use crate::memory::KernPhysAddr;
+
 /// Register mapped to some underlying memory address.
 #[derive(Clone, Copy)]
 pub struct RegisterRW<T> {
-    address: usize,
+    address: KernPhysAddr,
     _phantom: PhantomData<T>,
 }
 
@@ -13,7 +15,7 @@ impl<T> RegisterRW<T> {
     ///
     /// The caller must ensure that the address is a valid memory location for a
     /// register of size `T`.
-    pub unsafe fn from_address(address: usize) -> Self {
+    pub(crate) unsafe fn from_address(address: KernPhysAddr) -> Self {
         Self {
             address,
             _phantom: PhantomData,
@@ -21,20 +23,20 @@ impl<T> RegisterRW<T> {
     }
 
     /// Read from the register using `read_volatile`.
-    pub fn read(&self) -> T {
-        unsafe { core::ptr::read_volatile(self.address as *const T) }
+    pub(crate) fn read(&self) -> T {
+        unsafe { core::ptr::read_volatile(self.address.as_u64() as *const T) }
     }
 
     /// Write to the register using `write_volatile`.
-    pub fn write(&mut self, val: T) {
+    pub(crate) fn write(&mut self, val: T) {
         unsafe {
-            core::ptr::write_volatile(self.address as *mut T, val);
+            core::ptr::write_volatile(self.address.as_u64() as *mut T, val);
         }
     }
 
     /// Modify the value of the register by reading it, applying the given
     /// function, and writing the result back.
-    pub fn modify(&mut self, f: impl FnOnce(T) -> T) {
+    pub(crate) fn modify(&mut self, f: impl FnOnce(T) -> T) {
         let val = self.read();
         self.write(f(val));
     }
@@ -45,7 +47,7 @@ impl<T> RegisterRW<T> {
     /// This is a nicer API in case all you are doing is calling mutable
     /// functions on the value, because otherwise you would probably `clone()`
     /// the value, mutate it, and then return the value anyway.
-    pub fn modify_mut(&mut self, f: impl FnOnce(&mut T)) {
+    pub(crate) fn modify_mut(&mut self, f: impl FnOnce(&mut T)) {
         let mut val = self.read();
         f(&mut val);
         self.write(val);
@@ -60,8 +62,8 @@ impl<T: Debug> Debug for RegisterRW<T> {
 
 /// Read-only register mapped to some underlying memory address.
 #[derive(Clone, Copy)]
-pub struct RegisterRO<T> {
-    address: usize,
+pub(crate) struct RegisterRO<T> {
+    address: KernPhysAddr,
     _phantom: PhantomData<T>,
 }
 
@@ -70,7 +72,7 @@ impl<T> RegisterRO<T> {
     ///
     /// The caller must ensure that the address is a valid memory location for a
     /// register of size `T`.
-    pub unsafe fn from_address(address: usize) -> Self {
+    pub(crate) unsafe fn from_address(address: KernPhysAddr) -> Self {
         Self {
             address,
             _phantom: PhantomData,
@@ -78,8 +80,8 @@ impl<T> RegisterRO<T> {
     }
 
     /// Read from the register using `read_volatile`.
-    pub fn read(&self) -> T {
-        unsafe { core::ptr::read_volatile(self.address as *const T) }
+    pub(crate) fn read(&self) -> T {
+        unsafe { core::ptr::read_volatile(self.address.as_u64() as *const T) }
     }
 }
 
@@ -93,8 +95,8 @@ impl<T: Debug> Debug for RegisterRO<T> {
 /// register has a side effect, so we don't print the value in the `Debug`
 /// implementation.
 #[derive(Clone, Copy)]
-pub struct RegisterROSideEffect<T> {
-    address: usize,
+pub(crate) struct RegisterROSideEffect<T> {
+    address: KernPhysAddr,
     _phantom: PhantomData<T>,
 }
 
@@ -103,7 +105,7 @@ impl<T> RegisterROSideEffect<T> {
     ///
     /// The caller must ensure that the address is a valid memory location for a
     /// register of size `T`.
-    pub unsafe fn from_address(address: usize) -> Self {
+    pub(crate) unsafe fn from_address(address: KernPhysAddr) -> Self {
         Self {
             address,
             _phantom: PhantomData,
@@ -111,8 +113,8 @@ impl<T> RegisterROSideEffect<T> {
     }
 
     /// Read from the register using `read_volatile`.
-    pub fn read(&self) -> T {
-        unsafe { core::ptr::read_volatile(self.address as *const T) }
+    pub(crate) fn read(&self) -> T {
+        unsafe { core::ptr::read_volatile(self.address.as_u64() as *const T) }
     }
 }
 
@@ -129,8 +131,8 @@ impl<T: Debug> Debug for RegisterROSideEffect<T> {
 
 /// Write-only register mapped to some underlying memory address.
 #[derive(Clone, Copy)]
-pub struct RegisterWO<T> {
-    address: usize,
+pub(crate) struct RegisterWO<T> {
+    address: KernPhysAddr,
     _phantom: PhantomData<T>,
 }
 
@@ -139,7 +141,7 @@ impl<T> RegisterWO<T> {
     ///
     /// The caller must ensure that the address is a valid memory location for a
     /// register of size `T`.
-    pub unsafe fn from_address(address: usize) -> Self {
+    pub(crate) unsafe fn from_address(address: KernPhysAddr) -> Self {
         Self {
             address,
             _phantom: PhantomData,
@@ -147,9 +149,9 @@ impl<T> RegisterWO<T> {
     }
 
     /// Write to the register using `write_volatile`.
-    pub fn write(&mut self, val: T) {
+    pub(crate) fn write(&mut self, val: T) {
         unsafe {
-            core::ptr::write_volatile(self.address as *mut T, val);
+            core::ptr::write_volatile(self.address.as_u64() as *mut T, val);
         }
     }
 }
@@ -174,7 +176,7 @@ enum ValOrStr<T> {
 fn debug_fmt_register<T: Debug>(
     struct_name: &str,
     value: ValOrStr<T>,
-    address: usize,
+    address: KernPhysAddr,
     f: &mut core::fmt::Formatter<'_>,
 ) -> core::fmt::Result {
     // We don't print these as structs because they take up way too much space
@@ -186,7 +188,7 @@ fn debug_fmt_register<T: Debug>(
         ValOrStr::Str(s) => f.write_str(s)?,
     }
     f.write_str(" [")?;
-    (address as *const T).fmt(f)?;
+    (address.as_u64() as *const T).fmt(f)?;
     f.write_str("])")
 }
 
@@ -204,11 +206,11 @@ macro_rules! register_struct {
         $(#[$attr])*
         #[derive(Clone, Copy)]
         $vis struct $struct_name {
-            address: usize,
+            address: $crate::memory::KernPhysAddr,
         }
 
         impl $struct_name {
-            $vis unsafe fn from_address(address: usize) -> Self {
+            $vis unsafe fn from_address(address: $crate::memory::KernPhysAddr) -> Self {
                 Self { address }
             }
 
@@ -231,7 +233,7 @@ macro_rules! register_struct {
 
     (@register_method $vis:vis, $offset:expr, $name:ident, $register_type:ident, $(< $type:ty >)? ) => {
         $vis fn $name(&self) -> $register_type $(< $type >)? {
-            unsafe { $register_type::from_address(self.address + $offset) }
+            unsafe { $register_type::from_address(self.address + $offset as usize) }
         }
     };
 }
@@ -277,8 +279,8 @@ macro_rules! register_struct {
 /// Abstraction over a region of memory containing an array of `T`s, using
 /// volatile reads and writes under the hood.
 #[derive(Clone, Copy)]
-pub struct VolatileArrayRW<T> {
-    address: usize,
+pub(crate) struct VolatileArrayRW<T> {
+    address: KernPhysAddr,
     len: usize,
     _phantom: PhantomData<T>,
 }
@@ -288,7 +290,7 @@ impl<T> VolatileArrayRW<T> {
     ///
     /// The caller must ensure that the address is a valid memory location for a
     /// an array containing `size` `T`s.
-    pub unsafe fn new(address: usize, len: usize) -> Self {
+    pub(crate) unsafe fn new(address: KernPhysAddr, len: usize) -> Self {
         Self {
             address,
             len,
@@ -296,24 +298,24 @@ impl<T> VolatileArrayRW<T> {
         }
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.len
     }
 
     /// Read from the array at `index` using `read_volatile`.
-    pub fn read(&self, index: usize) -> T {
+    pub(crate) fn read(&self, index: usize) -> T {
         assert!(index < self.len, "VolatileArrayRW read index out of bounds");
-        let ptr = self.address as *const T;
+        let ptr = self.address.as_u64() as *const T;
         unsafe { core::ptr::read_volatile(ptr.add(index)) }
     }
 
     /// Write to the array at `index` using `write_volatile`.
-    pub fn write(&mut self, index: usize, val: T) {
+    pub(crate) fn write(&mut self, index: usize, val: T) {
         assert!(
             index < self.len,
             "VolatileArrayRW write index out of bounds"
         );
-        let ptr = self.address as *mut T;
+        let ptr = self.address.as_u64() as *mut T;
         unsafe {
             core::ptr::write_volatile(ptr.add(index), val);
         }
@@ -321,7 +323,7 @@ impl<T> VolatileArrayRW<T> {
 
     /// Modify the value of the array at `index` by reading it, applying the
     /// given function, and writing the result back.
-    pub fn modify(&mut self, index: usize, f: impl FnOnce(T) -> T) {
+    pub(crate) fn modify(&mut self, index: usize, f: impl FnOnce(T) -> T) {
         assert!(
             index < self.len,
             "VolatileArrayRW write index out of bounds"
@@ -337,7 +339,7 @@ impl<T> VolatileArrayRW<T> {
     /// This is a nicer API in case all you are doing is calling mutable
     /// functions on the value, because otherwise you would probably `clone()`
     /// the value, mutate it, and then return the value anyway.
-    pub fn modify_mut(&mut self, index: usize, f: impl FnOnce(&mut T)) {
+    pub(crate) fn modify_mut(&mut self, index: usize, f: impl FnOnce(&mut T)) {
         let mut val = self.read(index);
         f(&mut val);
         self.write(index, val);
@@ -346,7 +348,7 @@ impl<T> VolatileArrayRW<T> {
 
 impl<T: Debug> Debug for VolatileArrayRW<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let ptr = self.address as *const T;
+        let ptr = self.address.as_u64() as *const T;
         f.debug_struct("VolatileArrayRW")
             .field("address", &ptr)
             .field("size", &self.len)

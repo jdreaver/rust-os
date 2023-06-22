@@ -191,9 +191,7 @@ impl VirtIOBlockDevice {
         };
 
         let block_config = unsafe {
-            BlockConfigRegisters::from_address(
-                initialized_device.config.device_config_phys_addr().as_u64() as usize,
-            )
+            BlockConfigRegisters::from_address(initialized_device.config.device_config_phys_addr())
         };
 
         Self {

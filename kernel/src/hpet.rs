@@ -121,7 +121,7 @@ impl HPET {
     /// the HPET ACPI table.
     unsafe fn from_base_address(address: KernPhysAddr) -> Self {
         Self {
-            registers: HpetRegisters::from_address(address.as_u64() as usize),
+            registers: HpetRegisters::from_address(address),
         }
     }
 

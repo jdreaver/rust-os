@@ -244,7 +244,7 @@ impl VirtQueueDescriptorTable {
         // addresses.
         let buffer = PhysicalBuffer::allocate_zeroed(mem_size)?;
 
-        let descriptors = VolatileArrayRW::new(buffer.address().as_u64() as usize, queue_size);
+        let descriptors = VolatileArrayRW::new(buffer.address(), queue_size);
 
         Ok(Self {
             buffer,
@@ -426,7 +426,7 @@ impl VirtQueueAvailRing {
         let queue_size = queue_size as usize;
 
         // Compute sizes before we do allocations.
-        let flags_offset = 0;
+        let flags_offset = 0_u64;
         let idx_offset = mem::size_of::<VirtQueueAvailRingFlags>();
         let ring_offset = idx_offset + mem::size_of::<u16>();
         let ring_len = queue_size * mem::size_of::<u16>();
@@ -444,7 +444,7 @@ impl VirtQueueAvailRing {
         // addresses.
         let buffer = PhysicalBuffer::allocate_zeroed(struct_size)?;
 
-        let addr = buffer.address().as_u64() as usize;
+        let addr = buffer.address();
         let flags = RegisterRW::from_address(addr + flags_offset);
         let idx = RegisterRW::from_address(addr + idx_offset);
         let ring = VolatileArrayRW::new(addr + ring_offset, queue_size);
@@ -556,7 +556,7 @@ impl VirtQueueUsedRing {
         let queue_size = queue_size as usize;
 
         // Compute sizes before we do allocations.
-        let flags_offset = 0;
+        let flags_offset = 0_u64;
         let idx_offset = mem::size_of::<VirtQueueUsedRingFlags>();
         let ring_offset = idx_offset + mem::size_of::<u16>();
         let ring_len = queue_size * mem::size_of::<VirtQueueUsedElem>();
@@ -574,7 +574,7 @@ impl VirtQueueUsedRing {
         // addresses.
         let buffer = PhysicalBuffer::allocate_zeroed(struct_size)?;
 
-        let addr = buffer.address().as_u64() as usize;
+        let addr = buffer.address();
         let flags = RegisterRW::from_address(addr + flags_offset);
         let idx = RegisterRW::from_address(addr + idx_offset);
         let ring = VolatileArrayRW::new(addr + ring_offset, queue_size);

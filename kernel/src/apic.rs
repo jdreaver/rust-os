@@ -86,8 +86,7 @@ struct LocalAPIC {
 impl LocalAPIC {
     pub(crate) fn from_acpi_info(acpi_info: &ACPIInfo) -> Self {
         let lapic_address = acpi_info.lapic_address();
-        let registers =
-            unsafe { LocalAPICRegisters::from_address(lapic_address.as_u64() as usize) };
+        let registers = unsafe { LocalAPICRegisters::from_address(lapic_address) };
         Self { registers }
     }
 

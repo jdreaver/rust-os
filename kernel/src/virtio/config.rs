@@ -211,9 +211,7 @@ impl VirtIOPCICapabilityHeader {
 
         Some(Self {
             device_config_body,
-            registers: VirtIOPCICapabilityHeaderRegisters::from_address(
-                header.address().as_u64() as usize
-            ),
+            registers: VirtIOPCICapabilityHeaderRegisters::from_address(header.address()),
         })
     }
 
@@ -228,7 +226,7 @@ impl VirtIOPCICapabilityHeader {
         match self.config_type() {
             VirtIOPCIConfigType::Common => VirtIOConfig::Common(unsafe {
                 let config_addr = self.compute_and_map_config_address();
-                VirtIOPCICommonConfigRegisters::from_address(config_addr.as_u64() as usize)
+                VirtIOPCICommonConfigRegisters::from_address(config_addr)
             }),
             VirtIOPCIConfigType::Notify => VirtIOConfig::Notify({
                 let config_addr = self.compute_and_map_config_address();
@@ -237,7 +235,7 @@ impl VirtIOPCICapabilityHeader {
                 // configuration is in the capabilities struct and the notify
                 // offset multiplier is right after the capabilities struct.
                 let notify_off_ptr =
-                    (self.registers.address + VIRTIO_CAPABILITY_HEADER_SIZE) as *const u32;
+                    (self.registers.address + VIRTIO_CAPABILITY_HEADER_SIZE).as_u64() as *const u32;
                 let notify_off_multiplier = unsafe { *notify_off_ptr };
 
                 VirtIONotifyConfig {
@@ -247,7 +245,7 @@ impl VirtIOPCICapabilityHeader {
             }),
             VirtIOPCIConfigType::ISR => VirtIOConfig::ISR(unsafe {
                 let config_addr = self.compute_and_map_config_address();
-                VirtIOPCIISRRegisters::from_address(config_addr.as_u64() as usize)
+                VirtIOPCIISRRegisters::from_address(config_addr)
             }),
             VirtIOPCIConfigType::Device => {
                 VirtIOConfig::Device(self.compute_and_map_config_address())
