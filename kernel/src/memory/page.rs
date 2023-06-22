@@ -1,5 +1,5 @@
-use core::ops::Add;
-use core::ops::Sub;
+use core::fmt;
+use core::ops::{Add, Sub};
 
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -13,9 +13,12 @@ pub(crate) struct Page<A> {
     size: PageSize,
 }
 
-impl<A: Address> Page<A> {
+impl<A: Address + fmt::Debug> Page<A> {
     pub(crate) fn from_start_addr(start_addr: A, size: PageSize) -> Self {
-        assert!(start_addr.is_aligned(size.size_bytes() as u64));
+        assert!(
+            start_addr.is_aligned(size.size_bytes() as u64),
+            "start_addr {start_addr:x?} is not aligned to page size {size:?}"
+        );
         Self { start_addr, size }
     }
 
