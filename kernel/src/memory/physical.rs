@@ -7,7 +7,7 @@ use bitmap_alloc::{bootstrap_allocator, BitmapAllocator, MemoryRegion};
 use crate::sync::SpinLock;
 
 use super::address::KernPhysAddr;
-use super::page::{Page, PageRange};
+use super::page::{Page, PageRange, PageSize};
 
 /// Physical memory frame allocator used by all kernel contexts.
 pub(super) static KERNEL_PHYSICAL_ALLOCATOR: LockedPhysicalMemoryAllocator =
@@ -162,7 +162,11 @@ impl PhysicalMemoryAllocator<'_> {
         page_slice.fill(0);
 
         let end_addr = start_addr + (num_pages * PAGE_SIZE);
-        Ok(PageRange::exclusive(start_addr, end_addr))
+        Ok(PageRange::exclusive(
+            start_addr,
+            end_addr,
+            PageSize::Size4KiB,
+        ))
     }
 
     pub(super) fn free_pages(&mut self, pages: &PageRange<KernPhysAddr>) {

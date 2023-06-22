@@ -107,8 +107,7 @@ make test
     - maybe some expected failures to ensure we call panic handler?
 - Memory management
   - `Page` type improvements
-    - Perhaps `PageRange` should have `start_page: Page<A>` and `end_page_exclusive` instead of deal with addresses.
-      - Also have `PageRange` accept a size argument, or use the start/end page sizes.
+    - Perhaps `PageRange` should have `start_page: Page<A>` and `num_pages` instead of deal with addresses.
     - Make typed page sizes like the x86_64 crate does
   - Add support for huge pages in `map_to`
   - New allocator is slower. Heap used to initialize in milliseconds, and now takes almost a second

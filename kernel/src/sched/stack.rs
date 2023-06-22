@@ -122,7 +122,7 @@ impl KernelStack {
     fn physically_mapped_pages(&self) -> PageRange<VirtAddr> {
         let start_addr = self.start_addr + PAGE_SIZE;
         let end_addr = self.start_addr + KERNEL_STACK_SIZE_BYTES;
-        PageRange::exclusive(start_addr, end_addr)
+        PageRange::exclusive(start_addr, end_addr, PageSize::Size4KiB)
     }
 }
 

@@ -42,19 +42,18 @@ impl Page<VirtAddr> {
 
 #[derive(Debug)]
 pub(crate) struct PageRange<A> {
-    // TODO: This should be start_page: Page<A>, not start_addr
     start_addr: A,
-    page_size: PageSize,
     end_addr_exclusive: A,
+    page_size: PageSize,
 }
 
 impl<A: Address> PageRange<A> {
-    pub(crate) fn exclusive(start: A, end: A) -> Self {
+    pub(crate) fn exclusive(start: A, end: A, page_size: PageSize) -> Self {
         let start_addr = start.align_down(PAGE_SIZE as u64);
         Self {
             start_addr,
-            page_size: PageSize::Size4KiB,
             end_addr_exclusive: end,
+            page_size,
         }
     }
 
