@@ -135,15 +135,15 @@ impl PhysicalMemoryAllocator<'_> {
 }
 
 impl PhysicalMemoryAllocator<'_> {
-    pub(super) fn allocate_zeroed_page(&mut self) -> Result<Page<KernPhysAddr>, AllocError> {
-        let pages = self.allocate_zeroed_pages(1)?;
+    pub(super) fn allocate_page(&mut self) -> Result<Page<KernPhysAddr>, AllocError> {
+        let pages = self.allocate_pages(1)?;
         let mut pages = pages.iter();
         let page = pages.next().expect("somehow we got less than one page!");
         assert!(pages.next().is_none(), "somehow we got more than one page!");
         Ok(page)
     }
 
-    pub(super) fn allocate_zeroed_pages(
+    pub(super) fn allocate_pages(
         &mut self,
         num_pages: usize,
     ) -> Result<PageRange<KernPhysAddr>, AllocError> {
@@ -156,14 +156,6 @@ impl PhysicalMemoryAllocator<'_> {
 
         let phys_addr = PhysAddr::new((page * PAGE_SIZE) as u64);
         let start_addr = KernPhysAddr::from(phys_addr);
-        unsafe {
-            // N.B. `write_bytes` is a highly optimized way to write zeroes.
-            // Making a slice and doing `slice.fill(0)` is supposed to optimize
-            // to this, but it doesn't seem to when compiling in debug mode and
-            // it makes page table allocation very slow.
-            start_addr.as_mut_ptr::<u8>().write_bytes(0, num_pages * PAGE_SIZE);
-        };
-
         let start_page = Page::from_start_addr(start_addr, PageSize::Size4KiB);
         Ok(PageRange::new(start_page, num_pages))
     }
@@ -189,8 +181,9 @@ pub(crate) struct PhysicalBuffer {
 
 impl PhysicalBuffer {
     pub(crate) fn allocate_zeroed_pages(num_pages: usize) -> Result<Self, AllocError> {
-        let pages = KERNEL_PHYSICAL_ALLOCATOR
-            .with_lock(|allocator| allocator.allocate_zeroed_pages(num_pages))?;
+        let mut pages =
+            KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| allocator.allocate_pages(num_pages))?;
+        pages.zero();
         Ok(Self { pages })
     }
 

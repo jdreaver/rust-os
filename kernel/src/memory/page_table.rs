@@ -205,7 +205,7 @@ impl MapTarget {
                     target_page_size.size_bytes() == PAGE_SIZE,
                     "ERROR: page size must be {PAGE_SIZE} bytes. TODO: support larger pages (and handle alignment requirements!)",
                 );
-                let target_page = allocator.allocate_zeroed_page()?;
+                let target_page = allocator.allocate_page()?;
                 Ok(target_page)
             }
         }
@@ -344,10 +344,16 @@ impl PageTableEntry {
         allocator: &mut PhysicalMemoryAllocator,
         flags: PageTableEntryFlags,
     ) -> Result<&mut PageTable, AllocError> {
-        let new_table_page = allocator.allocate_zeroed_page()?;
+        // Allocate a new zeroed paged to hold the child page table
+        let mut new_table_page = allocator.allocate_page()?;
+        new_table_page.zero();
+
+        // Tell the current entry to point to the new child
         let new_table_addr = new_table_page.start_addr();
         self.set_address(PhysAddr::from(new_table_addr));
         self.set_flags(flags | PageTableEntryFlags::PRESENT);
+
+        // Return the child table we just created
         Ok(unsafe { &mut *(new_table_addr.as_mut_ptr::<PageTable>()) })
     }
 }

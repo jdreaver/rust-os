@@ -33,6 +33,20 @@ impl<A: Address> Page<A> {
     }
 }
 
+impl<A: AsMutPtr + Copy> Page<A> {
+    pub(crate) fn zero(&mut self) {
+        let start_ptr = self.start_addr.as_mut_ptr::<u8>();
+        let size_bytes = self.size.size_bytes();
+        unsafe {
+            // N.B. `write_bytes` is a highly optimized way to write zeroes.
+            // Making a slice and doing `slice.fill(0)` is supposed to optimize
+            // to this, but it doesn't seem to when compiling in debug mode and
+            // it makes page table allocation very slow.
+            start_ptr.write_bytes(0, size_bytes);
+        }
+    }
+}
+
 impl Page<VirtAddr> {
     pub(crate) fn flush(&self) {
         x86_64::instructions::tlb::flush(self.start_addr);
@@ -71,6 +85,20 @@ impl<A: Address> PageRange<A> {
         PageRangeIter {
             range: self,
             current_page: 0,
+        }
+    }
+}
+
+impl<A: AsMutPtr + Copy> PageRange<A> {
+    pub(crate) fn zero(&mut self) {
+        let start_ptr = self.start.start_addr.as_mut_ptr::<u8>();
+        let size_bytes = self.num_pages * self.start.size.size_bytes();
+        unsafe {
+            // N.B. `write_bytes` is a highly optimized way to write zeroes.
+            // Making a slice and doing `slice.fill(0)` is supposed to optimize
+            // to this, but it doesn't seem to when compiling in debug mode and
+            // it makes page table allocation very slow.
+            start_ptr.write_bytes(0, size_bytes);
         }
     }
 }
@@ -158,5 +186,22 @@ impl Address for KernPhysAddr {
 
     fn align_down(self, align: u64) -> Self {
         self.align_down(align)
+    }
+}
+
+pub(crate) trait AsMutPtr {
+    #[allow(clippy::wrong_self_convention)]
+    fn as_mut_ptr<T>(self) -> *mut T;
+}
+
+impl AsMutPtr for VirtAddr {
+    fn as_mut_ptr<T>(self) -> *mut T {
+        Self::as_mut_ptr(self)
+    }
+}
+
+impl AsMutPtr for KernPhysAddr {
+    fn as_mut_ptr<T>(self) -> *mut T {
+        Self::as_mut_ptr(self)
     }
 }

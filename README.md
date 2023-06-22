@@ -110,12 +110,13 @@ make test
     - Make typed page sizes like the x86_64 crate does
   - Add support for huge pages in `map_to`
   - Consider using some code in `test-x86-paging-performance` branch to simplify logic. I like some of it. <https://github.com/jdreaver/rust-os/compare/master...test-x86-paging-performance>
-  - Test not zeroing leaf pages by default when allocating. (It is important to zero out intermediate tables that are created, but not the leaf pages).
   - Abandon the default limine memory mapping and make our own
     - Make sure to copy the pages relating to how the kernel is loaded though. Limine did all the hard work parsing the ELF file and set page permissions properly (or so I hope) for e.g. text, data, etc
   - Map all physical memory starting at `0xffff_8000_0000_0000`. Limine just does 4 GiB, but make sure to do it all.
   - Deal with freeing buffers used for mapping. We can't blindly deallocate every time we unmap because some mapping targets are device MMIO.
+    - We _do_ want to free intermediate page tables, just not necessarily leaf pages.
     - Perhaps don't allow the `NewPhysPage` mapping target. Or, make sure the caller uses the `PhysPage` result.
+    - We could add `unmap_and_free`. Internally under the hood it is just a boolean whether or not to free leaf pages.
     - The kernel stack allocator actually has a bug where it doesn't free its allocated physical memory pages! It is only "freeing" the virtual pages.
   - Make our own `PhysAddr` and don't allow it to be converted to a pointer via `as_ptr()` (the x86_64 one doesn't have this btw)
   - Consider removing `as_u64` for all address types, because it makes mistakes too easy.
