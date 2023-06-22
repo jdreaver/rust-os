@@ -58,14 +58,14 @@ pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
 
     // Map two of these pages to be safe
     for i in 0..=1 {
-        let instruction_ptr_virt_page = Page {
-            start_addr: instruction_ptr_page_start + i * PageSize::Size4KiB.size_bytes(),
-            size: PageSize::Size4KiB,
-        };
-        let instruction_ptr_phys_page = Page {
-            start_addr: instruction_ptr_phys_page.start_addr + i * PageSize::Size4KiB.size_bytes(),
-            size: PageSize::Size4KiB,
-        };
+        let instruction_ptr_virt_page = Page::from_start_addr(
+            instruction_ptr_page_start + i * PageSize::Size4KiB.size_bytes(),
+            PageSize::Size4KiB,
+        );
+        let instruction_ptr_phys_page = Page::from_start_addr(
+            instruction_ptr_phys_page.start_addr() + i * PageSize::Size4KiB.size_bytes(),
+            PageSize::Size4KiB,
+        );
         let flags = PageTableEntryFlags::PRESENT
             | PageTableEntryFlags::WRITABLE
             | PageTableEntryFlags::USER_ACCESSIBLE;
@@ -83,10 +83,7 @@ pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
     };
     let stack_ptr_phys = stack_mapping.address();
     let stack_ptr_page_start = VirtAddr::new(0x2_1000_0000);
-    let stack_ptr_virt_page = Page {
-        start_addr: stack_ptr_page_start,
-        size: PageSize::Size4KiB,
-    };
+    let stack_ptr_virt_page = Page::from_start_addr(stack_ptr_page_start, PageSize::Size4KiB);
     let stack_ptr_phys_page = Page::containing_address(stack_ptr_phys, PageSize::Size4KiB);
     let flags = PageTableEntryFlags::PRESENT
         | PageTableEntryFlags::WRITABLE

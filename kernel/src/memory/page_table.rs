@@ -45,7 +45,7 @@ impl Level4PageTable {
             match target {
                 PageTableTarget::Unmapped => return TranslateResult::Unmapped,
                 PageTableTarget::Page { page, flags } => {
-                    let offset = addr.as_u64() % page.size.size_bytes() as u64;
+                    let offset = addr.as_u64() % page.size().size_bytes() as u64;
                     return TranslateResult::Mapped(AddressPageMapping {
                         page,
                         flags,
@@ -76,7 +76,7 @@ impl Level4PageTable {
                 | PageTableEntryFlags::USER_ACCESSIBLE);
 
         loop {
-            let entry = current_table.address_entry_mut(current_level, page.start_addr);
+            let entry = current_table.address_entry_mut(current_level, page.start_addr());
             let (entry, target) = entry.target_mut(current_level);
             match target {
                 PageTableTarget::Unmapped => {
@@ -86,10 +86,10 @@ impl Level4PageTable {
                             //
                             // TODO: Check target page size instead of saying lowest level
                             // == make a page.
-                            let target_page = map_target.get_target_page(allocator, page.size)?;
+                            let target_page = map_target.get_target_page(allocator, page.size())?;
                             entry.set_target_page(&target_page, flags);
                             // Need to flush the TLB here
-                            x86_64::instructions::tlb::flush(page.start_addr);
+                            page.flush();
                             return Ok(target_page);
                         }
                         Some(next_level) => {
@@ -123,7 +123,7 @@ impl Level4PageTable {
         let mut current_level = PageTableLevel::Level4;
 
         loop {
-            let entry = current_table.address_entry_mut(current_level, page.start_addr);
+            let entry = current_table.address_entry_mut(current_level, page.start_addr());
             let (entry, target) = entry.target_mut(current_level);
             match target {
                 PageTableTarget::Unmapped => return Err(UnmapError::PageNotMapped),
@@ -131,14 +131,14 @@ impl Level4PageTable {
                     page: target_page,
                     flags: _,
                 } => {
-                    if target_page.size != page.size {
+                    if target_page.size() != page.size() {
                         return Err(UnmapError::PageWrongSize {
-                            expected_size: page.size,
-                            actual_size: target_page.size,
+                            expected_size: page.size(),
+                            actual_size: target_page.size(),
                         });
                     }
                     entry.clear();
-                    x86_64::instructions::tlb::flush(page.start_addr);
+                    page.flush();
 
                     // TODO: Free the buffer used for this page, if necessary.
                     // We might need to keep track of if a page was allocated or
@@ -172,7 +172,7 @@ pub(crate) struct AddressPageMapping {
 
 impl AddressPageMapping {
     pub(crate) fn address(&self) -> KernPhysAddr {
-        self.page.start_addr + self.offset
+        self.page.start_addr() + self.offset
     }
 }
 
@@ -194,7 +194,7 @@ impl MapTarget {
         match self {
             Self::ExistingPhysPage(page) => {
                 assert!(
-                    page.size == target_page_size,
+                    page.size() == target_page_size,
                     "ERROR: {page:?} was expected to have size {target_page_size:?}",
                 );
 
@@ -208,10 +208,7 @@ impl MapTarget {
                 let target_page = allocator.allocate_zeroed_pages(1)?;
                 let target_page_addr = target_page * PAGE_SIZE;
                 let start_addr = KernPhysAddr::from(PhysAddr::new(target_page_addr as u64));
-                Ok(Page {
-                    start_addr,
-                    size: target_page_size,
-                })
+                Ok(Page::from_start_addr(start_addr, target_page_size))
             }
         }
     }
@@ -318,20 +315,14 @@ impl PageTableEntry {
                 }
             };
             return PageTableTarget::Page {
-                page: Page {
-                    start_addr: self.address(),
-                    size: page_size,
-                },
+                page: Page::from_start_addr(self.address(), page_size),
                 flags,
             };
         }
 
         level.next_lower_level().map_or_else(
             || PageTableTarget::Page {
-                page: Page {
-                    start_addr: self.address(),
-                    size: PageSize::Size4KiB,
-                },
+                page: Page::from_start_addr(self.address(), PageSize::Size4KiB),
                 flags,
             },
             |level| {
@@ -346,7 +337,7 @@ impl PageTableEntry {
     }
 
     fn set_target_page(&mut self, page: &Page<KernPhysAddr>, flags: PageTableEntryFlags) {
-        self.set_address(PhysAddr::from(page.start_addr));
+        self.set_address(PhysAddr::from(page.start_addr()));
         self.set_flags(flags | PageTableEntryFlags::PRESENT);
     }
 

@@ -108,7 +108,6 @@ make test
 - Memory management
   - `Page` type improvements
     - Make typed page sizes like the x86_64 crate does
-    - Make `PageRange` not `Iterator`, make it a concrete thing.
     - Use `PageRange` in `PhysicalBuffer` Don't do so much unnecessary address <-> page conversions w/ assertions that addresses are aligned. This happens a lot in kernel stack code.
     - Use `PageRange` in `PhysicalBuffer` (fixes: Don't use `usize` so casually in `physical.rs`. Have a `PageNumber` newtype or something.)
   - Add support for huge pages in `map_to`

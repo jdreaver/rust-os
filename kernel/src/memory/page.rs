@@ -10,14 +10,33 @@ use super::physical::PAGE_SIZE;
 /// `PhysAddr`, etc).
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Page<A> {
-    pub(crate) start_addr: A,
-    pub(crate) size: PageSize,
+    start_addr: A,
+    size: PageSize,
 }
 
 impl<A: Address> Page<A> {
+    pub(crate) fn from_start_addr(start_addr: A, size: PageSize) -> Self {
+        assert!(start_addr.is_aligned(size.size_bytes() as u64));
+        Self { start_addr, size }
+    }
+
     pub(crate) fn containing_address(addr: A, size: PageSize) -> Self {
         let start_addr = addr.align_down(size.size_bytes() as u64);
         Self { start_addr, size }
+    }
+
+    pub(crate) fn start_addr(&self) -> A {
+        self.start_addr
+    }
+
+    pub(crate) fn size(&self) -> PageSize {
+        self.size
+    }
+}
+
+impl Page<VirtAddr> {
+    pub(crate) fn flush(&self) {
+        x86_64::instructions::tlb::flush(self.start_addr);
     }
 }
 
@@ -90,9 +109,13 @@ impl PageSize {
 
 /// The `Address` trait abstracts over different address types.
 pub(crate) trait Address:
-    Copy + Sized + PartialOrd + Add<usize, Output = Self> + Sub<usize, Output = Self>
+    Copy + Sized + PartialOrd + PartialEq + Eq + Add<usize, Output = Self> + Sub<usize, Output = Self>
 {
     fn align_down(self, align: u64) -> Self;
+
+    fn is_aligned(self, align: u64) -> bool {
+        self.align_down(align) == self
+    }
 }
 
 impl Address for VirtAddr {

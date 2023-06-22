@@ -136,10 +136,8 @@ pub(crate) fn identity_map_physical_pages(
 
     KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
         for phys_page in phys_pages {
-            let virt_page = Page {
-                start_addr: VirtAddr::new(phys_page.start_addr.as_u64()),
-                size: phys_page.size,
-            };
+            let virt_addr = VirtAddr::from(phys_page.start_addr());
+            let virt_page = Page::from_start_addr(virt_addr, phys_page.size());
             let result = table.map_to(
                 allocator,
                 virt_page,
@@ -175,14 +173,11 @@ pub(crate) fn test_new_page_table() {
     let target = table.translate_address(target_addr);
     serial_println!("Target of {target_addr:x?}: {target:x?}");
 
-    let map_virt = Page {
-        start_addr: VirtAddr::new(0x4_0000_0000),
-        size: PageSize::Size4KiB,
-    };
-    let map_phys = Page {
-        start_addr: KernPhysAddr::from(PhysAddr::new(0x1_0000_0000)),
-        size: PageSize::Size4KiB,
-    };
+    let map_virt = Page::from_start_addr(VirtAddr::new(0x4_0000_0000), PageSize::Size4KiB);
+    let map_phys = Page::from_start_addr(
+        KernPhysAddr::from(PhysAddr::new(0x1_0000_0000)),
+        PageSize::Size4KiB,
+    );
 
     let result = KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
         table.map_to(
@@ -195,16 +190,13 @@ pub(crate) fn test_new_page_table() {
 
     serial_println!("Mapping {map_virt:?} to {map_phys:?}, result: {:?}", result);
 
-    let target = table.translate_address(map_virt.start_addr);
+    let target = table.translate_address(map_virt.start_addr());
     serial_println!("Target of {target_addr:x?}: {target:x?}");
 
     let unmap_result = table.unmap(map_virt);
     serial_println!("Unmap result: {:?}", unmap_result);
 
-    let map_virt = Page {
-        start_addr: VirtAddr::new(0x4_0001_0000),
-        size: PageSize::Size4KiB,
-    };
+    let map_virt = Page::from_start_addr(VirtAddr::new(0x4_0001_0000), PageSize::Size4KiB);
     let result = KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
         table.map_to(
             allocator,
@@ -216,7 +208,7 @@ pub(crate) fn test_new_page_table() {
 
     serial_println!("Mapped {map_virt:?}, result: {:?}", result);
 
-    let target = table.translate_address(map_virt.start_addr);
+    let target = table.translate_address(map_virt.start_addr());
     serial_println!("Target of {target_addr:x?}: {target:x?}");
 
     let unmap_result = table.unmap(map_virt);

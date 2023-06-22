@@ -116,10 +116,7 @@ impl KernelStack {
 
     fn guard_page(&self) -> Page<VirtAddr> {
         assert!(self.start_addr.as_u64() % PAGE_SIZE as u64 == 0);
-        Page {
-            start_addr: self.start_addr,
-            size: PageSize::Size4KiB,
-        }
+        Page::from_start_addr(self.start_addr, PageSize::Size4KiB)
     }
 
     fn physically_mapped_pages(&self) -> PageRange<VirtAddr> {
