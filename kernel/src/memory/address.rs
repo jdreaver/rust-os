@@ -40,6 +40,14 @@ impl KernPhysAddr {
     pub(crate) fn align_down(self, align: u64) -> Self {
         Self(x86_64::align_down(self.0, align))
     }
+
+    pub(crate) fn as_ptr<T>(self) -> *const T {
+        self.as_u64() as *const T
+    }
+
+    pub(crate) fn as_mut_ptr<T>(self) -> *mut T {
+        self.as_ptr::<T>() as *mut T
+    }
 }
 
 impl From<KernPhysAddr> for VirtAddr {

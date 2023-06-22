@@ -9,7 +9,7 @@ use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 use crate::apic::ProcessorID;
 use crate::interrupts::{InterruptHandlerID, InterruptVector};
-use crate::memory::PhysicalBuffer;
+use crate::memory::{KernPhysAddr, PhysicalBuffer};
 use crate::registers::RegisterRO;
 use crate::sync::{once_channel, OnceReceiver, OnceSender, SpinLock};
 use crate::transmute::try_write_bytes_offset;
@@ -124,7 +124,7 @@ fn virtio_block_interrupt(_vector: InterruptVector, handler_id: InterruptHandler
             BlockRequest::Read { .. } => {
                 let bytes = unsafe {
                     core::slice::from_raw_parts(
-                        buffer.address().as_u64() as *const u8,
+                        buffer.address().as_ptr::<u8>(),
                         raw_request.data_len as usize,
                     )
                 };
@@ -140,7 +140,7 @@ fn virtio_block_interrupt(_vector: InterruptVector, handler_id: InterruptHandler
                     // size of the buffer size (if the string size == buffer size, there
                     // is no null terminator)
                     strings::c_str_from_pointer(
-                        buffer.address().as_u64() as *const u8,
+                        buffer.address().as_ptr::<u8>(),
                         raw_request.data_len as usize,
                     )
                 };
@@ -470,14 +470,16 @@ impl RawBlockRequest {
         assert!(chain.next().is_none(), "too many descriptors");
 
         assert!(header_desc.len == mem::size_of::<RawBlockRequestHeader>() as u32);
-        let header_ptr = header_desc.addr.as_u64() as *const RawBlockRequestHeader;
+        let header_addr = KernPhysAddr::from(header_desc.addr);
+        let header_ptr = header_addr.as_ptr::<RawBlockRequestHeader>();
         let header = unsafe { header_ptr.read_volatile() };
 
         let request_type = BlockRequestType::from_u32(header.request_type)
             .expect("invalid request type in header");
 
         assert!(status_desc.len == 1);
-        let status_ptr = status_desc.addr.as_u64() as *const u8;
+        let status_addr = KernPhysAddr::from(status_desc.addr);
+        let status_ptr = status_addr.as_ptr::<u8>();
         let raw_status = unsafe { status_ptr.read_volatile() };
         let status =
             BlockRequestStatus::from_u8(raw_status).expect("invalid status in status descriptor");

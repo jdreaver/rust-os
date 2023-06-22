@@ -66,9 +66,7 @@ impl KernelSymbolMapFile {
     }
 
     fn as_str(&self) -> &'static str {
-        unsafe {
-            strings::c_str_from_pointer(self.address.as_u64() as *const u8, self.length as usize)
-        }
+        unsafe { strings::c_str_from_pointer(self.address.as_ptr::<u8>(), self.length as usize) }
     }
 }
 

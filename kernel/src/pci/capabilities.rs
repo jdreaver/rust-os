@@ -327,13 +327,13 @@ pub(crate) struct MSIXVectorControl {
 #[allow(dead_code)]
 #[derive(Debug)]
 pub(super) struct MSIXPBA {
-    address: usize,
+    address: KernPhysAddr,
     pba_size: u16,
 }
 
 #[allow(dead_code)]
 impl MSIXPBA {
-    pub(super) unsafe fn new(address: usize, pba_size: u16) -> Self {
+    pub(super) unsafe fn new(address: KernPhysAddr, pba_size: u16) -> Self {
         Self { address, pba_size }
     }
 
@@ -347,7 +347,7 @@ impl MSIXPBA {
         }
 
         let entry_address = self.address + (index * 16);
-        let ptr = entry_address as *const u64;
+        let ptr = entry_address.as_ptr::<u64>();
         Some(unsafe { ptr.read_volatile() })
     }
 }

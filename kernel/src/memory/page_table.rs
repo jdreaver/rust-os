@@ -269,8 +269,9 @@ impl PageTableEntry {
         self.0 |= flags.bits();
     }
 
-    fn address(self) -> PhysAddr {
-        PhysAddr::new(self.0 & 0x000f_ffff_ffff_f000)
+    fn address(self) -> KernPhysAddr {
+        let phys = PhysAddr::new(self.0 & 0x000f_ffff_ffff_f000);
+        KernPhysAddr::from(phys)
     }
 
     fn set_address(&mut self, addr: PhysAddr) {
@@ -283,9 +284,7 @@ impl PageTableEntry {
     }
 
     fn target(&self, level: PageTableLevel) -> PageTableTarget<&PageTable> {
-        self.target_inner(level, |addr| unsafe {
-            &*(addr.as_u64() as *const PageTable)
-        })
+        self.target_inner(level, |addr| unsafe { &*(addr.as_ptr::<PageTable>()) })
     }
 
     fn target_mut(
@@ -293,14 +292,14 @@ impl PageTableEntry {
         level: PageTableLevel,
     ) -> (&mut Self, PageTableTarget<&mut PageTable>) {
         let target = self.target_inner(level, |addr| unsafe {
-            &mut *(addr.as_u64() as *mut PageTable)
+            &mut *(addr.as_mut_ptr::<PageTable>())
         });
         (self, target)
     }
 
     fn target_inner<T, F>(self, level: PageTableLevel, load_table: F) -> PageTableTarget<T>
     where
-        F: Fn(PhysAddr) -> T,
+        F: Fn(KernPhysAddr) -> T,
     {
         if !self.is_present() {
             return PageTableTarget::Unmapped;
@@ -320,7 +319,7 @@ impl PageTableEntry {
             };
             return PageTableTarget::Page {
                 page: Page {
-                    start_addr: KernPhysAddr::from(self.address()),
+                    start_addr: self.address(),
                     size: page_size,
                 },
                 flags,
@@ -330,7 +329,7 @@ impl PageTableEntry {
         level.next_lower_level().map_or_else(
             || PageTableTarget::Page {
                 page: Page {
-                    start_addr: KernPhysAddr::from(self.address()),
+                    start_addr: self.address(),
                     size: PageSize::Size4KiB,
                 },
                 flags,

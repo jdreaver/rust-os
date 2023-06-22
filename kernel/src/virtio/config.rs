@@ -235,7 +235,7 @@ impl VirtIOPCICapabilityHeader {
                 // configuration is in the capabilities struct and the notify
                 // offset multiplier is right after the capabilities struct.
                 let notify_off_ptr =
-                    (self.registers.address + VIRTIO_CAPABILITY_HEADER_SIZE).as_u64() as *const u32;
+                    (self.registers.address + VIRTIO_CAPABILITY_HEADER_SIZE).as_ptr::<u32>();
                 let notify_off_multiplier = unsafe { *notify_off_ptr };
 
                 VirtIONotifyConfig {
@@ -451,7 +451,7 @@ impl VirtIONotifyConfig {
         // an available buffer notification to the device by writing the 16-bit
         // virtqueue index of this virtqueue to the Queue Notify address.
         let notify_addr = self.queue_notify_address(queue_notify_offset);
-        let notify_ptr = notify_addr.as_u64() as *mut VirtQueueIndex;
+        let notify_ptr = notify_addr.as_mut_ptr::<VirtQueueIndex>();
         unsafe {
             notify_ptr.write_volatile(queue_index);
         }

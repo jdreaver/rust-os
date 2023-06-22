@@ -24,13 +24,13 @@ impl<T> RegisterRW<T> {
 
     /// Read from the register using `read_volatile`.
     pub(crate) fn read(&self) -> T {
-        unsafe { core::ptr::read_volatile(self.address.as_u64() as *const T) }
+        unsafe { core::ptr::read_volatile(self.address.as_ptr::<T>()) }
     }
 
     /// Write to the register using `write_volatile`.
     pub(crate) fn write(&mut self, val: T) {
         unsafe {
-            core::ptr::write_volatile(self.address.as_u64() as *mut T, val);
+            core::ptr::write_volatile(self.address.as_mut_ptr::<T>(), val);
         }
     }
 
@@ -81,7 +81,7 @@ impl<T> RegisterRO<T> {
 
     /// Read from the register using `read_volatile`.
     pub(crate) fn read(&self) -> T {
-        unsafe { core::ptr::read_volatile(self.address.as_u64() as *const T) }
+        unsafe { core::ptr::read_volatile(self.address.as_ptr::<T>()) }
     }
 }
 
@@ -114,7 +114,7 @@ impl<T> RegisterROSideEffect<T> {
 
     /// Read from the register using `read_volatile`.
     pub(crate) fn read(&self) -> T {
-        unsafe { core::ptr::read_volatile(self.address.as_u64() as *const T) }
+        unsafe { core::ptr::read_volatile(self.address.as_ptr::<T>()) }
     }
 }
 
@@ -151,7 +151,7 @@ impl<T> RegisterWO<T> {
     /// Write to the register using `write_volatile`.
     pub(crate) fn write(&mut self, val: T) {
         unsafe {
-            core::ptr::write_volatile(self.address.as_u64() as *mut T, val);
+            core::ptr::write_volatile(self.address.as_mut_ptr::<T>(), val);
         }
     }
 }
@@ -188,7 +188,7 @@ fn debug_fmt_register<T: Debug>(
         ValOrStr::Str(s) => f.write_str(s)?,
     }
     f.write_str(" [")?;
-    (address.as_u64() as *const T).fmt(f)?;
+    (address.as_ptr::<T>()).fmt(f)?;
     f.write_str("])")
 }
 
@@ -305,7 +305,7 @@ impl<T> VolatileArrayRW<T> {
     /// Read from the array at `index` using `read_volatile`.
     pub(crate) fn read(&self, index: usize) -> T {
         assert!(index < self.len, "VolatileArrayRW read index out of bounds");
-        let ptr = self.address.as_u64() as *const T;
+        let ptr = self.address.as_ptr::<T>();
         unsafe { core::ptr::read_volatile(ptr.add(index)) }
     }
 
@@ -315,7 +315,7 @@ impl<T> VolatileArrayRW<T> {
             index < self.len,
             "VolatileArrayRW write index out of bounds"
         );
-        let ptr = self.address.as_u64() as *mut T;
+        let ptr = self.address.as_mut_ptr::<T>();
         unsafe {
             core::ptr::write_volatile(ptr.add(index), val);
         }
@@ -348,7 +348,7 @@ impl<T> VolatileArrayRW<T> {
 
 impl<T: Debug> Debug for VolatileArrayRW<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let ptr = self.address.as_u64() as *const T;
+        let ptr = self.address.as_ptr::<T>();
         f.debug_struct("VolatileArrayRW")
             .field("address", &ptr)
             .field("size", &self.len)

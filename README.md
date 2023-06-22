@@ -119,7 +119,7 @@ make test
     - Perhaps don't allow the `NewPhysPage` mapping target. Or, make sure the caller uses the `PhysPage` result.
     - The kernel stack allocator actually has a bug where it doesn't free its allocated physical memory pages! It is only "freeing" the virtual pages.
   - Don't do so much unnecessary address <-> page conversions w/ assertions that addresses are aligned. This happens a lot in kernel stack code.
-  - Make our own `PhysAddr` and don't allow it to be converted to a pointer via `as_ptr()`
+  - Make our own `PhysAddr` and don't allow it to be converted to a pointer via `as_ptr()` (the x86_64 one doesn't have this btw)
   - Consider removing `as_u64` for all address types, because it makes mistakes too easy.
   - Guard pages: consider using one of the special OS-available bits on pages for `GUARD_PAGE`, in case that could simplify our guard page detection logic in the page fault handler. Using these OS-available bits in general to identify the type of page is probably going to be useful.
     - This will require not simply "unmapping" a page for the guard page, but to add some sort of "unmap with flags", or mapping "to" physical address 0 with flags (this is what we used to do)

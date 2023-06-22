@@ -531,7 +531,7 @@ impl MSIXConfig {
             pba_offset,
             pba_region_size as u64,
         );
-        let pba = unsafe { MSIXPBA::new(pba_address.as_u64() as usize, table_size) };
+        let pba = unsafe { MSIXPBA::new(pba_address, table_size) };
         Self {
             capability,
             table,

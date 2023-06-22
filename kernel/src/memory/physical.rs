@@ -126,7 +126,7 @@ impl PhysicalMemoryAllocator<'_> {
                 // Make sure to use a kernel physical address pointer
                 let phys_addr = PhysAddr::new(bitmap_addr as u64);
                 let kern_phys_addr = KernPhysAddr::from_phys_addr(phys_addr);
-                let ptr = kern_phys_addr.as_u64() as *mut u64;
+                let ptr = kern_phys_addr.as_mut_ptr::<u64>();
                 core::slice::from_raw_parts_mut(ptr, bitmap_len)
             });
         Self { allocator }
@@ -178,7 +178,7 @@ impl PhysicalBuffer {
     }
 
     pub(crate) fn as_slice_mut(&mut self) -> &mut [u8] {
-        let ptr = self.address().as_u64() as *mut u8;
+        let ptr = self.address().as_mut_ptr::<u8>();
         unsafe { core::slice::from_raw_parts_mut(ptr, self.len_bytes()) }
     }
 

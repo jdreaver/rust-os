@@ -4,7 +4,7 @@ use x86_64::PhysAddr;
 
 use crate::apic::ProcessorID;
 use crate::interrupts::{InterruptHandlerID, InterruptVector};
-use crate::memory::PhysicalBuffer;
+use crate::memory::{KernPhysAddr, PhysicalBuffer};
 use crate::sync::{once_channel, OnceReceiver, OnceSender, SpinLock};
 
 use super::device::VirtIOInitializedDevice;
@@ -141,9 +141,10 @@ fn virtio_rng_interrupt(_vector: InterruptVector, _handler_id: InterruptHandlerI
 
             // The used entry should be using the exact same buffer we just
             // created, but let's pretend we didn't know that.
+            let addr = KernPhysAddr::from(descriptor.addr);
             let buffer = unsafe {
                 core::slice::from_raw_parts(
-                    descriptor.addr.as_u64() as *const u8,
+                    addr.as_ptr::<u8>(),
                     // NOTE: Using the length from the used entry, not the buffer
                     // length, b/c the RNG device might not have written the whole
                     // thing!
