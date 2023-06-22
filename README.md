@@ -110,8 +110,8 @@ make test
     - Make typed page sizes like the x86_64 crate does
   - Add support for huge pages in `map_to`
   - New allocator is slower. Heap used to initialize in milliseconds, and now takes almost a second
-    - Consider pages with size in type and more straight-line code for mapping different page sizes instead of current loops, and likely lots of multiplications.
-    - I think different code paths for different page sizes will also simplify logic. When performing mappings, we know the depth we need to go to ahead of time because we know the page size. The only time we don't know the depth is when translating an arbitrary address.
+    - The problem is zeroing out the allocated memory!
+    - Consider using some code in `test-x86-paging-performance` branch to simplify logic. I like some of it. <https://github.com/jdreaver/rust-os/compare/master...test-x86-paging-performance>
     - Iteration: if we know we have to map a bunch of contiguous virtual addresses, we shouldn't re-translate all the intermediate tables over and over. Maybe we should have an iterator over page table entries for a given virtual address range, handling creating intermediate tables when necessary.
   - Abandon the default limine memory mapping and make our own
     - Make sure to copy the pages relating to how the kernel is loaded though. Limine did all the hard work parsing the ELF file and set page permissions properly (or so I hope) for e.g. text, data, etc
