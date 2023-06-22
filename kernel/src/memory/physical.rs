@@ -156,10 +156,9 @@ impl PhysicalMemoryAllocator<'_> {
 
         let phys_addr = PhysAddr::new((page * PAGE_SIZE) as u64);
         let start_addr = KernPhysAddr::from(phys_addr);
-        let page_slice = unsafe {
-            core::slice::from_raw_parts_mut(start_addr.as_mut_ptr::<u8>(), num_pages * PAGE_SIZE)
+        unsafe {
+            start_addr.as_mut_ptr::<u8>().write_bytes(0, num_pages * PAGE_SIZE);
         };
-        page_slice.fill(0);
 
         let start_page = Page::from_start_addr(start_addr, PageSize::Size4KiB);
         Ok(PageRange::new(start_page, num_pages))
@@ -186,11 +185,9 @@ unsafe impl<S: x86_64::structures::paging::PageSize> x86_64::structures::paging:
         let frame_address = PhysAddr::new(frame_page as u64 * PAGE_SIZE as u64);
 
         let slice_addr = KernPhysAddr::from(frame_address);
-        let page_slice = unsafe {
-            core::slice::from_raw_parts_mut(slice_addr.as_mut_ptr::<u8>(), num_pages * PAGE_SIZE)
+        unsafe {
+            slice_addr.as_mut_ptr::<u8>().write_bytes(0, num_pages * PAGE_SIZE);
         };
-        page_slice.fill(0);
-
 
         let frame: x86_64::structures::paging::PhysFrame<S> = x86_64::structures::paging::PhysFrame::containing_address(frame_address);
         Some(frame)
