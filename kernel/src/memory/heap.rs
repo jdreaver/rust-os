@@ -4,7 +4,8 @@ use x86_64::VirtAddr;
 use super::mapping::{
     allocate_and_map_pages, KERNEL_HEAP_REGION_MAX_SIZE, KERNEL_HEAP_REGION_START,
 };
-use super::page_table::{MapError, PageRange, PageTableEntryFlags};
+use super::page::PageRange;
+use super::page_table::{MapError, PageTableEntryFlags};
 
 /// NOTE: `LockedHeap` uses a spin lock under the hood, so we should ensure we
 /// _never_ do allocations in interrupt handlers, because we can cause a

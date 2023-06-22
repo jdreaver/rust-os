@@ -1,11 +1,13 @@
 mod address;
 mod heap;
 mod mapping;
+mod page;
 mod page_table;
 mod physical;
 
 pub(crate) use address::*;
 pub(crate) use mapping::*;
+pub(crate) use page::*;
 pub(crate) use page_table::*;
 pub(crate) use physical::*;
 

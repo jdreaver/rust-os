@@ -20,9 +20,9 @@ use crate::serial_println;
 use crate::sync::SpinLock;
 
 use super::address::KernPhysAddr;
+use super::page::{Page, PageSize};
 use super::page_table::{
-    Level4PageTable, MapError, MapTarget, Page, PageSize, PageTableEntryFlags, TranslateResult,
-    UnmapError,
+    Level4PageTable, MapError, MapTarget, PageTableEntryFlags, TranslateResult, UnmapError,
 };
 use super::physical::KERNEL_PHYSICAL_ALLOCATOR;
 
