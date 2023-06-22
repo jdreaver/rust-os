@@ -107,9 +107,9 @@ make test
     - maybe some expected failures to ensure we call panic handler?
 - Memory management
   - `Page` type improvements
+    - Perhaps `PageRange` should have `start_page: Page<A>` and `end_page_exclusive` instead of deal with addresses.
+      - Also have `PageRange` accept a size argument, or use the start/end page sizes.
     - Make typed page sizes like the x86_64 crate does
-    - Use `PageRange` in `PhysicalBuffer` Don't do so much unnecessary address <-> page conversions w/ assertions that addresses are aligned. This happens a lot in kernel stack code.
-    - Use `PageRange` in `PhysicalBuffer` (fixes: Don't use `usize` so casually in `physical.rs`. Have a `PageNumber` newtype or something.)
   - Add support for huge pages in `map_to`
   - New allocator is slower. Heap used to initialize in milliseconds, and now takes almost a second
     - Consider pages with size in type and more straight-line code for mapping different page sizes instead of current loops, and likely lots of multiplications.
@@ -213,9 +213,6 @@ make test
   - Remember features we negotiate, and ensure we are accounting for the different features in the logic (especially around notifications)
 - PCI device locking and `&mut` (and really locking anything that wraps registers)
   - Ensure modifying PCI devices requires a `&mut` reference to some actual "device" object. That means we shouldn't pass around raw registers. Something should be wrapping these.
-- bitmap-alloc
-  - Make page vs byte address part of the API b/c conversion is tricky and requires `div_ceil`. Newtypes/functions for both?
-    - We could embrace `PhysAddr`, `PhysFrame`, `Size4KiB`, etc, but that would introduce dep on `x86_64` crate
 - IOAPIC: Throw an error if IOAPIC number assigned to twice
 - IRQ locking:
   - Linux uses spin locks for each IRQ, as well as masking interrupts but telling the APIC it got the interrupt <https://www.oreilly.com/library/view/understanding-the-linux/0596005652/ch04s06.html>

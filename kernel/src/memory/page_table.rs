@@ -205,10 +205,8 @@ impl MapTarget {
                     target_page_size.size_bytes() == PAGE_SIZE,
                     "ERROR: page size must be {PAGE_SIZE} bytes. TODO: support larger pages (and handle alignment requirements!)",
                 );
-                let target_page = allocator.allocate_zeroed_pages(1)?;
-                let target_page_addr = target_page * PAGE_SIZE;
-                let start_addr = KernPhysAddr::from(PhysAddr::new(target_page_addr as u64));
-                Ok(Page::from_start_addr(start_addr, target_page_size))
+                let target_page = allocator.allocate_zeroed_page()?;
+                Ok(target_page)
             }
         }
     }
@@ -346,11 +344,11 @@ impl PageTableEntry {
         allocator: &mut PhysicalMemoryAllocator,
         flags: PageTableEntryFlags,
     ) -> Result<&mut PageTable, AllocError> {
-        let new_table_page = allocator.allocate_zeroed_pages(1)?;
-        let new_table_addr = (new_table_page * PAGE_SIZE) as u64;
-        self.set_address(PhysAddr::new(new_table_addr));
+        let new_table_page = allocator.allocate_zeroed_page()?;
+        let new_table_addr = new_table_page.start_addr();
+        self.set_address(PhysAddr::from(new_table_addr));
         self.set_flags(flags | PageTableEntryFlags::PRESENT);
-        Ok(unsafe { &mut *(new_table_addr as *mut PageTable) })
+        Ok(unsafe { &mut *(new_table_addr.as_mut_ptr::<PageTable>()) })
     }
 }
 

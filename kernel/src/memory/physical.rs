@@ -7,6 +7,7 @@ use bitmap_alloc::{bootstrap_allocator, BitmapAllocator, MemoryRegion};
 use crate::sync::SpinLock;
 
 use super::address::KernPhysAddr;
+use super::page::{Page, PageRange};
 
 /// Physical memory frame allocator used by all kernel contexts.
 pub(super) static KERNEL_PHYSICAL_ALLOCATOR: LockedPhysicalMemoryAllocator =
@@ -134,16 +135,41 @@ impl PhysicalMemoryAllocator<'_> {
 }
 
 impl PhysicalMemoryAllocator<'_> {
-    pub(super) fn allocate_zeroed_pages(&mut self, num_pages: usize) -> Result<usize, AllocError> {
+    pub(super) fn allocate_zeroed_page(&mut self) -> Result<Page<KernPhysAddr>, AllocError> {
+        let pages = self.allocate_zeroed_pages(1)?;
+        let mut pages = pages.iter();
+        let page = pages.next().expect("somehow we got less than one page!");
+        assert!(pages.next().is_none(), "somehow we got more than one page!");
+        Ok(page)
+    }
+
+    pub(super) fn allocate_zeroed_pages(
+        &mut self,
+        num_pages: usize,
+    ) -> Result<PageRange<KernPhysAddr>, AllocError> {
         let page = self
             .allocator
             .allocate_contiguous(num_pages)
             .ok_or(AllocError)?;
-        let page_addr = page * PAGE_SIZE;
-        let page_slice =
-            unsafe { core::slice::from_raw_parts_mut(page_addr as *mut u8, num_pages * PAGE_SIZE) };
+
+        assert!(page > 0, "we allocated the zero page, which shouldn't happen since the first page should be reserved");
+
+        let phys_addr = PhysAddr::new((page * PAGE_SIZE) as u64);
+        let start_addr = KernPhysAddr::from(phys_addr);
+        let page_slice = unsafe {
+            core::slice::from_raw_parts_mut(start_addr.as_mut_ptr::<u8>(), num_pages * PAGE_SIZE)
+        };
         page_slice.fill(0);
-        Ok(page)
+
+        let end_addr = start_addr + (num_pages * PAGE_SIZE);
+        Ok(PageRange::exclusive(start_addr, end_addr))
+    }
+
+    pub(super) fn free_pages(&mut self, pages: &PageRange<KernPhysAddr>) {
+        let start_addr = PhysAddr::from(pages.start_addr());
+        let start_page = start_addr.as_u64() as usize / pages.page_size().size_bytes();
+        self.allocator
+            .free_contiguous(start_page, pages.num_pages());
     }
 }
 
@@ -155,21 +181,14 @@ impl PhysicalMemoryAllocator<'_> {
 /// it goes out of scope.
 #[derive(Debug)]
 pub(crate) struct PhysicalBuffer {
-    start_page: usize,
-    num_pages: usize,
+    pages: PageRange<KernPhysAddr>,
 }
 
 impl PhysicalBuffer {
     pub(crate) fn allocate_zeroed_pages(num_pages: usize) -> Result<Self, AllocError> {
-        let start_page = KERNEL_PHYSICAL_ALLOCATOR
+        let pages = KERNEL_PHYSICAL_ALLOCATOR
             .with_lock(|allocator| allocator.allocate_zeroed_pages(num_pages))?;
-
-        assert!(start_page > 0, "we allocated the zero page, which shouldn't happen since the first page should be reserved");
-
-        Ok(Self {
-            start_page,
-            num_pages,
-        })
+        Ok(Self { pages })
     }
 
     pub(crate) fn allocate_zeroed(min_bytes: usize) -> Result<Self, AllocError> {
@@ -179,40 +198,19 @@ impl PhysicalBuffer {
 
     pub(crate) fn as_slice_mut(&mut self) -> &mut [u8] {
         let ptr = self.address().as_mut_ptr::<u8>();
-        unsafe { core::slice::from_raw_parts_mut(ptr, self.len_bytes()) }
+        let len_bytes = self.pages.num_pages() * self.pages.page_size().size_bytes();
+        unsafe { core::slice::from_raw_parts_mut(ptr, len_bytes) }
     }
 
     pub(crate) fn address(&self) -> KernPhysAddr {
-        let phys_addr = PhysAddr::new(self.start_page as u64 * PAGE_SIZE as u64);
-        KernPhysAddr::from(phys_addr)
-    }
-
-    pub(crate) fn len_bytes(&self) -> usize {
-        self.num_pages * PAGE_SIZE
-    }
-
-    #[allow(dead_code)]
-    pub(crate) unsafe fn from_leaked_address(addr: PhysAddr, len_bytes: usize) -> Self {
-        let addr = addr.as_u64();
-
-        assert!(addr > 0, "we allocated the zero page, which shouldn't happen since the first page should be reserved");
-        assert!(addr % PAGE_SIZE as u64 == 0, "address must be page-aligned");
-
-        let start_page = addr as usize / PAGE_SIZE;
-        let num_pages = len_bytes.div_ceil(PAGE_SIZE);
-        Self {
-            start_page,
-            num_pages,
-        }
+        self.pages.start_addr()
     }
 }
 
 impl Drop for PhysicalBuffer {
     fn drop(&mut self) {
         KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
-            allocator
-                .allocator
-                .free_contiguous(self.start_page, self.num_pages);
+            allocator.free_pages(&self.pages);
         });
     }
 }

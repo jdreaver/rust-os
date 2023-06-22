@@ -58,6 +58,21 @@ impl<A: Address> PageRange<A> {
         }
     }
 
+    pub(crate) fn start_addr(&self) -> A {
+        self.start_addr
+    }
+
+    pub(crate) fn page_size(&self) -> PageSize {
+        self.page_size
+    }
+
+    pub(crate) fn num_pages(&self) -> usize {
+        let bytes_diff = self.end_addr_exclusive.as_u64() - self.start_addr.as_u64();
+        let page_size = self.page_size.size_bytes();
+        assert!(bytes_diff as usize % page_size == 0);
+        bytes_diff as usize / page_size
+    }
+
     pub(crate) fn iter(&self) -> PageRangeIter<A> {
         PageRangeIter {
             range: self,
@@ -111,6 +126,8 @@ impl PageSize {
 pub(crate) trait Address:
     Copy + Sized + PartialOrd + PartialEq + Eq + Add<usize, Output = Self> + Sub<usize, Output = Self>
 {
+    fn as_u64(self) -> u64;
+
     fn align_down(self, align: u64) -> Self;
 
     fn is_aligned(self, align: u64) -> bool {
@@ -119,18 +136,30 @@ pub(crate) trait Address:
 }
 
 impl Address for VirtAddr {
+    fn as_u64(self) -> u64 {
+        self.as_u64()
+    }
+
     fn align_down(self, align: u64) -> Self {
         self.align_down(align)
     }
 }
 
 impl Address for PhysAddr {
+    fn as_u64(self) -> u64 {
+        self.as_u64()
+    }
+
     fn align_down(self, align: u64) -> Self {
         self.align_down(align)
     }
 }
 
 impl Address for KernPhysAddr {
+    fn as_u64(self) -> u64 {
+        self.as_u64()
+    }
+
     fn align_down(self, align: u64) -> Self {
         self.align_down(align)
     }
