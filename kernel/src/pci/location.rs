@@ -1,4 +1,4 @@
-use x86_64::PhysAddr;
+use crate::memory::KernPhysAddr;
 
 /// Location within the PCI Express Enhanced Configuration Mechanism memory
 /// region. See "7.2.2 PCI Express Enhanced Configuration Access Mechanism
@@ -8,7 +8,7 @@ use x86_64::PhysAddr;
 pub(crate) struct PCIDeviceLocation {
     /// Physical address where the PCI Express extended configuration mechanism
     /// memory region starts for this device.
-    pub(crate) ecam_base_address: PhysAddr,
+    pub(crate) ecam_base_address: KernPhysAddr,
 
     /// Which PCIe bus this device is on.
     pub(crate) bus_number: u8,
@@ -21,7 +21,7 @@ pub(crate) struct PCIDeviceLocation {
 }
 
 impl PCIDeviceLocation {
-    pub(crate) fn device_base_address(&self) -> PhysAddr {
+    pub(crate) fn device_base_address(&self) -> KernPhysAddr {
         let bus = u64::from(self.bus_number);
         let device = u64::from(self.device_number);
         let function = u64::from(self.function_number);

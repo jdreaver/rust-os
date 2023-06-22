@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 use bitflags::bitflags;
 use x86_64::{PhysAddr, VirtAddr};
 
+use super::address::KernPhysAddr;
 use super::physical::{PhysicalMemoryAllocator, PAGE_SIZE};
 
 #[derive(Debug)]
@@ -65,7 +66,7 @@ impl Level4PageTable {
         page: Page<VirtAddr>,
         map_target: MapTarget,
         flags: PageTableEntryFlags,
-    ) -> Result<Page<PhysAddr>, MapError> {
+    ) -> Result<Page<KernPhysAddr>, MapError> {
         let mut current_table = &mut *self.0;
         let mut current_level = PageTableLevel::Level4;
 
@@ -117,7 +118,7 @@ impl Level4PageTable {
     /// Unmaps a given virtual page and returns the underlying physical page.
     ///
     /// NOTE: this function does not handle deallocation of the physical page.
-    pub(super) fn unmap(&mut self, page: Page<VirtAddr>) -> Result<Page<PhysAddr>, UnmapError> {
+    pub(super) fn unmap(&mut self, page: Page<VirtAddr>) -> Result<Page<KernPhysAddr>, UnmapError> {
         let mut current_table = &mut *self.0;
         let mut current_level = PageTableLevel::Level4;
 
@@ -163,14 +164,14 @@ pub(crate) enum TranslateResult {
 /// Result of mapping a virtual address to a page.
 #[derive(Debug, Clone)]
 pub(crate) struct AddressPageMapping {
-    pub(crate) page: Page<PhysAddr>,
+    pub(crate) page: Page<KernPhysAddr>,
     #[allow(dead_code)]
     pub(crate) flags: PageTableEntryFlags,
     pub(crate) offset: u64,
 }
 
 impl AddressPageMapping {
-    pub(crate) fn physical_address(&self) -> PhysAddr {
+    pub(crate) fn address(&self) -> KernPhysAddr {
         self.page.start_addr + self.offset
     }
 }
@@ -179,7 +180,7 @@ impl AddressPageMapping {
 #[derive(Debug, Clone, Copy)]
 pub(super) enum MapTarget {
     /// Map the virtual page to the given physical page that has already been allocated.
-    ExistingPhysPage(Page<PhysAddr>),
+    ExistingPhysPage(Page<KernPhysAddr>),
     /// Allocate a new physical page and map the virtual page to it.
     NewPhysPage,
 }
@@ -189,7 +190,7 @@ impl MapTarget {
         self,
         allocator: &mut PhysicalMemoryAllocator,
         target_page_size: PageSize,
-    ) -> Result<Page<PhysAddr>, AllocError> {
+    ) -> Result<Page<KernPhysAddr>, AllocError> {
         match self {
             Self::ExistingPhysPage(page) => {
                 assert!(
@@ -206,8 +207,9 @@ impl MapTarget {
                 );
                 let target_page = allocator.allocate_zeroed_pages(1)?;
                 let target_page_addr = target_page * PAGE_SIZE;
+                let start_addr = KernPhysAddr::from(PhysAddr::new(target_page_addr as u64));
                 Ok(Page {
-                    start_addr: PhysAddr::new(target_page_addr as u64),
+                    start_addr,
                     size: target_page_size,
                 })
             }
@@ -318,7 +320,7 @@ impl PageTableEntry {
             };
             return PageTableTarget::Page {
                 page: Page {
-                    start_addr: self.address(),
+                    start_addr: KernPhysAddr::from(self.address()),
                     size: page_size,
                 },
                 flags,
@@ -328,7 +330,7 @@ impl PageTableEntry {
         level.next_lower_level().map_or_else(
             || PageTableTarget::Page {
                 page: Page {
-                    start_addr: self.address(),
+                    start_addr: KernPhysAddr::from(self.address()),
                     size: PageSize::Size4KiB,
                 },
                 flags,
@@ -344,8 +346,8 @@ impl PageTableEntry {
         self.0 = 0;
     }
 
-    fn set_target_page(&mut self, page: &Page<PhysAddr>, flags: PageTableEntryFlags) {
-        self.set_address(page.start_addr);
+    fn set_target_page(&mut self, page: &Page<KernPhysAddr>, flags: PageTableEntryFlags) {
+        self.set_address(PhysAddr::from(page.start_addr));
         self.set_flags(flags | PageTableEntryFlags::PRESENT);
     }
 
@@ -376,7 +378,7 @@ pub(crate) enum MapError {
     PhysicalPageAllocationFailed(AllocError),
     #[allow(dead_code)]
     PageAlreadyMapped {
-        existing_target: Page<PhysAddr>,
+        existing_target: Page<KernPhysAddr>,
         flags: PageTableEntryFlags,
     },
 }
@@ -483,7 +485,7 @@ impl PageTableIndex {
 enum PageTableTarget<T> {
     Unmapped,
     Page {
-        page: Page<PhysAddr>,
+        page: Page<KernPhysAddr>,
         flags: PageTableEntryFlags,
     },
     NextTable {
@@ -552,6 +554,12 @@ impl Address for VirtAddr {
 }
 
 impl Address for PhysAddr {
+    fn align_down(self, align: u64) -> Self {
+        self.align_down(align)
+    }
+}
+
+impl Address for KernPhysAddr {
     fn align_down(self, align: u64) -> Self {
         self.align_down(align)
     }

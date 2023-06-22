@@ -1,7 +1,9 @@
 use bitfield_struct::bitfield;
+use x86_64::PhysAddr;
 
 use crate::acpi::ACPIInfo;
 use crate::interrupts::{InterruptVector, SPURIOUS_INTERRUPT_VECTOR_INDEX};
+use crate::memory::KernPhysAddr;
 use crate::register_struct;
 use crate::registers::{RegisterRO, RegisterRW, RegisterWO};
 use crate::sync::InitCell;
@@ -86,8 +88,10 @@ struct LocalAPIC {
 impl LocalAPIC {
     pub(crate) fn from_acpi_info(acpi_info: &ACPIInfo) -> Self {
         let apic_info = acpi_info.apic_info();
+        let lapic_address = PhysAddr::new(apic_info.local_apic_address);
+        let lapic_address = KernPhysAddr::from(lapic_address);
         let registers =
-            unsafe { LocalAPICRegisters::from_address(apic_info.local_apic_address as usize) };
+            unsafe { LocalAPICRegisters::from_address(lapic_address.as_u64() as usize) };
         Self { registers }
     }
 

@@ -19,6 +19,7 @@ use crate::boot_info::BootInfo;
 use crate::serial_println;
 use crate::sync::SpinLock;
 
+use super::address::KernPhysAddr;
 use super::page_table::{
     Level4PageTable, MapError, MapTarget, Page, PageSize, PageTableEntryFlags, TranslateResult,
     UnmapError,
@@ -26,6 +27,9 @@ use super::page_table::{
 use super::physical::KERNEL_PHYSICAL_ALLOCATOR;
 
 pub(crate) const HIGHER_HALF_START: u64 = 0xffff_8000_0000_0000;
+
+pub(crate) const KERNEL_PHYSICAL_MAPPING_START: u64 = HIGHER_HALF_START;
+pub(crate) const KERNEL_PHYSICAL_MAPPING_END: u64 = 0xffff_b777_7777_7777;
 
 pub(crate) const KERNEL_HEAP_REGION_START: u64 = 0xffff_c000_0000_0000;
 pub(crate) const KERNEL_HEAP_REGION_MAX_SIZE: u64 = 0x0000_1000_0000_0000;
@@ -73,9 +77,9 @@ pub(crate) fn translate_addr(addr: VirtAddr) -> TranslateResult {
 /// Maps a given virtual page to a physical page.
 pub(crate) fn map_page(
     virt_page: Page<VirtAddr>,
-    phys_page: Page<PhysAddr>,
+    phys_page: Page<KernPhysAddr>,
     flags: PageTableEntryFlags,
-) -> Result<Page<PhysAddr>, MapError> {
+) -> Result<Page<KernPhysAddr>, MapError> {
     let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
     let table = page_table_lock
         .as_mut()
@@ -113,7 +117,7 @@ pub(crate) fn allocate_and_map_pages(
     })
 }
 
-pub(crate) unsafe fn unmap_page(page: Page<VirtAddr>) -> Result<Page<PhysAddr>, UnmapError> {
+pub(crate) unsafe fn unmap_page(page: Page<VirtAddr>) -> Result<Page<KernPhysAddr>, UnmapError> {
     KERNEL_PAGE_TABLE
         .lock()
         .as_mut()
@@ -122,7 +126,7 @@ pub(crate) unsafe fn unmap_page(page: Page<VirtAddr>) -> Result<Page<PhysAddr>, 
 }
 
 pub(crate) fn identity_map_physical_pages(
-    phys_pages: impl Iterator<Item = Page<PhysAddr>>,
+    phys_pages: impl Iterator<Item = Page<KernPhysAddr>>,
     flags: PageTableEntryFlags,
 ) -> Result<(), MapError> {
     let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
@@ -176,7 +180,7 @@ pub(crate) fn test_new_page_table() {
         size: PageSize::Size4KiB,
     };
     let map_phys = Page {
-        start_addr: PhysAddr::new(0x1_0000_0000),
+        start_addr: KernPhysAddr::from(PhysAddr::new(0x1_0000_0000)),
         size: PageSize::Size4KiB,
     };
 

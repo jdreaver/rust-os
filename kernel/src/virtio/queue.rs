@@ -254,7 +254,7 @@ impl VirtQueueDescriptorTable {
     }
 
     pub(super) fn physical_address(&self) -> PhysAddr {
-        self.buffer.address()
+        PhysAddr::from(self.buffer.address())
     }
 
     /// Atomically increments the internal index and performs the necessary wrapping.
@@ -460,7 +460,7 @@ impl VirtQueueAvailRing {
     }
 
     pub(super) fn physical_address(&self) -> PhysAddr {
-        self.buffer.address()
+        PhysAddr::from(self.buffer.address())
     }
 
     fn add_entry(&mut self, desc_index: DescIndex) {
@@ -590,7 +590,7 @@ impl VirtQueueUsedRing {
     }
 
     pub(super) fn physical_address(&self) -> PhysAddr {
-        self.buffer.address()
+        PhysAddr::from(self.buffer.address())
     }
 
     fn get_used_elem(&self, idx: WrappingIndex) -> VirtQueueUsedElem {

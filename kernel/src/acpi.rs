@@ -7,11 +7,12 @@ use acpi::platform::ProcessorInfo;
 use acpi::{AcpiHandler, AcpiTable, AcpiTables, HpetInfo, PhysicalMapping};
 use x86_64::PhysAddr;
 
+use crate::memory::KernPhysAddr;
 use crate::serial_println;
 
 static ACPI_INFO: SyncUnsafeCell<Option<ACPIInfo>> = SyncUnsafeCell::new(None);
 
-pub(crate) unsafe fn init(rsdp_addr: PhysAddr) {
+pub(crate) unsafe fn init(rsdp_addr: KernPhysAddr) {
     ACPI_INFO
         .get()
         .replace(Some(ACPIInfo::from_rsdp(rsdp_addr)));
@@ -40,7 +41,7 @@ impl ACPIInfo {
     /// Caller must ensure RSDP address is valid, and that page tables are set
     /// up for identity mapping for any memory that could be used to access ACPI
     /// tables (e.g. identity mapping physical memory).
-    unsafe fn from_rsdp(rsdp_addr: PhysAddr) -> Self {
+    unsafe fn from_rsdp(rsdp_addr: KernPhysAddr) -> Self {
         let handler = IdentityMapAcpiHandler;
         let rsdp_addr = rsdp_addr.as_u64() as usize;
         let tables = unsafe {
@@ -51,7 +52,7 @@ impl ACPIInfo {
 
     /// Panics if PCI config regions cannot be found, simply because propagating
     /// the error is a PITA.
-    pub(crate) fn pci_config_region_base_address(&self) -> PhysAddr {
+    pub(crate) fn pci_config_region_base_address(&self) -> KernPhysAddr {
         let pci_config_regions = acpi::mcfg::PciConfigRegions::new(&self.tables)
             .expect("couldn't get PCI config regions");
 
@@ -61,7 +62,8 @@ impl ACPIInfo {
             .physical_address(0, 0, 0, 0)
             .expect("couldn't get PCI config address");
 
-        PhysAddr::new(pci_config_region_base_address)
+        let phys_addr = PhysAddr::new(pci_config_region_base_address);
+        KernPhysAddr::from(phys_addr)
     }
 
     /// Asserts that the interrupt model is APIC, and returns the APIC info data

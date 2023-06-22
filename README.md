@@ -106,11 +106,15 @@ make test
     - Spawn a bunch of processes and hope we don't crash?
     - maybe some expected failures to ensure we call panic handler?
 - Memory management
+  - Finish hooking up `KernPhysAddr`: hpet, physical memory allocator, PCI device capabilities
+  - Consider having `registers.rs` stuff explicitly take a `PhysAddr`, `KernPhysAddr`, or `VirtAddr`. Converting to u64 is error prone right now.
+    - At the very least it should probably be `VirtAddr` since that is the most general. We shouldn't be doing pointer math on `PhysAddr`. Except would there ever be registers outside of the `KernPhysAddr` range? Hmm. Could make it a type parameter?
   - Add support for huge pages in `map_to`
   - Don't use `usize` so casually in `physical.rs`. Have a `PageNumber` newtype or something.
   - New allocator is slower. Heap used to initialize in milliseconds, and now takes almost a second
     - Consider pages with size in type and more straight-line code for mapping different page sizes instead of current loops, and likely lots of multiplications.
     - I think different code paths for different page sizes will also simplify logic. When performing mappings, we know the depth we need to go to ahead of time because we know the page size. The only time we don't know the depth is when translating an arbitrary address.
+    - Iteration: if we know we have to map a bunch of contiguous virtual addresses, we shouldn't re-translate all the intermediate tables over and over. Maybe we should have an iterator over page table entries for a given virtual address range, handling creating intermediate tables when necessary.
   - Abandon the default limine memory mapping and make our own
     - Make sure to copy the pages relating to how the kernel is loaded though. Limine did all the hard work parsing the ELF file and set page permissions properly (or so I hope) for e.g. text, data, etc
   - Map all physical memory starting at `0xffff_8000_0000_0000`. Limine just does 4 GiB, but make sure to do it all.
@@ -118,11 +122,10 @@ make test
     - Perhaps don't allow the `NewPhysPage` mapping target. Or, make sure the caller uses the `PhysPage` result.
     - The kernel stack allocator actually has a bug where it doesn't free its allocated physical memory pages! It is only "freeing" the virtual pages.
   - Don't do so much unnecessary address <-> page conversions w/ assertions that addresses are aligned. This happens a lot in kernel stack code.
-  - Consider a `KernelPhysAddr` that wraps `VirtAddr` and can be converted to `PhysAddr` by just subtracting hard-coded offset (`0xffff_8000_0000_0000`)
-    - Be really careful here! Not all kernel memory is mapped as simply as an offset. Only some of it is.
+  - Make our own `PhysAddr` and don't allow it to be converted to a pointer
+  - Consider removing `as_64` for all address types, because it makes mistakes too easy.
   - Guard pages: consider using one of the special OS-available bits on pages for `GUARD_PAGE`, in case that could simplify our guard page detection logic in the page fault handler. Using these OS-available bits in general to identify the type of page is probably going to be useful.
     - This will require not simply "unmapping" a page for the guard page, but to add some sort of "unmap with flags", or mapping "to" physical address 0 with flags (this is what we used to do)
-  - Ensure we use `KernelPhysAddr` and mapping to higher half reserved stuff like PCI addresses, LAPIC, etc (I think? does that work or do we need identity mapping?)
   - Make it trivial to create a userspace page table.
     - Make kernel page table cloneable: fill entire top half (even if most level 3 page tables are empty), and zero out bottom half. That means we only use `KernelPhysAddr`.
       - Zeroing out bottom half means we likely don't want any sort of "identity map" function with `PhysAddr`

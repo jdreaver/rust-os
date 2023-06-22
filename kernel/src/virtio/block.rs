@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 use bitflags::bitflags;
 use core::mem;
 use spin::RwLock;
+use x86_64::PhysAddr;
 use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 use crate::apic::ProcessorID;
@@ -435,7 +436,7 @@ impl RawBlockRequest {
         .expect("failed to cast header bytes");
         let header_addr = buffer_address + u64::from(header_offset);
         let header_desc = ChainedVirtQueueDescriptorElem {
-            addr: header_addr,
+            addr: PhysAddr::from(header_addr),
             len: header_size,
             flags: VirtQueueDescriptorFlags::new().with_device_write(false),
         };
@@ -444,7 +445,7 @@ impl RawBlockRequest {
         // buffer.
         let writeable = self.request_type != BlockRequestType::Out;
         let buffer_desc = ChainedVirtQueueDescriptorElem {
-            addr: buffer_address,
+            addr: PhysAddr::from(buffer_address),
             len: self.data_len,
             flags: VirtQueueDescriptorFlags::new().with_device_write(writeable),
         };
@@ -454,7 +455,7 @@ impl RawBlockRequest {
             .expect("failed to cast header bytes");
         let status_addr = buffer_address + u64::from(status_offset);
         let status_desc = ChainedVirtQueueDescriptorElem {
-            addr: status_addr,
+            addr: PhysAddr::from(status_addr),
             len: status_size,
             flags: VirtQueueDescriptorFlags::new().with_device_write(true),
         };

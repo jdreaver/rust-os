@@ -6,6 +6,8 @@ use bitmap_alloc::{bootstrap_allocator, BitmapAllocator, MemoryRegion};
 
 use crate::sync::SpinLock;
 
+use super::address::KernPhysAddr;
+
 /// Physical memory frame allocator used by all kernel contexts.
 pub(super) static KERNEL_PHYSICAL_ALLOCATOR: LockedPhysicalMemoryAllocator =
     LockedPhysicalMemoryAllocator::new();
@@ -177,8 +179,9 @@ impl PhysicalBuffer {
         unsafe { core::slice::from_raw_parts_mut(ptr, self.len_bytes()) }
     }
 
-    pub(crate) fn address(&self) -> PhysAddr {
-        PhysAddr::new(self.start_page as u64 * PAGE_SIZE as u64)
+    pub(crate) fn address(&self) -> KernPhysAddr {
+        let phys_addr = PhysAddr::new(self.start_page as u64 * PAGE_SIZE as u64);
+        KernPhysAddr::from(phys_addr)
     }
 
     pub(crate) fn len_bytes(&self) -> usize {

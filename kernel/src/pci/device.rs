@@ -3,7 +3,7 @@ use core::fmt;
 use bitfield_struct::bitfield;
 use x86_64::PhysAddr;
 
-use crate::memory::{Page, PageTableEntryFlags};
+use crate::memory::{KernPhysAddr, Page, PageTableEntryFlags};
 use crate::registers::{RegisterRO, RegisterRW};
 use crate::{memory, register_struct};
 
@@ -22,7 +22,7 @@ const MAX_PCI_BUS_DEVICE_FUNCTION: u8 = 7;
 ///
 /// NOTE: I think this would miss devices that are behind a PCI bridge, except
 /// we are enumerating all buses, so maybe it is fine?
-pub(crate) fn for_pci_devices_brute_force<F>(base_addr: PhysAddr, mut f: F)
+pub(crate) fn for_pci_devices_brute_force<F>(base_addr: KernPhysAddr, mut f: F)
 where
     F: FnMut(PCIDeviceConfig),
 {
@@ -328,7 +328,7 @@ impl PCIDeviceConfigType0 {
         bar_idx: u8,
         physical_offset: u32,
         region_size: u64,
-    ) -> PhysAddr {
+    ) -> KernPhysAddr {
         let bar_phys_addr = match self.bar(bar_idx) {
             // TODO: Use the prefetchable field when doing mapping.
             BARAddress::Mem32Bit {
@@ -344,6 +344,7 @@ impl PCIDeviceConfigType0 {
                 address,
             ),
         };
+        let bar_phys_addr = KernPhysAddr::from(bar_phys_addr);
 
         // Need to identity map the BAR target page(s) so we can access them
         // without faults. Note that these addresses can be outside of physical

@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use bitflags::bitflags;
+use x86_64::PhysAddr;
 
 use crate::apic::ProcessorID;
 use crate::interrupts::{InterruptHandlerID, InterruptVector};
@@ -88,7 +89,7 @@ impl VirtIORNG {
         let buffer = PhysicalBuffer::allocate_zeroed(num_bytes as usize)
             .expect("failed to allocate rng buffer");
         let desc = ChainedVirtQueueDescriptorElem {
-            addr: buffer.address(),
+            addr: PhysAddr::from(buffer.address()),
             len: num_bytes,
             flags: VirtQueueDescriptorFlags::new().with_device_write(true),
         };

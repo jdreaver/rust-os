@@ -9,6 +9,7 @@ use limine::{
 };
 use x86_64::{PhysAddr, VirtAddr};
 
+use crate::memory::KernPhysAddr;
 use crate::{serial_println, strings};
 
 static BOOT_INFO_ONCE: Once<BootInfo> = Once::new();
@@ -22,7 +23,7 @@ pub(crate) struct BootInfo {
     pub(crate) _kernel_address_physical_base: PhysAddr,
     pub(crate) kernel_address_virtual_base: VirtAddr,
     pub(crate) _efi_system_table_address: Option<VirtAddr>,
-    rsdp_address: Option<VirtAddr>,
+    pub(crate) rsdp_address: Option<KernPhysAddr>,
     #[allow(dead_code)] // TODO: Remove dead_code modifier. Currently only used in tests
     pub(crate) framebuffer: &'static mut limine::LimineFramebuffer,
     pub(crate) _x2apic_enabled: bool,
@@ -34,17 +35,6 @@ pub(crate) struct BootInfo {
 // We need to implement Send for BootInfo so it can be used with `Once`.
 // `LimineFramebuffer` uses `core::ptr::NonNull` which is not `Send`.
 unsafe impl Send for BootInfo {}
-
-impl BootInfo {
-    /// Physical address for the Root System Description Pointer (RSDP). See <https://wiki.osdev.org/RSDP>
-    pub(crate) fn rsdp_physical_addr(&self) -> PhysAddr {
-        self.rsdp_address
-            .map(|addr| {
-                x86_64::PhysAddr::new(addr.as_u64() - self.higher_half_direct_map_offset.as_u64())
-            })
-            .expect("failed to get RSDP physical address")
-    }
-}
 
 #[derive(Debug)]
 pub(crate) struct KernelSymbolMapFile {
@@ -195,10 +185,10 @@ fn limine_efi_system_table_address() -> Option<VirtAddr> {
     Some(VirtAddr::from_ptr(address_ptr))
 }
 
-fn limine_rsdp_address() -> Option<VirtAddr> {
+fn limine_rsdp_address() -> Option<KernPhysAddr> {
     let Some(rsdp) = RSDP_REQUEST.get_response().get() else { return None; };
     let Some(address_ptr) = rsdp.address.as_ptr() else { return None; };
-    Some(VirtAddr::from_ptr(address_ptr))
+    Some(KernPhysAddr::new(address_ptr as u64))
 }
 
 fn limine_framebuffer() -> &'static mut limine::LimineFramebuffer {

@@ -5,6 +5,7 @@ use bitflags::Flags;
 use x86_64::PhysAddr;
 
 use crate::barrier::barrier;
+use crate::memory::KernPhysAddr;
 use crate::pci::{
     PCIDeviceCapability, PCIDeviceCapabilityHeader, PCIDeviceConfig, PCIDeviceConfigType0,
     PCIDeviceConfigTypes,
@@ -36,7 +37,7 @@ pub(crate) struct VirtIODeviceConfig {
 
     notify_config: VirtIONotifyConfig,
 
-    device_config_phys_addr: PhysAddr,
+    device_config_phys_addr: KernPhysAddr,
 }
 
 impl VirtIODeviceConfig {
@@ -139,7 +140,7 @@ impl VirtIODeviceConfig {
         self.notify_config
     }
 
-    pub(super) fn device_config_phys_addr(&self) -> PhysAddr {
+    pub(super) fn device_config_phys_addr(&self) -> KernPhysAddr {
         self.device_config_phys_addr
     }
 
@@ -257,7 +258,7 @@ impl VirtIOPCICapabilityHeader {
 
     /// Compute and map physical address for VirtIO capabilities that need to
     /// reach through a BAR to access their configuration.
-    pub(super) fn compute_and_map_config_address(self) -> PhysAddr {
+    pub(super) fn compute_and_map_config_address(self) -> KernPhysAddr {
         let bar_idx = self.registers.bar().read();
         let physical_offset = self.registers.offset().read();
         let region_size = u64::from(self.registers.cap_len().read());
@@ -322,7 +323,7 @@ enum VirtIOConfig {
     Common(VirtIOPCICommonConfigRegisters),
     Notify(VirtIONotifyConfig),
     ISR(VirtIOPCIISRRegisters),
-    Device(PhysAddr),
+    Device(KernPhysAddr),
     PCI,
     SharedMemory,
     Vendor,
@@ -416,14 +417,14 @@ pub(super) struct VirtIOISRStatus {
 pub(super) struct VirtIONotifyConfig {
     /// Physical address for the configuration area for the Notify capability
     /// (BAR + offset has already been applied).
-    config_addr: PhysAddr,
+    config_addr: KernPhysAddr,
 
     notify_off_multiplier: u32,
 }
 
 impl VirtIONotifyConfig {
     /// 4.1.4.4 Notification structure layout
-    fn queue_notify_address(&self, queue_notify_offset: u16) -> PhysAddr {
+    fn queue_notify_address(&self, queue_notify_offset: u16) -> KernPhysAddr {
         let offset = u64::from(queue_notify_offset) * u64::from(self.notify_off_multiplier);
         self.config_addr + offset
     }

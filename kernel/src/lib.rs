@@ -148,7 +148,7 @@ fn global_setup(boot_info_data: &boot_info::BootInfo) {
 
     // N.B. Probing ACPI must happen after heap initialization because the Rust
     // `acpi` crate uses alloc. It would be nice to not need that...
-    unsafe { acpi::init(boot_info_data.rsdp_physical_addr()) };
+    unsafe { acpi::init(boot_info_data.rsdp_address.expect("no rsdp address")) };
 
     let acpi_info = acpi::acpi_info();
     apic::global_init(acpi_info);

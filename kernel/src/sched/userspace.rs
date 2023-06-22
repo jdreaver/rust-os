@@ -51,7 +51,7 @@ pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
     let TranslateResult::Mapped(instruction_mapping) = memory::translate_addr(instruction_ptr_virt) else {
         panic!("instruction pointer not mapped")
     };
-    let instruction_ptr_phys = instruction_mapping.physical_address();
+    let instruction_ptr_phys = instruction_mapping.address();
     let instruction_ptr_page_start = VirtAddr::new(0x2_0000_0000);
     let instruction_ptr_phys_page =
         Page::containing_address(instruction_ptr_phys, PageSize::Size4KiB);
@@ -81,7 +81,7 @@ pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
     let TranslateResult::Mapped(stack_mapping) = memory::translate_addr(stack_ptr_start) else {
         panic!("stack pointer not mapped")
     };
-    let stack_ptr_phys = stack_mapping.physical_address();
+    let stack_ptr_phys = stack_mapping.address();
     let stack_ptr_page_start = VirtAddr::new(0x2_1000_0000);
     let stack_ptr_virt_page = Page {
         start_addr: stack_ptr_page_start,
