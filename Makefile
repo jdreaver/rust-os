@@ -92,12 +92,14 @@ kernel:
 CMDLINE=
 
 # Adapted from https://github.com/limine-bootloader/limine-barebones/blob/trunk/GNUmakefile
+.PHONY: $(KERNEL_HDD)
 $(KERNEL_HDD): kernel
 	./scripts/create-boot-image.sh $(KERNEL_HDD) $(KERNEL) "$(CMDLINE)"
 
 $(TEST_FAT_HDD):
 	./crates/scripts/create-test-fat-image.sh $(TEST_FAT_HDD)
 
+.PHONY: $(TEST_EXT2_HDD)
 $(TEST_EXT2_HDD):
 	./scripts/create-test-ext2-image.sh $(TEST_EXT2_HDD)
 

@@ -84,6 +84,10 @@ impl<A: Address> PageRange<A> {
         self.num_pages
     }
 
+    pub(crate) fn num_bytes(&self) -> usize {
+        self.num_pages * self.start.size.size_bytes()
+    }
+
     pub(crate) fn iter(&self) -> PageRangeIter<A> {
         PageRangeIter {
             range: self,
@@ -92,10 +96,16 @@ impl<A: Address> PageRange<A> {
     }
 }
 
-impl<A: AsMutPtr + Copy> PageRange<A> {
+impl<A: Address + AsMutPtr + Copy> PageRange<A> {
+    pub(crate) fn as_byte_slice(&mut self) -> &mut [u8] {
+        let start_ptr = self.start.start_addr.as_mut_ptr::<u8>();
+        let size_bytes = self.num_bytes();
+        unsafe { core::slice::from_raw_parts_mut(start_ptr, size_bytes) }
+    }
+
     pub(crate) fn zero(&mut self) {
         let start_ptr = self.start.start_addr.as_mut_ptr::<u8>();
-        let size_bytes = self.num_pages * self.start.size.size_bytes();
+        let size_bytes = self.num_bytes();
         unsafe {
             // N.B. `write_bytes` is a highly optimized way to write zeroes.
             // Making a slice and doing `slice.fill(0)` is supposed to optimize

@@ -129,14 +129,15 @@ make test
   - Page table concurrency:
     - Consider representing each PageTableEntry as `AtomicU64`, or in the page table as `AtomicInt<u64, PageTableEntry>`
 - Userspace
-  - Set up and execute ELF for real in `task_userspace_setup`. Map segments to memory, make a stack, use real start location, etc.
-    - Use a fresh page table!
-      - Copy all of the higher half entries for the kernel page table.
-      - Make a TODO to ensure this is robust. Perhaps we need at least some dummy entries for the higher half so when they _do_ get mapped all of the process page table higher halfs point to the same L3 tables
-    - Drop any memory we allocated for task, like task segments
-      - Also drop any intermediate page tables we created.
-        - <https://docs.rs/x86_64/0.14.10/x86_64/structures/paging/mapper/trait.CleanUp.html#tymethod.clean_up_addr_range>
-      - Would it be easier to create an arena holding a process's memory so we could drop it all?
+  - Use a fresh page table!
+    - Copy all of the higher half entries for the kernel page table.
+    - Make a TODO to ensure this is robust. Perhaps we need at least some dummy entries for the higher half so when they _do_ get mapped all of the process page table higher halfs point to the same L3 tables
+  - Drop any memory we allocated for task, like task segments
+    - Also drop any intermediate page tables we created.
+      - <https://docs.rs/x86_64/0.14.10/x86_64/structures/paging/mapper/trait.CleanUp.html#tymethod.clean_up_addr_range>
+    - Would it be easier to create an arena holding a process's memory so we could drop it all?
+  - Remove `-Ttext` in `ld` command to link `hello` userspace program once we have proper page tables built
+  - Make sure we can use NO_EXECUTE bit in page table (need some EFER setting?)
   - Ensure that _every_ time we go to userspace, especially if we get rescheduled to another CPU, we store the kernel stack in the GS register. Do we need to add something to when we exit interrupt handlers, like a `return_to_userspace`?
   - Re-enable interrupts while handling syscalls (or don't? at least be explicit)
     - If we expect interrupts to be disabled, make a comment where we disabled and where we do e.g. `swapgs` or something else that expects interrupts disabled

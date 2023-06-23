@@ -8,11 +8,13 @@ use elf::segment::ProgramHeader;
 use elf::{ElfBytes, ParseError};
 use x86_64::VirtAddr;
 
+use crate::memory::PageTableEntryFlags;
+
 /// Wrapper around a parsed ELF header for executables.
 pub(crate) struct ElfExecutableHeader<'a> {
-    parsed: ElfBytes<'a, AnyEndian>,
-    entrypoint: VirtAddr,
-    loadable_segments: Vec<LoadableSegment>,
+    pub(crate) parsed: ElfBytes<'a, AnyEndian>,
+    pub(crate) entrypoint: VirtAddr,
+    pub(crate) loadable_segments: Vec<LoadableSegment>,
 }
 
 #[derive(Debug)]
@@ -101,12 +103,12 @@ impl fmt::Debug for ElfExecutableHeader<'_> {
 #[derive(Debug)]
 #[allow(dead_code)] // TODO: Remove allow(dead_code) when we actually use this
 pub(crate) struct LoadableSegment {
-    raw_header: ProgramHeader,
-    file_offset: u64,
-    vaddr: VirtAddr,
-    mem_size: u64,
-    flags: LoadableSegmentFlags,
-    alignment: u64,
+    pub(crate) raw_header: ProgramHeader,
+    pub(crate) file_offset: u64,
+    pub(crate) vaddr: VirtAddr,
+    pub(crate) mem_size: u64,
+    pub(crate) flags: LoadableSegmentFlags,
+    pub(crate) alignment: u64,
 }
 
 bitflags! {
@@ -116,5 +118,25 @@ bitflags! {
         const EXECUTABLE = 1;
         const WRITABLE = 2;
         const READABLE = 4;
+    }
+}
+
+impl LoadableSegmentFlags {
+    pub(crate) fn page_table_entry_flags(&self) -> PageTableEntryFlags {
+        let mut flags = PageTableEntryFlags::empty();
+
+        if !self.contains(Self::EXECUTABLE) {
+            flags |= PageTableEntryFlags::NO_EXECUTE;
+        }
+
+        if self.contains(Self::WRITABLE) {
+            flags |= PageTableEntryFlags::WRITABLE;
+        }
+
+        if self.contains(Self::READABLE) {
+            flags |= PageTableEntryFlags::PRESENT;
+        }
+
+        flags
     }
 }

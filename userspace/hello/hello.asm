@@ -3,6 +3,8 @@ global _start
 section .text
 
 _start:
+        int3                    ; Test interrupts
+
         mov rax, 1              ; write(
         mov rdi, 1              ;  STDOUT_FILENO,
         mov rsi, msg            ;  "Hello, world!\n",

@@ -4,12 +4,12 @@ use core::arch::asm;
 use x86_64::registers::rflags::RFlags;
 use x86_64::VirtAddr;
 
-use crate::memory::{MapError, Page, PageSize, PageTableEntryFlags, TranslateResult};
-use crate::{elf, gdt, memory, vfs};
+use crate::memory::{
+    allocate_and_map_pages, set_page_flags, Page, PageRange, PageSize, PageTableEntryFlags,
+};
+use crate::{elf, gdt, vfs};
 
 use super::syscall::TOP_OF_KERNEL_STACK;
-
-static DUMMY_USERSPACE_STACK: &[u8] = &[0; 4096];
 
 /// Kernel function that is called when we are starting a userspace task. This
 /// is the "entrypoint" to a userspace task, and performs some setup before
@@ -40,61 +40,40 @@ pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
     };
     log::info!("ELF header: {:#?}", elf_exe);
 
-    // TODO: This is currently a big fat hack and this code is very fragile
-    // because it relies on our hack "userspace" function fitting in a single
-    // page. Adding code here can break that.
+    let instruction_ptr = elf_exe.entrypoint;
 
-    let instruction_ptr = dummy_hacky_userspace_task as usize;
+    // Map ELF segments to userspace addresses
+    for segment in elf_exe.loadable_segments {
+        assert!(segment.alignment as usize == PageSize::Size4KiB.size_bytes());
 
-    // Map our fake code to userspace addresses that userspace has access to
-    let instruction_ptr_virt = VirtAddr::new(instruction_ptr as u64);
-    let TranslateResult::Mapped(instruction_mapping) = memory::translate_addr(instruction_ptr_virt) else {
-        panic!("instruction pointer not mapped")
-    };
-    let instruction_ptr_phys = instruction_mapping.address();
-    let instruction_ptr_page_start = VirtAddr::new(0x2_0000_0000);
-    let instruction_ptr_phys_page =
-        Page::containing_address(instruction_ptr_phys, PageSize::Size4KiB);
+        let segment_data = elf_exe
+            .parsed
+            .segment_data(&segment.raw_header)
+            .expect("failed to get segment data");
+        let start_page = Page::from_start_addr(segment.vaddr, PageSize::Size4KiB);
+        let mut user_pages = PageRange::from_num_bytes(start_page, segment.mem_size as usize);
 
-    // Map two of these pages to be safe
-    for i in 0..=1 {
-        let instruction_ptr_virt_page = Page::from_start_addr(
-            instruction_ptr_page_start + i * PageSize::Size4KiB.size_bytes(),
-            PageSize::Size4KiB,
-        );
-        let instruction_ptr_phys_page = Page::from_start_addr(
-            instruction_ptr_phys_page.start_addr() + i * PageSize::Size4KiB.size_bytes(),
-            PageSize::Size4KiB,
-        );
-        let flags = PageTableEntryFlags::PRESENT
+        let initial_flags = PageTableEntryFlags::PRESENT
             | PageTableEntryFlags::WRITABLE
             | PageTableEntryFlags::USER_ACCESSIBLE;
-        match memory::map_page(instruction_ptr_virt_page, instruction_ptr_phys_page, flags) {
-            Ok(_) | Err(MapError::PageAlreadyMapped { .. }) => {}
-            Err(e) => panic!("failed to map instruction page: {:?}", e),
-        }
+        allocate_and_map_pages(user_pages.iter(), initial_flags)
+            .expect("failed to map segment pages");
+        user_pages.as_byte_slice()[..segment_data.len()].copy_from_slice(segment_data);
+
+        let user_flags =
+            segment.flags.page_table_entry_flags() | PageTableEntryFlags::USER_ACCESSIBLE;
+        set_page_flags(user_pages.iter(), user_flags).expect("failed to set segment flags");
     }
 
-    let instruction_virt = instruction_ptr_page_start + instruction_mapping.offset;
-
-    let stack_ptr_start = VirtAddr::new(DUMMY_USERSPACE_STACK.as_ptr() as u64);
-    let TranslateResult::Mapped(stack_mapping) = memory::translate_addr(stack_ptr_start) else {
-        panic!("stack pointer not mapped")
-    };
-    let stack_ptr_phys = stack_mapping.address();
-    let stack_ptr_page_start = VirtAddr::new(0x2_1000_0000);
-    let stack_ptr_virt_page = Page::from_start_addr(stack_ptr_page_start, PageSize::Size4KiB);
-    let stack_ptr_phys_page = Page::containing_address(stack_ptr_phys, PageSize::Size4KiB);
-    let flags = PageTableEntryFlags::PRESENT
+    // Allocate a stack
+    let stack_start = VirtAddr::new(0x2_1000_0000);
+    let stack_page = Page::from_start_addr(stack_start, PageSize::Size4KiB);
+    let stack_pages = PageRange::new(stack_page, 4);
+    let stack_flags = PageTableEntryFlags::PRESENT
         | PageTableEntryFlags::WRITABLE
         | PageTableEntryFlags::USER_ACCESSIBLE;
-    match memory::map_page(stack_ptr_virt_page, stack_ptr_phys_page, flags) {
-        Ok(_) | Err(MapError::PageAlreadyMapped { .. }) => {}
-        Err(e) => panic!("failed to map stack page: {:?}", e),
-    }
-
-    let stack_end_virt = VirtAddr::new(0x2_1000_0000 + DUMMY_USERSPACE_STACK.len() as u64);
-    let stack_ptr = stack_end_virt;
+    allocate_and_map_pages(stack_pages.iter(), stack_flags).expect("failed to map stack pages");
+    let stack_ptr = stack_start + stack_pages.num_bytes();
 
     let user_code_segment_idx: u64 = u64::from(gdt::selectors().user_code_selector.0);
     let user_data_segment_idx: u64 = u64::from(gdt::selectors().user_data_selector.0);
@@ -105,7 +84,7 @@ pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
     // I was getting some intermittent page faults.
     unsafe {
         jump_to_userspace(
-            instruction_virt,
+            instruction_ptr,
             stack_ptr,
             user_code_segment_idx,
             user_data_segment_idx,
@@ -161,22 +140,3 @@ pub(super) unsafe extern "C" fn jump_to_userspace(
 //         )
 //     }
 // }
-
-#[naked]
-unsafe extern "C" fn dummy_hacky_userspace_task() {
-    unsafe {
-        asm!(
-            // Call interrupt for fun
-            "int3",
-            // Call syscall
-            "mov rdi, 0x1111",
-            "mov rsi, 0x2222",
-            "mov rdx, 0x3333",
-            "mov r10, 0x4444",
-            "mov r8, 0x5555",
-            "mov r9, 0x6666",
-            "syscall",
-            options(noreturn),
-        )
-    }
-}

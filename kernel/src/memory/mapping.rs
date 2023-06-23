@@ -22,7 +22,8 @@ use crate::sync::SpinLock;
 use super::address::KernPhysAddr;
 use super::page::{Page, PageSize};
 use super::page_table::{
-    Level4PageTable, MapError, MapTarget, PageTableEntryFlags, TranslateResult, UnmapError,
+    Level4PageTable, MapError, MapTarget, PageTableEntryFlags, SetFlagsError, TranslateResult,
+    UnmapError,
 };
 use super::physical::KERNEL_PHYSICAL_ALLOCATOR;
 
@@ -115,6 +116,21 @@ pub(crate) fn allocate_and_map_pages(
 
         Ok(())
     })
+}
+
+pub(crate) fn set_page_flags(
+    pages: impl Iterator<Item = Page<VirtAddr>>,
+    flags: PageTableEntryFlags,
+) -> Result<(), SetFlagsError> {
+    let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
+    let table = page_table_lock
+        .as_mut()
+        .expect("kernel page table not initialized");
+
+    for page in pages {
+        table.set_flags(page, flags)?;
+    }
+    Ok(())
 }
 
 pub(crate) unsafe fn unmap_page(page: Page<VirtAddr>) -> Result<Page<KernPhysAddr>, UnmapError> {

@@ -115,6 +115,32 @@ impl Level4PageTable {
         }
     }
 
+    pub(super) fn set_flags(
+        &mut self,
+        page: Page<VirtAddr>,
+        flags: PageTableEntryFlags,
+    ) -> Result<(), SetFlagsError> {
+        let mut current_table = &mut *self.0;
+        let mut current_level = PageTableLevel::Level4;
+
+        loop {
+            let entry = current_table.address_entry_mut(current_level, page.start_addr());
+            let (entry, target) = entry.target_mut(current_level);
+            match target {
+                PageTableTarget::Unmapped => return Err(SetFlagsError::PageNotMapped),
+                PageTableTarget::Page { .. } => {
+                    entry.set_flags(flags);
+                    page.flush();
+                    return Ok(());
+                }
+                PageTableTarget::NextTable { level, table } => {
+                    current_table = table;
+                    current_level = level;
+                }
+            }
+        }
+    }
+
     /// Unmaps a given virtual page and returns the underlying physical page.
     ///
     /// NOTE: this function does not handle deallocation of the physical page.
@@ -266,11 +292,15 @@ impl PageTableEntry {
     }
 
     fn set_flags(&mut self, flags: PageTableEntryFlags) {
-        self.0 |= flags.bits();
+        self.0 = self.raw_address() | flags.bits();
+    }
+
+    fn raw_address(self) -> u64 {
+        self.0 & 0x000f_ffff_ffff_f000
     }
 
     fn address(self) -> KernPhysAddr {
-        let phys = PhysAddr::new(self.0 & 0x000f_ffff_ffff_f000);
+        let phys = PhysAddr::new(self.raw_address());
         KernPhysAddr::from(phys)
     }
 
@@ -396,6 +426,11 @@ pub(crate) enum UnmapError {
         expected_size: PageSize,
         actual_size: PageSize,
     },
+}
+
+#[derive(Debug)]
+pub(crate) enum SetFlagsError {
+    PageNotMapped,
 }
 
 bitflags! {
