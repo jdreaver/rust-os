@@ -3,10 +3,9 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use x86_64::PhysAddr;
-
 use crate::hpet::Milliseconds;
 use crate::memory;
+use crate::memory::Level4PageTable;
 use crate::sync::{AtomicEnum, AtomicInt, SpinLock, WaitCell};
 
 use super::schedcore::{force_unlock_scheduler, kill_current_task};
@@ -82,7 +81,7 @@ pub(crate) struct Task {
     pub(super) kernel_stack_pointer: TaskKernelStackPointer,
     pub(super) desired_state: AtomicEnum<u8, DesiredTaskState>,
     pub(super) exit_wait_cell: WaitCell<TaskExitCode>,
-    pub(super) page_table_addr: PhysAddr,
+    pub(super) page_table: SpinLock<Level4PageTable>,
 
     /// How much longer the task can run before it is preempted.
     pub(super) remaining_slice: AtomicInt<u64, Milliseconds>,
@@ -155,13 +154,15 @@ impl Task {
             stack_top_pointer.sub(stack_top_offset) as usize
         };
 
+        let page_table = memory::clone_kernel_page_table();
+
         Self {
             id,
             name,
             kernel_stack_pointer: TaskKernelStackPointer(stack_top),
             desired_state: AtomicEnum::new(DesiredTaskState::ReadyToRun),
             exit_wait_cell: WaitCell::new(),
-            page_table_addr: memory::kernel_default_page_table_address(),
+            page_table: SpinLock::new(page_table),
             remaining_slice: AtomicInt::new(Milliseconds::new(0)),
             _kernel_stack: kernel_stack,
         }

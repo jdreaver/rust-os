@@ -1,6 +1,8 @@
 use linked_list_allocator::LockedHeap;
 use x86_64::VirtAddr;
 
+use crate::memory::with_kernel_page_table_lock;
+
 use super::mapping::{
     allocate_and_map_pages, KERNEL_HEAP_REGION_MAX_SIZE, KERNEL_HEAP_REGION_START,
 };
@@ -26,7 +28,8 @@ pub(super) fn init() -> Result<(), MapError> {
     let heap_start = Page::containing_address(heap_start_addr, PageSize::Size4KiB);
     let page_range = PageRange::from_num_bytes(heap_start, HEAP_SIZE);
     let flags = PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE;
-    allocate_and_map_pages(page_range.iter(), flags)?;
+
+    with_kernel_page_table_lock(|table| allocate_and_map_pages(table, page_range.iter(), flags))?;
 
     unsafe {
         // `init() actually writes to the heap, which is why we can only

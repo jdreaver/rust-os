@@ -2,7 +2,7 @@ use x86_64::VirtAddr;
 
 use bitmap_alloc::BitmapAllocator;
 
-use crate::memory;
+use crate::memory::{self, with_kernel_page_table_lock};
 use crate::memory::{Page, PageRange, PageSize, PageTableEntryFlags, UnmapError, PAGE_SIZE};
 use crate::sync::SpinLock;
 
@@ -66,18 +66,22 @@ impl KernelStackAllocator<'_> {
 
         // Map the guard page as invalid
         unsafe {
-            match memory::unmap_page(stack.guard_page()) {
-                Err(UnmapError::PageNotMapped) => {}
-                Ok(page) => panic!("somehow the guard page was physically mapped! {:?}", page),
-                Err(e) => panic!("failed to unmap kernel stack guard page: {:?}", e),
-            }
+            with_kernel_page_table_lock(|table| {
+                match memory::unmap_page(table, stack.guard_page()) {
+                    Err(UnmapError::PageNotMapped) => {}
+                    Ok(page) => panic!("somehow the guard page was physically mapped! {:?}", page),
+                    Err(e) => panic!("failed to unmap kernel stack guard page: {:?}", e),
+                }
+            });
         }
 
         // Map the physical memory into the virtual address space
         let pages = stack.physically_mapped_pages();
         let flags = PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE;
-        memory::allocate_and_map_pages(pages.iter(), flags)
-            .expect("failed to map kernel stack pages");
+        memory::with_kernel_page_table_lock(|table| {
+            memory::allocate_and_map_pages(table, pages.iter(), flags)
+                .expect("failed to map kernel stack pages");
+        });
 
         // Zero out the memory
         unsafe {
@@ -95,7 +99,10 @@ impl KernelStackAllocator<'_> {
 
         for page in stack.physically_mapped_pages().iter() {
             unsafe {
-                memory::unmap_and_free_page(page).expect("failed to unmap kernel stack page");
+                memory::with_kernel_page_table_lock(|table| {
+                    memory::unmap_and_free_page(table, page)
+                        .expect("failed to unmap kernel stack page");
+                });
             };
         }
     }

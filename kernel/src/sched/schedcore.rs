@@ -147,7 +147,7 @@ pub(crate) fn start_multitasking(
     let prev_stack_ptr = core::ptr::addr_of!(dummy_stack_ptr);
     let current_task = current_task();
     let next_stack_ptr = current_task.kernel_stack_pointer;
-    let next_page_table = current_task.page_table_addr;
+    let next_page_table = current_task.page_table.lock().physical_address();
 
     // Drop to decrement reference count or else we will leak because
     // switch_to_task will never return
@@ -280,7 +280,7 @@ fn task_swap_parameters(
         .lock_disable_interrupts()
         .get_task_assert(next_task_id);
     let next_stack_ptr = next_task.kernel_stack_pointer;
-    let next_page_table = next_task.page_table_addr;
+    let next_page_table = next_task.page_table.lock().physical_address();
 
     // Give the next task some time slice
     next_task.remaining_slice.store(DEFAULT_TIME_SLICE);

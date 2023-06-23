@@ -11,7 +11,7 @@ use super::page::{Page, PageSize};
 use super::physical::{PhysicalMemoryAllocator, PAGE_SIZE};
 
 #[derive(Debug)]
-pub(super) struct Level4PageTable(&'static mut PageTable);
+pub(crate) struct Level4PageTable(&'static mut PageTable);
 
 impl Level4PageTable {
     /// Loads the page table from the current value of the CR3 register.
@@ -28,10 +28,20 @@ impl Level4PageTable {
         Self(table)
     }
 
-    pub(super) fn physical_address(&self) -> PhysAddr {
+    pub(crate) fn physical_address(&self) -> PhysAddr {
         let table_ptr = self.0 as *const _ as u64;
         let addr = KernPhysAddr::new(table_ptr);
         PhysAddr::from(addr)
+    }
+
+    /// Allocates a clone of the page table into a new physical page.
+    pub(super) fn allocate_clone(&self, allocator: &mut PhysicalMemoryAllocator) -> Self {
+        let page = allocator
+            .allocate_page()
+            .expect("failed to allocate page for Level4PageTable clone");
+        let new_table = unsafe { &mut *page.start_addr().as_mut_ptr::<PageTable>() };
+        new_table.entries.copy_from_slice(&self.0.entries);
+        Self(new_table)
     }
 
     /// Translates a virtual address to a physical page mapped by the page

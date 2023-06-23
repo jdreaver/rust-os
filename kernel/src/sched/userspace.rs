@@ -9,6 +9,7 @@ use crate::memory::{
 };
 use crate::{elf, gdt, vfs};
 
+use super::schedcore::current_task;
 use super::syscall::TOP_OF_KERNEL_STACK;
 
 /// Kernel function that is called when we are starting a userspace task. This
@@ -41,9 +42,36 @@ pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
     log::info!("ELF header: {:#?}", elf_exe);
 
     let instruction_ptr = elf_exe.entrypoint;
+    let stack_ptr = set_up_elf_segments(&elf_exe);
+
+    let user_code_segment_idx: u64 = u64::from(gdt::selectors().user_code_selector.0);
+    let user_data_segment_idx: u64 = u64::from(gdt::selectors().user_data_selector.0);
+
+    // N.B. It is important that jump_to_userspace is marked as returning !,
+    // which means it never returns, because I _think_ that the compiler will
+    // properly clean up all the other stuff in this function. Before I had `!`
+    // I was getting some intermittent page faults.
+    drop(path);
+    drop(file);
+    drop(elf_exe);
+    drop(bytes);
+    unsafe {
+        jump_to_userspace(
+            instruction_ptr,
+            stack_ptr,
+            user_code_segment_idx,
+            user_data_segment_idx,
+        );
+    };
+}
+
+// Separate function so we can clean up before jump_to_userspace, which never returns
+fn set_up_elf_segments(elf_exe: &elf::ElfExecutableHeader) -> VirtAddr {
+    let task = current_task();
+    let mut table = task.page_table.lock();
 
     // Map ELF segments to userspace addresses
-    for segment in elf_exe.loadable_segments {
+    for segment in &elf_exe.loadable_segments {
         assert!(segment.alignment as usize == PageSize::Size4KiB.size_bytes());
 
         let segment_data = elf_exe
@@ -56,13 +84,15 @@ pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
         let initial_flags = PageTableEntryFlags::PRESENT
             | PageTableEntryFlags::WRITABLE
             | PageTableEntryFlags::USER_ACCESSIBLE;
-        allocate_and_map_pages(user_pages.iter(), initial_flags)
+
+        allocate_and_map_pages(&mut table, user_pages.iter(), initial_flags)
             .expect("failed to map segment pages");
         user_pages.as_byte_slice()[..segment_data.len()].copy_from_slice(segment_data);
 
         let user_flags =
             segment.flags.page_table_entry_flags() | PageTableEntryFlags::USER_ACCESSIBLE;
-        set_page_flags(user_pages.iter(), user_flags).expect("failed to set segment flags");
+        set_page_flags(&mut table, user_pages.iter(), user_flags)
+            .expect("failed to set segment flags");
     }
 
     // Allocate a stack
@@ -72,24 +102,12 @@ pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
     let stack_flags = PageTableEntryFlags::PRESENT
         | PageTableEntryFlags::WRITABLE
         | PageTableEntryFlags::USER_ACCESSIBLE;
-    allocate_and_map_pages(stack_pages.iter(), stack_flags).expect("failed to map stack pages");
+    allocate_and_map_pages(&mut table, stack_pages.iter(), stack_flags)
+        .expect("failed to map stack pages");
+
+    #[allow(clippy::let_and_return)]
     let stack_ptr = stack_start + stack_pages.num_bytes();
-
-    let user_code_segment_idx: u64 = u64::from(gdt::selectors().user_code_selector.0);
-    let user_data_segment_idx: u64 = u64::from(gdt::selectors().user_data_selector.0);
-
-    // N.B. It is important that jump_to_userspace is marked as returning !,
-    // which means it never returns, because I _think_ that the compiler will
-    // properly clean up all the other stuff in this function. Before I had `!`
-    // I was getting some intermittent page faults.
-    unsafe {
-        jump_to_userspace(
-            instruction_ptr,
-            stack_ptr,
-            user_code_segment_idx,
-            user_data_segment_idx,
-        );
-    };
+    stack_ptr
 }
 
 /// Function to go to userspace for the first time in a task.

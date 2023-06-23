@@ -71,42 +71,25 @@ pub(super) fn clean_up_kernel_page_table() {
     });
 }
 
-pub(crate) fn kernel_default_page_table_address() -> PhysAddr {
-    KERNEL_PAGE_TABLE
-        .lock_disable_interrupts()
-        .as_ref()
-        .expect("kernel page table not initialized")
-        .physical_address()
-}
-
-/// Translate a given physical address to a virtual address, if possible.
-pub(crate) fn translate_addr(addr: VirtAddr) -> TranslateResult {
-    KERNEL_PAGE_TABLE
-        .lock_disable_interrupts()
-        .as_ref()
-        .expect("kernel page table not initialized")
-        .translate_address(addr)
-}
-
-/// Maps a given virtual page to a physical page.
-pub(crate) fn map_page(
-    virt_page: Page<VirtAddr>,
-    phys_page: Page<KernPhysAddr>,
-    flags: PageTableEntryFlags,
-) -> Result<Page<KernPhysAddr>, MapError> {
+pub(crate) fn with_kernel_page_table_lock<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut Level4PageTable) -> R,
+{
     let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
     let table = page_table_lock
         .as_mut()
         .expect("kernel page table not initialized");
 
-    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
-        table.map_to(
-            allocator,
-            virt_page,
-            MapTarget::ExistingPhysPage(phys_page),
-            flags,
-        )
-    })
+    f(table)
+}
+
+pub(crate) fn clone_kernel_page_table() -> Level4PageTable {
+    let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
+    let table = page_table_lock
+        .as_mut()
+        .expect("kernel page table not initialized");
+
+    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| table.allocate_clone(allocator))
 }
 
 /// Allocates a physical frame for the given virtual page of memory and maps the
@@ -114,17 +97,13 @@ pub(crate) fn map_page(
 /// initializing a virtual region that is known not to be backed by memory, like
 /// initializing the kernel heap.
 pub(crate) fn allocate_and_map_pages(
+    page_table: &mut Level4PageTable,
     pages: impl Iterator<Item = Page<VirtAddr>>,
     flags: PageTableEntryFlags,
 ) -> Result<(), MapError> {
-    let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
-    let table = page_table_lock
-        .as_mut()
-        .expect("kernel page table not initialized");
-
     KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
         for page in pages {
-            table.map_to(allocator, page, MapTarget::NewPhysPage, flags)?;
+            page_table.map_to(allocator, page, MapTarget::NewPhysPage, flags)?;
         }
 
         Ok(())
@@ -132,27 +111,21 @@ pub(crate) fn allocate_and_map_pages(
 }
 
 pub(crate) fn set_page_flags(
+    page_table: &mut Level4PageTable,
     pages: impl Iterator<Item = Page<VirtAddr>>,
     flags: PageTableEntryFlags,
 ) -> Result<(), SetFlagsError> {
-    let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
-    let table = page_table_lock
-        .as_mut()
-        .expect("kernel page table not initialized");
-
     for page in pages {
-        table.set_flags(page, flags)?;
+        page_table.set_flags(page, flags)?;
     }
     Ok(())
 }
 
-pub(crate) unsafe fn unmap_page(page: Page<VirtAddr>) -> Result<Page<KernPhysAddr>, UnmapError> {
-    let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
-    let table = page_table_lock
-        .as_mut()
-        .expect("kernel page table not initialized");
-
-    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| table.unmap(allocator, page, false))
+pub(crate) unsafe fn unmap_page(
+    page_table: &mut Level4PageTable,
+    page: Page<VirtAddr>,
+) -> Result<Page<KernPhysAddr>, UnmapError> {
+    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| page_table.unmap(allocator, page, false))
 }
 
 /// Unmaps a given virtual page from the page table and frees the physical page
@@ -162,30 +135,22 @@ pub(crate) unsafe fn unmap_page(page: Page<VirtAddr>) -> Result<Page<KernPhysAdd
 ///
 /// Caller must ensure the underlying physical page is not in use.
 pub(crate) unsafe fn unmap_and_free_page(
+    page_table: &mut Level4PageTable,
     page: Page<VirtAddr>,
 ) -> Result<Page<KernPhysAddr>, UnmapError> {
-    let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
-    let table = page_table_lock
-        .as_mut()
-        .expect("kernel page table not initialized");
-
-    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| table.unmap(allocator, page, true))
+    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| page_table.unmap(allocator, page, true))
 }
 
 pub(crate) fn identity_map_physical_pages(
+    page_table: &mut Level4PageTable,
     phys_pages: impl Iterator<Item = Page<KernPhysAddr>>,
     flags: PageTableEntryFlags,
 ) -> Result<(), MapError> {
-    let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
-    let table = page_table_lock
-        .as_mut()
-        .expect("kernel page table not initialized");
-
     KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
         for phys_page in phys_pages {
             let virt_addr = VirtAddr::from(phys_page.start_addr());
             let virt_page = Page::from_start_addr(virt_addr, phys_page.size());
-            let result = table.map_to(
+            let result = page_table.map_to(
                 allocator,
                 virt_page,
                 MapTarget::ExistingPhysPage(phys_page),

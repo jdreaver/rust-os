@@ -106,13 +106,15 @@ make test
     - Spawn a bunch of processes and hope we don't crash?
     - maybe some expected failures to ensure we call panic handler?
 - Memory management
+  - Consider locking global physical page allocator inside page table functions so we don't need to pass in `&mut PhysicalMemoryAllocator`, and then most of `mapping.rs` can go away.
+    - Then again, the explicitness is nice. Maybe make helpers to take both a page table lock and an allocator lock?
   - `Page` type improvements
     - Make typed page sizes like the x86_64 crate does
   - Add support for huge pages in `map_to`
   - Abandon the default limine memory mapping and make our own
     - Make sure to copy the pages relating to how the kernel is loaded though. Limine did all the hard work parsing the ELF file and set page permissions properly (or so I hope) for e.g. text, data, etc
   - Map all physical memory starting at `0xffff_8000_0000_0000`. Limine just does 4 GiB, but make sure to do it all.
-  - Free all levels of page tables that are no longer in use, like when all entries are no longer in use. This must be done recursively up the tree. This might be easier with a more general struct per page with reference counts, like Linux's `struct page`.
+  - Free all levels of page tables that are no longer in use (including the top level!) like when all entries are no longer in use. This must be done recursively up the tree. This might be easier with a more general struct per page with reference counts, like Linux's `struct page`.
     - A less general and simpler problem is freeing an entire page table, like when a process exits. When we do this though we have to ensure we don't free the kernel pages, just the user process pages!
   - Make our own `PhysAddr` and don't allow it to be converted to a pointer via `as_ptr()` (the x86_64 one doesn't have this btw)
   - Consider removing `as_u64` for all address types, because it makes mistakes too easy.
@@ -130,12 +132,8 @@ make test
   - Page table concurrency:
     - Consider representing each PageTableEntry as `AtomicU64`, or in the page table as `AtomicInt<u64, PageTableEntry>`
 - Userspace
-  - Use a fresh page table!
-    - Copy all of the higher half entries for the kernel page table.
-    - Make a TODO to ensure this is robust. Perhaps we need at least some dummy entries for the higher half so when they _do_ get mapped all of the process page table higher halfs point to the same L3 tables
-  - Drop any memory we allocated for task, like task segments
+  - Drop any memory we allocated for task, like task segment pages
     - Also drop any intermediate page tables we created.
-      - <https://docs.rs/x86_64/0.14.10/x86_64/structures/paging/mapper/trait.CleanUp.html#tymethod.clean_up_addr_range>
     - Would it be easier to create an arena holding a process's memory so we could drop it all?
   - Make sure we can use NO_EXECUTE bit in page table (need some EFER setting?)
   - Ensure that _every_ time we go to userspace, especially if we get rescheduled to another CPU, we store the kernel stack in the GS register. Do we need to add something to when we exit interrupt handlers, like a `return_to_userspace`?
@@ -146,7 +144,6 @@ make test
   - Segfault a user process and kill it instead of panicking and crashing the kernel
     - Be careful about locking the scheduler in the page fault handler. It is possible a spin lock was already taken on the scheduler and we'll deadlock (all though that shouldn't happen on the current CPU. Hmm)
   - Create a type showing the intended memory mapping of a process and turn that into a page table. This should make it easier to reason about the memory map.
-- Ensure kernel pages are not marked as `USER_ACCESSIBLE`. I think the `x86_64` allocator, or limine, is doing it by default
 - Per CPU
   - Maybe have a helper to take locks for multiple CPUs in a consistent way to prevent deadlocks, like ordering by processor ID. (Linux scheduler code does this for per CPU run queues)
   - Logging dependency on percpu:
