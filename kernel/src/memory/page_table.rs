@@ -67,52 +67,21 @@ impl Level4PageTable {
         map_target: MapTarget,
         flags: PageTableEntryFlags,
     ) -> Result<Page<KernPhysAddr>, MapError> {
-        let mut current_table = &mut *self.0;
-        let mut current_level = PageTableLevel::Level4;
-
-        let parent_flags = flags
-            & (PageTableEntryFlags::PRESENT
-                | PageTableEntryFlags::WRITABLE
-                | PageTableEntryFlags::USER_ACCESSIBLE);
-
-        loop {
-            let entry = current_table.address_entry_mut(current_level, page.start_addr());
-            let (entry, target) = entry.target_mut(current_level);
-            match target {
-                PageTableTarget::Unmapped => {
-                    match current_level.next_lower_level() {
-                        None => {
-                            // We're at the lowest level, so we can map to a page.
-                            //
-                            // TODO: Check target page size instead of saying lowest level
-                            // == make a page.
-                            let target_page = map_target.get_target_page(allocator, page.size())?;
-                            entry.set_target_page(&target_page, flags);
-                            // Need to flush the TLB here
-                            page.flush();
-                            return Ok(target_page);
-                        }
-                        Some(next_level) => {
-                            // We're not at the lowest level, so we need to create a new page table.
-                            let table =
-                                entry.allocate_and_map_child_table(allocator, parent_flags)?;
-                            current_table = table;
-                            current_level = next_level;
-                        }
-                    }
-                }
-                PageTableTarget::Page { page, flags } => {
-                    return Err(MapError::PageAlreadyMapped {
-                        existing_target: page,
-                        flags,
-                    })
-                }
-                PageTableTarget::NextTable { level, table } => {
-                    current_table = table;
-                    current_level = level;
-                }
-            }
-        }
+        let p3 = self
+            .0
+            .address_entry_mut(PageTableLevel::Level4, page.start_addr())
+            .get_or_allocate_next_table(allocator, flags)?;
+        let p2 = p3
+            .address_entry_mut(PageTableLevel::Level3, page.start_addr())
+            .get_or_allocate_next_table(allocator, flags)?;
+        let p1 = p2
+            .address_entry_mut(PageTableLevel::Level2, page.start_addr())
+            .get_or_allocate_next_table(allocator, flags)?;
+        let target_page = map_target.get_target_page(allocator, page.size())?;
+        p1.address_entry_mut(PageTableLevel::Level1, page.start_addr())
+            .map_page_target(PageTableLevel::Level1, target_page.start_addr(), flags)?;
+        page.flush();
+        Ok(target_page)
     }
 
     pub(super) fn set_flags(
@@ -369,9 +338,81 @@ impl PageTableEntry {
         self.0 = 0;
     }
 
-    fn set_target_page(&mut self, page: &Page<KernPhysAddr>, flags: PageTableEntryFlags) {
-        self.set_address(PhysAddr::from(page.start_addr()));
+    fn set_target(&mut self, addr: KernPhysAddr, flags: PageTableEntryFlags) {
+        self.set_address(PhysAddr::from(addr));
         self.set_flags(flags | PageTableEntryFlags::PRESENT);
+    }
+
+    fn get_or_allocate_next_table(
+        &mut self,
+        allocator: &mut PhysicalMemoryAllocator,
+        flags: PageTableEntryFlags,
+    ) -> Result<&mut PageTable, GetOrAllocatePageTableError> {
+        if !self.is_present() {
+            let table = self.allocate_and_map_child_table(allocator, flags)?;
+            return Ok(table);
+        }
+
+        if flags.contains(PageTableEntryFlags::HUGE_PAGE) {
+            return Err(GetOrAllocatePageTableError::HugePageFlagSet);
+        }
+
+        let table = unsafe { &mut *(self.address().as_mut_ptr::<PageTable>()) };
+        Ok(table)
+    }
+
+    fn map_page_target(
+        &mut self,
+        level: PageTableLevel,
+        target: KernPhysAddr,
+        flags: PageTableEntryFlags,
+    ) -> Result<(), MapError> {
+        match self.page_target(level)? {
+            PageTarget::Unmapped => {
+                self.set_target(target, flags);
+                Ok(())
+            }
+            PageTarget::Page { page, flags } => Err(MapError::PageAlreadyMapped {
+                existing_target: page,
+                flags,
+            }),
+        }
+    }
+
+    fn page_target(&mut self, level: PageTableLevel) -> Result<PageTarget, PageTargetError> {
+        if !self.is_present() {
+            return Ok(PageTarget::Unmapped);
+        }
+
+        let page_size = match level {
+            PageTableLevel::Level4 => panic!("requested page_target on a level 4 table! {self:?}"),
+            PageTableLevel::Level3 => {
+                if self.flags().contains(PageTableEntryFlags::HUGE_PAGE) {
+                    PageSize::Size1GiB
+                } else {
+                    return Err(PageTargetError::HugePageFlagNotSet(level));
+                }
+            }
+            PageTableLevel::Level2 => {
+                if self.flags().contains(PageTableEntryFlags::HUGE_PAGE) {
+                    PageSize::Size2MiB
+                } else {
+                    return Err(PageTargetError::HugePageFlagNotSet(level));
+                }
+            }
+            PageTableLevel::Level1 => {
+                if self.flags().contains(PageTableEntryFlags::HUGE_PAGE) {
+                    panic!("huge page flag set on a level 1 table! {self:?}")
+                } else {
+                    PageSize::Size4KiB
+                }
+            }
+        };
+
+        Ok(PageTarget::Page {
+            page: Page::from_start_addr(self.address(), page_size),
+            flags: self.flags(),
+        })
     }
 
     fn allocate_and_map_child_table(
@@ -410,11 +451,26 @@ pub(crate) enum MapError {
         existing_target: Page<KernPhysAddr>,
         flags: PageTableEntryFlags,
     },
+    /// The page table entry was expected to point to another page table, but
+    /// instead the `HUGE_PAGE` flag was set.
+    HugePageFlagSet,
+
+    /// Found an intermediate page table entry that was both unexpectedly
+    /// present, but also the `HUGE_PAGE` flag was not set.
+    HugePageFlagNotSet(PageTableLevel),
 }
 
 impl From<AllocError> for MapError {
     fn from(e: AllocError) -> Self {
         Self::PhysicalPageAllocationFailed(e)
+    }
+}
+
+impl From<PageTargetError> for MapError {
+    fn from(e: PageTargetError) -> Self {
+        match e {
+            PageTargetError::HugePageFlagNotSet(level) => Self::HugePageFlagNotSet(level),
+        }
     }
 }
 
@@ -431,6 +487,34 @@ pub(crate) enum UnmapError {
 #[derive(Debug)]
 pub(crate) enum SetFlagsError {
     PageNotMapped,
+}
+
+#[derive(Debug)]
+pub(crate) enum GetOrAllocatePageTableError {
+    PhysicalPageAllocationFailed(AllocError),
+    HugePageFlagSet,
+}
+
+impl From<AllocError> for GetOrAllocatePageTableError {
+    fn from(e: AllocError) -> Self {
+        Self::PhysicalPageAllocationFailed(e)
+    }
+}
+
+impl From<GetOrAllocatePageTableError> for MapError {
+    fn from(e: GetOrAllocatePageTableError) -> Self {
+        match e {
+            GetOrAllocatePageTableError::PhysicalPageAllocationFailed(e) => {
+                Self::PhysicalPageAllocationFailed(e)
+            }
+            GetOrAllocatePageTableError::HugePageFlagSet => Self::HugePageFlagSet,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum PageTargetError {
+    HugePageFlagNotSet(PageTableLevel),
 }
 
 bitflags! {
@@ -528,8 +612,17 @@ enum PageTableTarget<T> {
     },
 }
 
+#[derive(Debug)]
+enum PageTarget {
+    Unmapped,
+    Page {
+        page: Page<KernPhysAddr>,
+        flags: PageTableEntryFlags,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PageTableLevel {
+pub(crate) enum PageTableLevel {
     Level1 = 1,
     Level2,
     Level3,
