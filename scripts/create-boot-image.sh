@@ -40,7 +40,10 @@ sudo mkdir -p img_mount/EFI/BOOT
 sudo cp -v "$kernel_binary" img_mount/kernel.elf
 
 # Run nm to create a map of all the kernel's symbols. Useful for stack traces
-sudo nm "$kernel_binary" | sudo tee img_mount/kernel.symbols > /dev/null
+nm="nm"
+# N.B. llvm-nm should be better, but its --demangle doesn't actually work well for some reason
+# nm="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-nm"
+sudo "$nm" --demangle "$kernel_binary" | sudo tee img_mount/kernel.symbols > /dev/null
 
 sudo cp -v limine.cfg "$limine_dir/limine.sys" img_mount/
 sudo sed -i "s|CMDLINE=|CMDLINE=$cmdline|" img_mount/limine.cfg
