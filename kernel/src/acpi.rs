@@ -7,7 +7,7 @@ use acpi::platform::ProcessorInfo;
 use acpi::{AcpiHandler, AcpiTable, AcpiTables, HpetInfo, PhysicalMapping};
 use x86_64::PhysAddr;
 
-use crate::memory::KernPhysAddr;
+use crate::memory::{KernPhysAddr, KERNEL_PHYSICAL_MAPPING_START};
 use crate::serial_println;
 
 static ACPI_INFO: SyncUnsafeCell<Option<ACPIInfo>> = SyncUnsafeCell::new(None);
@@ -32,7 +32,7 @@ pub(crate) fn acpi_info() -> &'static ACPIInfo {
 /// Holds important Advanced Configuration and Power Interface (ACPI)
 /// information needed to start the kernel.
 pub(crate) struct ACPIInfo {
-    tables: AcpiTables<IdentityMapAcpiHandler>,
+    tables: AcpiTables<OffsetMapAcpiHandler>,
 }
 
 impl ACPIInfo {
@@ -42,7 +42,7 @@ impl ACPIInfo {
     /// up for identity mapping for any memory that could be used to access ACPI
     /// tables (e.g. identity mapping physical memory).
     unsafe fn from_rsdp(rsdp_addr: KernPhysAddr) -> Self {
-        let handler = IdentityMapAcpiHandler;
+        let handler = OffsetMapAcpiHandler;
         let rsdp_addr = rsdp_addr.as_u64() as usize;
         let tables = unsafe {
             AcpiTables::from_rsdp(handler, rsdp_addr).expect("failed to load ACPI tables from RSDP")
@@ -129,13 +129,11 @@ pub(crate) struct IOApicInfo {
 }
 
 /// We need to implement `acpi::AcpiHandler` to use the `acpi` crate. This is
-/// needed so we can map physical regions of memory to virtual regions. Luckily,
-/// we do identity mapping for the first ~4 GiB of memory thanks to limine, so
-/// this is easy; we don't actually have to modify page tables.
+/// needed so we can map physical regions of memory to virtual regions.
 #[derive(Debug, Clone)]
-pub struct IdentityMapAcpiHandler;
+pub struct OffsetMapAcpiHandler;
 
-impl AcpiHandler for IdentityMapAcpiHandler {
+impl AcpiHandler for OffsetMapAcpiHandler {
     /// # Safety
     ///
     /// Caller must ensure page tables are set up for identity mapping for any
@@ -146,7 +144,13 @@ impl AcpiHandler for IdentityMapAcpiHandler {
         size: usize,
     ) -> PhysicalMapping<Self, T> {
         let physical_start = physical_address;
-        let virtual_start = NonNull::new_unchecked(physical_address as *mut T);
+        let virtual_start = if physical_start < KERNEL_PHYSICAL_MAPPING_START as usize {
+            NonNull::new_unchecked(
+                (physical_address + KERNEL_PHYSICAL_MAPPING_START as usize) as *mut T,
+            )
+        } else {
+            NonNull::new_unchecked(physical_address as *mut T)
+        };
         let region_length = size;
         let mapped_length = size;
         let handler = self.clone();

@@ -54,7 +54,8 @@ pub(super) fn init(boot_info_data: &BootInfo) {
 
     let mut lock = KERNEL_PAGE_TABLE.lock();
     assert!(lock.is_none(), "kernel page table already initialized");
-    let page_table = unsafe { Level4PageTable::from_cr3() };
+    let mut page_table = unsafe { Level4PageTable::from_cr3() };
+    page_table.unmap_lower_half();
     lock.replace(page_table);
 }
 

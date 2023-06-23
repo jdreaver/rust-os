@@ -23,14 +23,15 @@ impl Level4PageTable {
     /// to the same underlying page table structure.
     pub(super) unsafe fn from_cr3() -> Self {
         let (level_4_table_frame, _) = x86_64::registers::control::Cr3::read();
-        let level_4_table_ptr = level_4_table_frame.start_address().as_u64() as *mut _;
-        let table = unsafe { &mut *level_4_table_ptr };
+        let addr = KernPhysAddr::from(level_4_table_frame.start_address());
+        let table = unsafe { &mut *addr.as_mut_ptr() };
         Self(table)
     }
 
     pub(super) fn physical_address(&self) -> PhysAddr {
         let table_ptr = self.0 as *const _ as u64;
-        PhysAddr::new(table_ptr)
+        let addr = KernPhysAddr::new(table_ptr);
+        PhysAddr::from(addr)
     }
 
     /// Translates a virtual address to a physical page mapped by the page
@@ -182,6 +183,18 @@ impl Level4PageTable {
                     current_level = level;
                 }
             }
+        }
+    }
+
+    /// Unmaps the lower half of the page table. This ensures that the kernel
+    /// page table doesn't touch anything in the lower half of the address
+    /// space, so it can be free for userspace when cloned.
+    pub(super) fn unmap_lower_half(&mut self) {
+        for i in 0..256 {
+            // TODO: Recursively free any intermediate child tables (but don't
+            // try and free the leaf pages since they probably weren't actually
+            // allocated).
+            self.0.entries[i].clear();
         }
     }
 }

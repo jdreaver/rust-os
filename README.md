@@ -109,7 +109,6 @@ make test
   - `Page` type improvements
     - Make typed page sizes like the x86_64 crate does
   - Add support for huge pages in `map_to`
-  - Consider using some code in `test-x86-paging-performance` branch to simplify logic. I like some of it. <https://github.com/jdreaver/rust-os/compare/master...test-x86-paging-performance>
   - Abandon the default limine memory mapping and make our own
     - Make sure to copy the pages relating to how the kernel is loaded though. Limine did all the hard work parsing the ELF file and set page permissions properly (or so I hope) for e.g. text, data, etc
   - Map all physical memory starting at `0xffff_8000_0000_0000`. Limine just does 4 GiB, but make sure to do it all.
