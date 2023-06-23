@@ -53,7 +53,7 @@ impl KernPhysAddr {
 
 impl fmt::Debug for KernPhysAddr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("VirtAddr")
+        f.debug_tuple("KernVirtAddr")
             .field(&format_args!("{:#x}", self.0))
             .finish()
     }
