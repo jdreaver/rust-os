@@ -328,15 +328,14 @@ extern "x86-interrupt" fn page_fault_handler(
     error_code: PageFaultErrorCode,
 ) {
     with_swapgs_accounting(|| {
-        logging::force_unlock_logger();
-        log::error!("EXCEPTION: PAGE FAULT");
         let accessed_address = Cr2::read();
-        if is_kernel_guard_page(accessed_address) {
-            log::error!("KERNEL GUARD PAGE WAS ACCESSED, LIKELY A STACK OVERFLOW!!!");
-        }
-        log::error!("Accessed Address (CR2): {:?}", accessed_address);
-        log::error!("Error Code: {error_code:?}");
-        log::error!("{stack_frame:#?}");
+        let kernel_guard_access_msg = if is_kernel_guard_page(accessed_address) {
+            "KERNEL GUARD PAGE WAS ACCESSED, LIKELY A STACK OVERFLOW!!!\n"
+        } else {
+            ""
+        };
+
+        panic!("EXCEPTION: PAGE FAULT\n{kernel_guard_access_msg}Accessed Address: {accessed_address:?}\nError code: {error_code:?}\n{stack_frame:#?}");
     });
 
     loop {
