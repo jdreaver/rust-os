@@ -1,3 +1,4 @@
+use core::fmt;
 use core::ops::{Add, Sub};
 
 use x86_64::{PhysAddr, VirtAddr};
@@ -7,7 +8,7 @@ use super::mapping::{KERNEL_PHYSICAL_MAPPING_END, KERNEL_PHYSICAL_MAPPING_START}
 /// Physical address that has been mapped to the kernel physical address space.
 /// A `KernPhysAddr` is trivially convertible to and from a `PhysAddr` by using
 /// the `KERNEL_PHYSICAL_MAPPING_START` offset.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub(crate) struct KernPhysAddr(u64);
 
@@ -47,6 +48,14 @@ impl KernPhysAddr {
 
     pub(crate) fn as_mut_ptr<T>(self) -> *mut T {
         self.as_ptr::<T>() as *mut T
+    }
+}
+
+impl fmt::Debug for KernPhysAddr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("VirtAddr")
+            .field(&format_args!("{:#x}", self.0))
+            .finish()
     }
 }
 
