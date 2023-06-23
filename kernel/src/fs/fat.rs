@@ -1,7 +1,7 @@
-use zerocopy::{AsBytes, FromBytes};
+use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 /// The BIOS parameter block is the first part of the boot sector.
-#[derive(Debug, AsBytes, FromBytes)]
+#[derive(Debug, AsBytes, FromBytes, FromZeroes)]
 #[repr(C, packed)]
 pub struct BIOSParameterBlock {
     jmp_boot: [u8; 3],

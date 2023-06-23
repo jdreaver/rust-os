@@ -83,27 +83,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2b183d6ce6ca4cf30e3db37abf5b52568b5f9015c97d9fbdd7026aa5dcdd758"
 
 [[package]]
-name = "fat"
-version = "0.1.0"
-dependencies = [
- "genio",
- "zerocopy 0.6.1",
-]
-
-[[package]]
 name = "funty"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
-
-[[package]]
-name = "genio"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4e26859a808ffa83a83f20c7e3c9366afea91edae637a6ac203051885882dc8"
-dependencies = [
- "void",
-]
 
 [[package]]
 name = "libm"
@@ -277,7 +260,6 @@ dependencies = [
  "bitflags 2.3.1",
  "bitmap-alloc",
  "elf",
- "fat",
  "limine",
  "linked_list_allocator",
  "log",
@@ -291,7 +273,7 @@ dependencies = [
  "test-macro",
  "vesa_framebuffer",
  "x86_64",
- "zerocopy 0.7.0-alpha.4",
+ "zerocopy",
 ]
 
 [[package]]
@@ -394,12 +376,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "void"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
-
-[[package]]
 name = "volatile"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -428,32 +404,11 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "332f188cc1bcf1fe1064b8c58d150f497e697f49774aa846f2dc949d9a25f236"
-dependencies = [
- "byteorder",
- "zerocopy-derive 0.3.2",
-]
-
-[[package]]
-name = "zerocopy"
 version = "0.7.0-alpha.4"
 source = "git+https://github.com/google/zerocopy?rev=b5b30d0287734c004bb2c1c97cc53a460443a57f#b5b30d0287734c004bb2c1c97cc53a460443a57f"
 dependencies = [
  "byteorder",
- "zerocopy-derive 0.7.0-alpha.4",
-]
-
-[[package]]
-name = "zerocopy-derive"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6505e6815af7de1746a08f69c69606bb45695a17149517680f3b2149713b19a3"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
+ "zerocopy-derive",
 ]
 
 [[package]]

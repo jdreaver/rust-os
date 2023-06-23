@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::block;
-use crate::fs::{ext2, sysfs};
+use crate::fs::{ext2, fat, sysfs};
 use crate::hpet::Milliseconds;
 use crate::qemu::{exit_qemu, QEMUExitCode};
 use crate::sync::SpinLock;
