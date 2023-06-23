@@ -96,6 +96,37 @@ pub(super) unsafe extern "C" fn syscall_handler() {
 extern "C" fn syscall_handler_inner(rdi: u64, rsi: u64, rdx: u64, r10: u64, r8: u64, r9: u64) {
     log::warn!("syscall handler! rdi: {rdi:#x}, rsi: {rsi:#x}, rdx: {rdx:#x}, r10: {r10:#x}, r8: {r8:#x}, r9: {r9:#x}");
 
-    // Kill the task for now.
-    sched::kill_current_task(TaskExitCode::ExitSuccess);
+    let syscall_num = rdi;
+
+    let handler = SYSCALL_HANDLERS
+        .get(syscall_num as usize)
+        .into_iter()
+        .flatten()
+        .next();
+    #[allow(clippy::option_if_let_else)]
+    match handler {
+        Some(handler) => handler(rsi, rdx, r10, r8, r9),
+        None => {
+            log::warn!(
+                "Unknown syscall {syscall_num} called with args ({rsi}, {rdx}, {r10}, {r8}, {r9})"
+            );
+        }
+    };
+}
+
+type SyscallHandler = fn(u64, u64, u64, u64, u64);
+
+static SYSCALL_HANDLERS: [Option<SyscallHandler>; 2] = [
+    Some(syscall_exit), // 0
+    Some(syscall_print),
+];
+
+fn syscall_exit(exit_code: u64, _: u64, _: u64, _: u64, _: u64) {
+    sched::kill_current_task(TaskExitCode::from(exit_code));
+}
+
+fn syscall_print(data_ptr: u64, data_len: u64, _: u64, _: u64, _: u64) {
+    let s = unsafe { core::slice::from_raw_parts(data_ptr as *const u8, data_len as usize) };
+    let s = core::str::from_utf8(s).unwrap();
+    log::info!("PRINT SYSCALL: {}", s);
 }

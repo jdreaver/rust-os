@@ -110,9 +110,7 @@ make test
     - Then again, the explicitness is nice. Maybe make helpers to take both a page table lock and an allocator lock?
   - `Page` type improvements
     - Make typed page sizes like the x86_64 crate does
-  - Add support for huge pages in `map_to`
-  - Abandon the default limine memory mapping and make our own
-    - Make sure to copy the pages relating to how the kernel is loaded though. Limine did all the hard work parsing the ELF file and set page permissions properly (or so I hope) for e.g. text, data, etc
+  - Add support for huge pages in `map_to`, and then use them for both the heap and mapping physical memory
   - Map all physical memory starting at `0xffff_8000_0000_0000`. Limine just does 4 GiB, but make sure to do it all.
   - Free all levels of page tables that are no longer in use (including the top level!) like when all entries are no longer in use. This must be done recursively up the tree. This might be easier with a more general struct per page with reference counts, like Linux's `struct page`.
     - A less general and simpler problem is freeing an entire page table, like when a process exits. When we do this though we have to ensure we don't free the kernel pages, just the user process pages!
@@ -120,13 +118,8 @@ make test
   - Consider removing `as_u64` for all address types, because it makes mistakes too easy.
   - Guard pages: consider using one of the special OS-available bits on pages for `GUARD_PAGE`, in case that could simplify our guard page detection logic in the page fault handler. Using these OS-available bits in general to identify the type of page is probably going to be useful.
     - This will require not simply "unmapping" a page for the guard page, but to add some sort of "unmap with flags", or mapping "to" physical address 0 with flags (this is what we used to do)
-  - Make it trivial to create a userspace page table.
-    - Make kernel page table cloneable: fill entire top half (even if most level 3 page tables are empty), and zero out bottom half. That means we only use `KernelPhysAddr`.
-      - Zeroing out bottom half means we likely don't want any sort of "identity map" function with `PhysAddr`
-    - Since bottom half of kernel page table should be empty, after cloning we can fill in userspace segments into bottom half.
-  - Once new page tables are in, re-examine visibility of all types and functions. Only expose what is needed out of `memory` (e.g. we probably don't need other modules touching raw page tables)
   - Linux prefers to use physical allocation in the kernel by default (kmalloc) because it is faster than virtual allocation (vmalloc) because vmalloc needs to mess with page tables. Vmalloc is only used when you need a huge chunk of memory that might be hard to get physically contiguous.
-  - Linux keeps a 40 byte page struct per physical page of memory. That is way larger than my 1 bit! It only takes 40MB of a 4GB system (assuming 4kB pages) which might be an acceptable tradeoff.
+  - Linux keeps a 40 (64?) byte page struct per physical page of memory. That is way larger than my 1 bit! It only takes 40MB of a 4GB system (assuming 4kB pages) which might be an acceptable tradeoff.
   - Intermediate page table flags: we need to make sure that e.g. if a leaf entry is intended to be writable, then parent tables are marked writable too, especially if they already exist.
     - Perhaps we should _always_ have high half page tables have WRITABLE | PRESENT, and lower half has WRITABLE | PRESENT | USER_ACCESSIBLE. Nice and easy.
   - Page table concurrency:
@@ -140,7 +133,6 @@ make test
   - Re-enable interrupts while handling syscalls (or don't? at least be explicit)
     - If we expect interrupts to be disabled, make a comment where we disabled and where we do e.g. `swapgs` or something else that expects interrupts disabled
   - Figure out how to get to userspace for the first time with sysretq instead of iretq
-  - Define actual system calls
   - Segfault a user process and kill it instead of panicking and crashing the kernel
     - Be careful about locking the scheduler in the page fault handler. It is possible a spin lock was already taken on the scheduler and we'll deadlock (all though that shouldn't happen on the current CPU. Hmm)
   - Create a type showing the intended memory mapping of a process and turn that into a page table. This should make it easier to reason about the memory map.

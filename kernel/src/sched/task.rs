@@ -206,7 +206,18 @@ impl From<DesiredTaskState> for u8 {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum TaskExitCode {
     ExitSuccess,
+    ExitFailure(u64),
     // TODO: Add failure codes here
+}
+
+impl From<u64> for TaskExitCode {
+    fn from(value: u64) -> Self {
+        if value == 0 {
+            Self::ExitSuccess
+        } else {
+            Self::ExitFailure(value)
+        }
+    }
 }
 
 /// Function that is run when a task is switched to for the very first time.

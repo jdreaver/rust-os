@@ -11,7 +11,7 @@ _start:
         mov rdx, msglen         ;  sizeof("Hello, world!\n")
         syscall                 ; );
 
-        mov rax, 60             ; exit(
+        mov rax, 0             ; exit(
         mov rdi, 0              ;  EXIT_SUCCESS
         syscall                 ; );
 
