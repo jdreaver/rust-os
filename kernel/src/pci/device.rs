@@ -354,7 +354,7 @@ impl PCIDeviceConfigType0 {
         // so they don't fault.
         let config_start_addr = bar_phys_addr + u64::from(physical_offset);
         let start_page = Page::containing_address(config_start_addr, PageSize::Size4KiB);
-        let pages = PageRange::from_bytes_inclusive(start_page, region_size as usize);
+        let pages = PageRange::from_num_bytes(start_page, region_size as usize);
         let flags = PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE;
         memory::identity_map_physical_pages(pages.iter(), flags)
             .expect("failed to identity map PCI BAR frame");

@@ -24,7 +24,7 @@ pub(super) fn init() -> Result<(), MapError> {
 
     let heap_start_addr = VirtAddr::new(HEAP_START as u64);
     let heap_start = Page::containing_address(heap_start_addr, PageSize::Size4KiB);
-    let page_range = PageRange::from_bytes_inclusive(heap_start, HEAP_SIZE);
+    let page_range = PageRange::from_num_bytes(heap_start, HEAP_SIZE);
     let flags = PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE;
     allocate_and_map_pages(page_range.iter(), flags)?;
 

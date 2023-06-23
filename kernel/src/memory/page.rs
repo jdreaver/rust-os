@@ -67,7 +67,7 @@ impl<A: Address> PageRange<A> {
         Self { start, num_pages }
     }
 
-    pub(crate) fn from_bytes_inclusive(start: Page<A>, num_bytes: usize) -> Self {
+    pub(crate) fn from_num_bytes(start: Page<A>, num_bytes: usize) -> Self {
         let num_pages = num_bytes.div_ceil(start.size.size_bytes());
         Self { start, num_pages }
     }
