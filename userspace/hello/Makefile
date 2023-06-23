@@ -2,7 +2,7 @@
 all: hello
 
 hello: hello.o
-	ld -o $@ $? -Ttext 0x200000000
+	ld -o $@ $?
 
 hello.o: hello.asm
 	nasm -f elf64 -O2 $?

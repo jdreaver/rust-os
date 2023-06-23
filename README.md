@@ -135,7 +135,6 @@ make test
     - Also drop any intermediate page tables we created.
       - <https://docs.rs/x86_64/0.14.10/x86_64/structures/paging/mapper/trait.CleanUp.html#tymethod.clean_up_addr_range>
     - Would it be easier to create an arena holding a process's memory so we could drop it all?
-  - Remove `-Ttext` in `ld` command to link `hello` userspace program once we have proper page tables built
   - Make sure we can use NO_EXECUTE bit in page table (need some EFER setting?)
   - Ensure that _every_ time we go to userspace, especially if we get rescheduled to another CPU, we store the kernel stack in the GS register. Do we need to add something to when we exit interrupt handlers, like a `return_to_userspace`?
   - Re-enable interrupts while handling syscalls (or don't? at least be explicit)

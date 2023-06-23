@@ -30,6 +30,7 @@ echo "Nested hello" > "$mount_dir/nested-dir/nested.txt"
 
 # Include userspace files
 mkdir "$mount_dir/bin"
+make -C userspace/hello clean
 make -C userspace/hello
 cp userspace/hello/hello "$mount_dir/bin/hello"
 
