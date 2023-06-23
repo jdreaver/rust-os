@@ -70,13 +70,13 @@ impl Level4PageTable {
         let p3 = self
             .0
             .address_entry_mut(PageTableLevel::Level4, page.start_addr())
-            .get_or_allocate_next_table(allocator, flags)?;
+            .get_next_table()?.get_or_allocate(allocator, flags)?;
         let p2 = p3
             .address_entry_mut(PageTableLevel::Level3, page.start_addr())
-            .get_or_allocate_next_table(allocator, flags)?;
+            .get_next_table()?.get_or_allocate(allocator, flags)?;
         let p1 = p2
             .address_entry_mut(PageTableLevel::Level2, page.start_addr())
-            .get_or_allocate_next_table(allocator, flags)?;
+            .get_next_table()?.get_or_allocate(allocator, flags)?;
         let target_page = map_target.get_target_page(allocator, page.size())?;
         p1.address_entry_mut(PageTableLevel::Level1, page.start_addr())
             .map_page_target(PageTableLevel::Level1, target_page.start_addr(), flags)?;
@@ -89,23 +89,23 @@ impl Level4PageTable {
         page: Page<VirtAddr>,
         flags: PageTableEntryFlags,
     ) -> Result<(), SetFlagsError> {
-        let mut current_table = &mut *self.0;
-        let mut current_level = PageTableLevel::Level4;
-
-        loop {
-            let entry = current_table.address_entry_mut(current_level, page.start_addr());
-            let (entry, target) = entry.target_mut(current_level);
-            match target {
-                PageTableTarget::Unmapped => return Err(SetFlagsError::PageNotMapped),
-                PageTableTarget::Page { .. } => {
-                    entry.set_flags(flags);
-                    page.flush();
-                    return Ok(());
-                }
-                PageTableTarget::NextTable { level, table } => {
-                    current_table = table;
-                    current_level = level;
-                }
+        let p3 = self
+            .0
+            .address_entry_mut(PageTableLevel::Level4, page.start_addr())
+            .get_next_table()?.assert_present()?;
+        let p2 = p3
+            .address_entry_mut(PageTableLevel::Level3, page.start_addr())
+            .get_next_table()?.assert_present()?;
+        let p1 = p2
+            .address_entry_mut(PageTableLevel::Level2, page.start_addr())
+            .get_next_table()?.assert_present()?;
+        let entry = p1.address_entry_mut(PageTableLevel::Level1, page.start_addr());
+        match entry.page_target(PageTableLevel::Level1)? {
+            PageTarget::Unmapped => Err(SetFlagsError::PageNotMapped),
+            PageTarget::Page { .. } => {
+                entry.set_flags(flags);
+                page.flush();
+                Ok(())
             }
         }
     }
@@ -343,6 +343,19 @@ impl PageTableEntry {
         self.set_flags(flags | PageTableEntryFlags::PRESENT);
     }
 
+    fn get_next_table(&mut self) -> Result<NextTable, HugePageFlagSet> {
+        if !self.is_present() {
+            return Ok(NextTable::Unmapped(self));
+        }
+
+        if self.flags().contains(PageTableEntryFlags::HUGE_PAGE) {
+            return Err(HugePageFlagSet);
+        }
+
+        let table = unsafe { &mut *(self.address().as_mut_ptr::<PageTable>()) };
+        Ok(NextTable::Table(table))
+    }
+
     fn get_or_allocate_next_table(
         &mut self,
         allocator: &mut PhysicalMemoryAllocator,
@@ -353,7 +366,7 @@ impl PageTableEntry {
             return Ok(table);
         }
 
-        if flags.contains(PageTableEntryFlags::HUGE_PAGE) {
+        if self.flags().contains(PageTableEntryFlags::HUGE_PAGE) {
             return Err(GetOrAllocatePageTableError::HugePageFlagSet);
         }
 
@@ -487,6 +500,7 @@ pub(crate) enum UnmapError {
 #[derive(Debug)]
 pub(crate) enum SetFlagsError {
     PageNotMapped,
+    HugePageFlagSet,
 }
 
 #[derive(Debug)]
@@ -513,8 +527,39 @@ impl From<GetOrAllocatePageTableError> for MapError {
 }
 
 #[derive(Debug)]
+pub(crate) struct PageNotMapped;
+
+impl From<PageNotMapped> for SetFlagsError {
+    fn from(_: PageNotMapped) -> Self {
+        Self::PageNotMapped
+    }
+}
+
+pub(crate) struct HugePageFlagSet;
+
+impl From<HugePageFlagSet> for SetFlagsError {
+    fn from(_: HugePageFlagSet) -> Self {
+        Self::HugePageFlagSet
+    }
+}
+
+impl From<HugePageFlagSet> for MapError {
+    fn from(_: HugePageFlagSet) -> Self {
+        Self::HugePageFlagSet
+    }
+}
+
+#[derive(Debug)]
 pub(crate) enum PageTargetError {
     HugePageFlagNotSet(PageTableLevel),
+}
+
+impl From<PageTargetError> for SetFlagsError {
+    fn from(e: PageTargetError) -> Self {
+        match e {
+            PageTargetError::HugePageFlagNotSet(_) => Self::HugePageFlagSet,
+        }
+    }
 }
 
 bitflags! {
@@ -595,6 +640,35 @@ impl PageTableIndex {
         let mask = 0b1_1111_1111;
         let index = ((address.as_u64() >> shift) & mask) as u16;
         Self::new(index)
+    }
+}
+
+#[derive(Debug)]
+enum NextTable<'a> {
+    Unmapped(&'a mut PageTableEntry),
+    Table(&'a mut PageTable),
+}
+
+impl<'a> NextTable<'a> {
+    fn get_or_allocate(
+        self,
+        allocator: &mut PhysicalMemoryAllocator,
+        flags: PageTableEntryFlags,
+    ) -> Result<&'a mut PageTable, GetOrAllocatePageTableError> {
+        match self {
+            Self::Unmapped(entry) => {
+                let table = entry.allocate_and_map_child_table(allocator, flags)?;
+                Ok(table)
+            }
+            Self::Table(table) => Ok(table),
+        }
+    }
+
+    fn assert_present(self) -> Result<&'a mut PageTable, PageNotMapped> {
+        match self {
+            Self::Unmapped(_) => Err(PageNotMapped),
+            Self::Table(table) => Ok(table),
+        }
     }
 }
 
