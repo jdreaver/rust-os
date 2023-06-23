@@ -125,6 +125,8 @@ make test
   - Once new page tables are in, re-examine visibility of all types and functions. Only expose what is needed out of `memory` (e.g. we probably don't need other modules touching raw page tables)
   - Linux prefers to use physical allocation in the kernel by default (kmalloc) because it is faster than virtual allocation (vmalloc) because vmalloc needs to mess with page tables. Vmalloc is only used when you need a huge chunk of memory that might be hard to get physically contiguous.
   - Linux keeps a 40 byte page struct per physical page of memory. That is way larger than my 1 bit! It only takes 40MB of a 4GB system (assuming 4kB pages) which might be an acceptable tradeoff.
+  - Intermediate page table flags: we need to make sure that e.g. if a leaf entry is intended to be writable, then parent tables are marked writable too, especially if they already exist.
+    - Perhaps we should _always_ have high half page tables have WRITABLE | PRESENT, and lower half has WRITABLE | PRESENT | USER_ACCESSIBLE. Nice and easy.
   - Page table concurrency:
     - Consider representing each PageTableEntry as `AtomicU64`, or in the page table as `AtomicInt<u64, PageTableEntry>`
 - Userspace

@@ -7,11 +7,11 @@
 //! |-----------------------|---------|-----------------------|---------|-------------|
 //! | 0x0000_0000_0000_0000 | 0       | 0x0000_7fff_ffff_ffff | 128 TiB | Canonical virtual address space |
 //! | 0x0000_8000_0000_0000 | +128 TB | 0xffff_7fff_ffff_ffff | ~16M TB | Empty space that is not allowed to be accessed in x86_64 |
-//! | 0xffff_8000_0000_0000 | -128 TB | 0xffff_bfff_ffff_ffff | 64 TB   | Direct mapping of physical memory. Also includes device mappings like PCI. |
-//! | 0xffff_c000_0000_0000 | -64 TB  | 0xffff_cfff_ffff_ffff | 16 TB   | Kernel heap (very large, could be split up) |
-//! | 0xffff_d000_0000_0000 | -48 TB  | 0xffff_dfff_ffff_ffff | 16 TB   | Kernel stack allocations (separate from heap, very large and could be split up) |
-//! | 0xffff_e000_0000_0000 | -32 TB  | 0xffff_ffff_efff_ffff | ~32 TB  | (empty space) |
-//! | 0xffff_ffff_8000_0000 | -2 GB   | 0xffff_ffff_ffff_ffff | 2 GB    | Kernel text and data segments |
+//! | 0xffff_8000_0000_0000 | -128 TB | 0xffff_bfff_ffff_ffff |   64 TB | Direct mapping of physical memory. Also includes device mappings like PCI. |
+//! | 0xffff_c000_0000_0000 | -64 TB  | 0xffff_cfff_ffff_ffff |   16 TB | Kernel heap (very large, could be split up) |
+//! | 0xffff_d000_0000_0000 | -48 TB  | 0xffff_dfff_ffff_ffff |   16 TB | Kernel stack allocations (separate from heap, very large and could be split up) |
+//! | 0xffff_e000_0000_0000 | -32 TB  | 0xffff_ffff_efff_ffff |  ~32 TB | (empty space) |
+//! | 0xffff_ffff_8000_0000 | -2 GB   | 0xffff_ffff_ffff_ffff |    2 GB | Kernel text and data segments |
 
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -54,9 +54,21 @@ pub(super) fn init(boot_info_data: &BootInfo) {
 
     let mut lock = KERNEL_PAGE_TABLE.lock();
     assert!(lock.is_none(), "kernel page table already initialized");
-    let mut page_table = unsafe { Level4PageTable::from_cr3() };
-    page_table.unmap_lower_half();
+    let page_table = unsafe { Level4PageTable::from_cr3() };
     lock.replace(page_table);
+}
+
+pub(super) fn clean_up_kernel_page_table() {
+    let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
+    let table = page_table_lock
+        .as_mut()
+        .expect("kernel page table not initialized");
+
+    table.unmap_lower_half();
+
+    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| {
+        table.fill_top_half_entries(allocator);
+    });
 }
 
 pub(crate) fn kernel_default_page_table_address() -> PhysAddr {

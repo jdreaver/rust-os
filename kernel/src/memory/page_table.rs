@@ -197,6 +197,32 @@ impl Level4PageTable {
             self.0.entries[i].clear();
         }
     }
+
+    /// Fills in entries for level 3 tables in the top half of the level 4
+    /// table. This ensures that when this page table is cloned for new
+    /// processes, the kernel's mappings are preserved.
+    pub(super) fn fill_top_half_entries(&mut self, allocator: &mut PhysicalMemoryAllocator) {
+        let flags = PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE;
+
+        for i in 256..512 {
+            let entry = &mut self.0.entries[i];
+            let (entry, target) = entry.target_mut(PageTableLevel::Level4);
+            match target {
+                PageTableTarget::Unmapped => {
+                    entry
+                        .allocate_and_map_child_table(allocator, flags)
+                        .expect("failed to create level 3 table for top half of kernel page table");
+                }
+                PageTableTarget::Page { .. } => {
+                    panic!("somehow the level 4 table had a page mapped!")
+                }
+                PageTableTarget::NextTable { .. } => {
+                    // Already mapped, just set flags
+                    entry.set_flags(flags);
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

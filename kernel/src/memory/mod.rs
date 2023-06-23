@@ -22,5 +22,6 @@ where
 {
     mapping::init(boot_info_data);
     physical::init(usable_memory_regions);
+    mapping::clean_up_kernel_page_table();
     heap::init().expect("failed to initialize heap");
 }
