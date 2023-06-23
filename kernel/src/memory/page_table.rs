@@ -118,7 +118,12 @@ impl Level4PageTable {
     /// Unmaps a given virtual page and returns the underlying physical page.
     ///
     /// NOTE: this function does not handle deallocation of the physical page.
-    pub(super) fn unmap(&mut self, page: Page<VirtAddr>) -> Result<Page<KernPhysAddr>, UnmapError> {
+    pub(super) fn unmap(
+        &mut self,
+        allocator: &mut PhysicalMemoryAllocator,
+        page: Page<VirtAddr>,
+        free_physical_page: bool,
+    ) -> Result<Page<KernPhysAddr>, UnmapError> {
         let mut current_table = &mut *self.0;
         let mut current_level = PageTableLevel::Level4;
 
@@ -140,9 +145,9 @@ impl Level4PageTable {
                     entry.clear();
                     page.flush();
 
-                    // TODO: Free the buffer used for this page, if necessary.
-                    // We might need to keep track of if a page was allocated or
-                    // not using the OS-available page table bits.
+                    if free_physical_page {
+                        allocator.free_page(target_page);
+                    }
 
                     return Ok(target_page);
                 }

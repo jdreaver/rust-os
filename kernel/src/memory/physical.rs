@@ -160,6 +160,10 @@ impl PhysicalMemoryAllocator<'_> {
         Ok(PageRange::new(start_page, num_pages))
     }
 
+    pub(super) fn free_page(&mut self, page: Page<KernPhysAddr>) {
+        self.free_pages(&PageRange::new(page, 1));
+    }
+
     pub(super) fn free_pages(&mut self, pages: &PageRange<KernPhysAddr>) {
         let start_addr = PhysAddr::from(pages.start_addr());
         let start_page = start_addr.as_u64() as usize / pages.page_size().size_bytes();

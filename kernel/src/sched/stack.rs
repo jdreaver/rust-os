@@ -95,7 +95,7 @@ impl KernelStackAllocator<'_> {
 
         for page in stack.physically_mapped_pages().iter() {
             unsafe {
-                memory::unmap_page(page).expect("failed to unmap kernel stack page");
+                memory::unmap_and_free_page(page).expect("failed to unmap kernel stack page");
             };
         }
     }

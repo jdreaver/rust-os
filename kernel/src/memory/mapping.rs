@@ -118,11 +118,29 @@ pub(crate) fn allocate_and_map_pages(
 }
 
 pub(crate) unsafe fn unmap_page(page: Page<VirtAddr>) -> Result<Page<KernPhysAddr>, UnmapError> {
-    KERNEL_PAGE_TABLE
-        .lock()
+    let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
+    let table = page_table_lock
         .as_mut()
-        .expect("kernel page table not initialized")
-        .unmap(page)
+        .expect("kernel page table not initialized");
+
+    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| table.unmap(allocator, page, false))
+}
+
+/// Unmaps a given virtual page from the page table and frees the physical page
+/// it was mapped to.
+///
+/// # Safety
+///
+/// Caller must ensure the underlying physical page is not in use.
+pub(crate) unsafe fn unmap_and_free_page(
+    page: Page<VirtAddr>,
+) -> Result<Page<KernPhysAddr>, UnmapError> {
+    let mut page_table_lock = KERNEL_PAGE_TABLE.lock();
+    let table = page_table_lock
+        .as_mut()
+        .expect("kernel page table not initialized");
+
+    KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| table.unmap(allocator, page, true))
 }
 
 pub(crate) fn identity_map_physical_pages(
@@ -193,7 +211,8 @@ pub(crate) fn test_new_page_table() {
     let target = table.translate_address(map_virt.start_addr());
     serial_println!("Target of {target_addr:x?}: {target:x?}");
 
-    let unmap_result = table.unmap(map_virt);
+    let unmap_result =
+        KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| table.unmap(allocator, map_virt, false));
     serial_println!("Unmap result: {:?}", unmap_result);
 
     let map_virt = Page::from_start_addr(VirtAddr::new(0x4_0001_0000), PageSize::Size4KiB);
@@ -211,6 +230,7 @@ pub(crate) fn test_new_page_table() {
     let target = table.translate_address(map_virt.start_addr());
     serial_println!("Target of {target_addr:x?}: {target:x?}");
 
-    let unmap_result = table.unmap(map_virt);
+    let unmap_result =
+        KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| table.unmap(allocator, map_virt, true));
     serial_println!("Unmap result: {:?}", unmap_result);
 }

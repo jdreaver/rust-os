@@ -113,11 +113,8 @@ make test
   - Abandon the default limine memory mapping and make our own
     - Make sure to copy the pages relating to how the kernel is loaded though. Limine did all the hard work parsing the ELF file and set page permissions properly (or so I hope) for e.g. text, data, etc
   - Map all physical memory starting at `0xffff_8000_0000_0000`. Limine just does 4 GiB, but make sure to do it all.
-  - Deal with freeing buffers used for mapping. We can't blindly deallocate every time we unmap because some mapping targets are device MMIO.
-    - We _do_ want to free intermediate page tables, just not necessarily leaf pages.
-    - Perhaps don't allow the `NewPhysPage` mapping target. Or, make sure the caller uses the `PhysPage` result.
-    - We could add `unmap_and_free`. Internally under the hood it is just a boolean whether or not to free leaf pages.
-    - The kernel stack allocator actually has a bug where it doesn't free its allocated physical memory pages! It is only "freeing" the virtual pages.
+  - Free all levels of page tables that are no longer in use, like when all entries are no longer in use. This must be done recursively up the tree. This might be easier with a more general struct per page with reference counts, like Linux's `struct page`.
+    - A less general and simpler problem is freeing an entire page table, like when a process exits. When we do this though we have to ensure we don't free the kernel pages, just the user process pages!
   - Make our own `PhysAddr` and don't allow it to be converted to a pointer via `as_ptr()` (the x86_64 one doesn't have this btw)
   - Consider removing `as_u64` for all address types, because it makes mistakes too easy.
   - Guard pages: consider using one of the special OS-available bits on pages for `GUARD_PAGE`, in case that could simplify our guard page detection logic in the page fault handler. Using these OS-available bits in general to identify the type of page is probably going to be useful.
