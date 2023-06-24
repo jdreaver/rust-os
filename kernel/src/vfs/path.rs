@@ -23,6 +23,22 @@ impl FilePath {
         };
         Some((parent_path, filename.clone()))
     }
+
+    pub(crate) fn as_string(&self) -> String {
+        let mut s = String::new();
+        if self.absolute {
+            s.push('/');
+        }
+        s.push_str(
+            &self
+                .components
+                .iter()
+                .map(FilePathComponent::as_str)
+                .collect::<Vec<_>>()
+                .join("/"),
+        );
+        s
+    }
 }
 
 /// A component of a file path. Notably, this cannot include the `/` character,

@@ -550,7 +550,7 @@ fn run_command(command: &Command) {
         Command::Exec(path) => {
             let path_ptr: *mut FilePath = Box::into_raw(Box::new(path.clone()));
             let task_id = sched::new_task(
-                String::from("dummy userspace"),
+                path.as_string(),
                 sched::task_userspace_setup,
                 path_ptr as *const (),
             );
