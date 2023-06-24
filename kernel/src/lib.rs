@@ -26,6 +26,7 @@
     clippy::must_use_candidate,
     clippy::new_without_default,
     clippy::non_send_fields_in_send_ty,
+    clippy::option_if_let_else,
     clippy::redundant_pub_crate,
     clippy::suboptimal_flops,
     clippy::upper_case_acronyms,

@@ -107,6 +107,8 @@ make test
 
 ## TODO
 
+- BUG: `mount 2; exec async 2 /bin/primes 10000` hits an instruction fetch page fault at `VirtAddr(0xffffffff80176168)`. I'm guessing we are still in Ring 3 somehow
+  - Also saw an instruction fetch page fault for `VirtAddr(0x1)`
 - Support indirect blocks in ext2 so I can load larger userspace programs (if I have a program with `.data`, that needs 4 pages, or 16 1024 byte blocks, which needs indirect)
 - BUG: when running shell in batch mode (e.g. `mount 2; exec /bin/hello`), it is not uncommon to see switch to idle task forever. I think the problem is a race condition in the virtio-block sleeping code, or even in the primitives we use to sleep while waiting.
   - Maybe we should add some "sleep timeout" when waiting on a mutex to make this easier to debug.

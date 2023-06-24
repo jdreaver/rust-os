@@ -162,7 +162,7 @@ enum Command {
     Unmount,
     Ls(FilePath),
     Cat(FilePath),
-    Exec(FilePath, Vec<String>),
+    Exec(ExecCommand),
     WriteFramebuffer(String),
     WriteToFile { path: FilePath, content: String },
     FATBIOS { device_id: usize },
@@ -192,6 +192,13 @@ enum VirtIOBlockCommand {
 enum MountTarget {
     Device { device_id: usize },
     Sysfs,
+}
+
+#[derive(Debug)]
+struct ExecCommand {
+    path: FilePath,
+    args: Vec<String>,
+    async_num_processes: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -284,9 +291,25 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
             Some(Command::Cat(path))
         }
         "exec" => {
-            let path = parse_next_word(&mut words, "path", "exec <path> [args]...")?;
+            let usage = "exec <sync|async <nproc>> <path> [args]...";
+            let async_num_processes = match words.next() {
+                Some("sync") => None,
+                Some("async") => {
+                    let num_processes = parse_next_word(&mut words, "num processes", usage)?;
+                    Some(num_processes)
+                }
+                _ => {
+                    serial_println!("Usage: {usage}");
+                    return None;
+                }
+            };
+            let path = parse_next_word(&mut words, "path", usage)?;
             let args = words.by_ref().map(String::from).collect();
-            Some(Command::Exec(path, args))
+            Some(Command::Exec(ExecCommand {
+                path,
+                args,
+                async_num_processes,
+            }))
         }
         "write-framebuffer" => {
             let mut content = String::new();
@@ -548,15 +571,34 @@ fn run_command(command: &Command) {
             let bytes = file.read();
             serial_println!("{}", String::from_utf8_lossy(&bytes));
         }
-        Command::Exec(path, args) => {
-            serial_println!("Executing {path} with args {args:?}");
-            let task_id = sched::new_userspace_task(sched::ExecParams {
-                path: path.clone(),
-                args: args.clone(),
-            });
-            serial_println!("Waiting for userspace task {task_id:?} to finish...");
-            let exit_code = sched::wait_on_task(task_id);
-            serial_println!("Task {task_id:?} finished! Exit code: {exit_code:?}");
+        Command::Exec(ExecCommand {
+            path,
+            args,
+            async_num_processes,
+        }) => {
+            serial_println!(
+                "Executing {path} with num processes {async_num_processes:?} args {args:?}"
+            );
+            match async_num_processes {
+                None => {
+                    let task_id = sched::new_userspace_task(sched::ExecParams {
+                        path: path.clone(),
+                        args: args.clone(),
+                    });
+                    serial_println!("Waiting for userspace task {task_id:?} to finish...");
+                    let exit_code = sched::wait_on_task(task_id);
+                    serial_println!("Task {task_id:?} finished! Exit code: {exit_code:?}");
+                }
+                Some(num_processes) => {
+                    for _ in 0..*num_processes {
+                        let _ = sched::new_userspace_task(sched::ExecParams {
+                            path: path.clone(),
+                            args: args.clone(),
+                        });
+                    }
+                    sched::run_scheduler();
+                }
+            }
         }
         Command::WriteFramebuffer(content) => {
             graphics::write_text_buffer(content);
