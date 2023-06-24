@@ -107,6 +107,21 @@ make test
 
 ## TODO
 
+- BUG: While debugging a userspace program, we get a page fault because we tried to access `VirtAddr(0x38)` when doing `inc_per_cpu_PREEMPT_COUNT`, triggered in `common_external_interrupt_handler`
+- BUG: when running shell in batch mode (e.g. `mount 2; exec /bin/hello`), it is not uncommon to see switch to idle task forever. I'm not sure what in `task_userspace_setup` could cause this.
+
+  ```
+  Waiting for userspace task TaskId(6) to finish...
+  [INFO] SCHEDULER: (CPU ProcessorID(0)) Switching from 'shell' TaskId(5) to '/bin/primes' TaskId(6)
+  [WARN] CPU ProcessorID(0): TaskId(6) preempt_count is 1, not preempting
+  [INFO] SCHEDULER: (CPU ProcessorID(0)) Switching from '/bin/primes' TaskId(6) to 'CPU ProcessorID(0) __IDLE_TASK__' TaskId(1)
+  [INFO] SCHEDULER: (CPU ProcessorID(0)) Switching from 'CPU ProcessorID(0) __IDLE_TASK__' TaskId(1) to '/bin/primes' TaskId(6)
+  [WARN] CPU ProcessorID(0): TaskId(6) preempt_count is 1, not preempting
+  [WARN] CPU ProcessorID(0): TaskId(6) preempt_count is 1, not preempting
+  [WARN] CPU ProcessorID(0): TaskId(6) preempt_count is 1, not preempting
+  [INFO] SCHEDULER: (CPU ProcessorID(0)) Switching from '/bin/primes' TaskId(6) to 'CPU ProcessorID(0) __IDLE_TASK__' TaskId(1)
+  ```
+
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - Consider combining all crates into kernel again now that we support tests
     - Make sure the bitmap-alloc proptest tests are still useful! Force a few failures. I'm a bit worried that proptest w/ no_std and panic == abort isn't useful

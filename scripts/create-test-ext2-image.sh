@@ -30,9 +30,14 @@ echo "Nested hello" > "$mount_dir/nested-dir/nested.txt"
 
 # Include userspace files
 mkdir "$mount_dir/bin"
+
 make -C userspace/hello clean
 make -C userspace/hello
 cp userspace/hello/hello "$mount_dir/bin/hello"
+
+make -C userspace/primes clean
+make -C userspace/primes
+cp userspace/primes/primes "$mount_dir/bin/primes"
 
 # Unmount
 sudo exa --tree -lahgnimuU "$mount_dir"
