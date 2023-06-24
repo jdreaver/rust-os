@@ -100,13 +100,6 @@ impl FromStr for FilePath {
 
 impl fmt::Display for FilePath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.absolute {
-            write!(f, "/")?;
-        }
-        for component in &self.components {
-            write!(f, "{}", component.0)?;
-            write!(f, "/")?;
-        }
-        Ok(())
+        write!(f, "{}", self.as_string())
     }
 }

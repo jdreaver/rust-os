@@ -162,7 +162,7 @@ enum Command {
     Unmount,
     Ls(FilePath),
     Cat(FilePath),
-    Exec(FilePath),
+    Exec(FilePath, Vec<String>),
     WriteFramebuffer(String),
     WriteToFile { path: FilePath, content: String },
     FATBIOS { device_id: usize },
@@ -284,8 +284,9 @@ fn parse_command(buffer: &[u8]) -> Option<Command> {
             Some(Command::Cat(path))
         }
         "exec" => {
-            let path = parse_next_word(&mut words, "path", "exec <path>")?;
-            Some(Command::Exec(path))
+            let path = parse_next_word(&mut words, "path", "exec <path> [args]...")?;
+            let args = words.by_ref().map(String::from).collect();
+            Some(Command::Exec(path, args))
         }
         "write-framebuffer" => {
             let mut content = String::new();
@@ -547,13 +548,12 @@ fn run_command(command: &Command) {
             let bytes = file.read();
             serial_println!("{}", String::from_utf8_lossy(&bytes));
         }
-        Command::Exec(path) => {
-            let path_ptr: *mut FilePath = Box::into_raw(Box::new(path.clone()));
-            let task_id = sched::new_task(
-                path.as_string(),
-                sched::task_userspace_setup,
-                path_ptr as *const (),
-            );
+        Command::Exec(path, args) => {
+            serial_println!("Executing {path} with args {args:?}");
+            let task_id = sched::new_userspace_task(sched::ExecParams {
+                path: path.clone(),
+                args: args.clone(),
+            });
             serial_println!("Waiting for userspace task {task_id:?} to finish...");
             let exit_code = sched::wait_on_task(task_id);
             serial_println!("Task {task_id:?} finished! Exit code: {exit_code:?}");

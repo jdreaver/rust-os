@@ -108,7 +108,8 @@ make test
 ## TODO
 
 - Support indirect blocks in ext2 so I can load larger userspace programs (if I have a program with `.data`, that needs 4 pages, or 16 1024 byte blocks, which needs indirect)
-- BUG: when running shell in batch mode (e.g. `mount 2; exec /bin/hello`), it is not uncommon to see switch to idle task forever. I'm not sure what in `task_userspace_setup` could cause this.
+- BUG: when running shell in batch mode (e.g. `mount 2; exec /bin/hello`), it is not uncommon to see switch to idle task forever. I think the problem is a race condition in the virtio-block sleeping code, or even in the primitives we use to sleep while waiting.
+  - Maybe we should add some "sleep timeout" when waiting on a mutex to make this easier to debug.
 
   ```
   Waiting for userspace task TaskId(6) to finish...
@@ -149,7 +150,6 @@ make test
   - Page table concurrency:
     - Consider representing each PageTableEntry as `AtomicU64`, or in the page table as `AtomicInt<u64, PageTableEntry>`
 - Userspace
-  - Pass arguments to userspace programs somehow
   - Write a barebones Rust userspace program
   - Drop any memory we allocated for task, like task segment pages
     - Also drop any intermediate page tables we created.
@@ -171,6 +171,7 @@ make test
     - Linux has an early printk function, maybe for stuff like this?
     - Logging in already "slow" by kernel standards. Maybe it is okay to do some boolean check to take locks or not.
 - Task start safety: find a way to make casting the `arg: *const ()` pointer way safer. It is easy to mess up.
+  - I think we need a macro for this, which is fine. Or, maybe we can get away with casts. Hmm.
 - Arc memory leak detection:
   - Calling `run_scheduler()` (or more specifically `switch_to_task`) while holding an `Arc` reference (especially `Arc<Task>`) can cause a memory leak because we might switch away from the given task forever. Currently I manually `drop` things before calling these functions. Is there a way I could make calling `run_scheduler` basically impossible?
     - Same problem happens when jumping to userspace for the first time.

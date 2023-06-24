@@ -1,16 +1,16 @@
 .PHONY: all
 all: primes
 
-primes: syscalls.o primes.o
+primes: runtime.o primes.o
 	ld -static -z noexecstack -o $@ $?
 
 primes.o: primes.c
 	gcc -nostdlib -g -O0 -fno-stack-protector -o $@ -c $<
 
-syscalls: syscalls.o
+runtime: runtime.o
 	ld -o $@ $?
 
-syscalls.o: syscalls.asm
+runtime.o: runtime.asm
 	nasm -f elf64 -F dwarf -g $?
 
 .PHONY: clean

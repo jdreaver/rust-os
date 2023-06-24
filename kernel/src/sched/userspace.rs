@@ -1,4 +1,6 @@
 use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::vec::Vec;
 use core::arch::asm;
 
 use x86_64::registers::rflags::RFlags;
@@ -9,16 +11,33 @@ use crate::memory::{
 };
 use crate::{elf, gdt, vfs};
 
-use super::schedcore::current_task;
+use super::schedcore::{current_task, new_task};
 use super::syscall::TOP_OF_KERNEL_STACK;
+use super::task::TaskId;
+
+/// Parameters to create a new process.
+pub(crate) struct ExecParams {
+    pub(crate) path: vfs::FilePath,
+    pub(crate) args: Vec<String>,
+}
+
+pub(crate) fn new_userspace_task(params: ExecParams) -> TaskId {
+    let params = Box::new(params);
+    new_task(
+        params.path.as_string(),
+        task_userspace_setup,
+        Box::into_raw(params) as *const (),
+    )
+}
 
 /// Kernel function that is called when we are starting a userspace task. This
 /// is the "entrypoint" to a userspace task, and performs some setup before
 /// actually jumping to userspace.
-pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
-    let path: Box<vfs::FilePath> = unsafe { Box::from_raw(arg as *mut vfs::FilePath) };
+extern "C" fn task_userspace_setup(arg: *const ()) {
+    let params: Box<ExecParams> = unsafe { Box::from_raw(arg as *mut ExecParams) };
 
-    let inode = match vfs::get_path_inode(&path) {
+    let path = &params.path;
+    let inode = match vfs::get_path_inode(path) {
         Ok(inode) => inode,
         Err(e) => {
             log::warn!("Failed to get inode for path: {e:?}");
@@ -42,7 +61,7 @@ pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
     log::info!("ELF header: {:#?}", elf_exe);
 
     let instruction_ptr = elf_exe.entrypoint;
-    let stack_ptr = set_up_elf_segments(&elf_exe);
+    let stack_ptr = set_up_elf_segments(&elf_exe, &params);
 
     let user_code_segment_idx: u64 = u64::from(gdt::selectors().user_code_selector.0);
     let user_data_segment_idx: u64 = u64::from(gdt::selectors().user_data_selector.0);
@@ -51,7 +70,7 @@ pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
     // which means it never returns, because I _think_ that the compiler will
     // properly clean up all the other stuff in this function. Before I had `!`
     // I was getting some intermittent page faults.
-    drop(path);
+    drop(params);
     drop(file);
     drop(elf_exe);
     drop(bytes);
@@ -66,7 +85,7 @@ pub(crate) extern "C" fn task_userspace_setup(arg: *const ()) {
 }
 
 // Separate function so we can clean up before jump_to_userspace, which never returns
-fn set_up_elf_segments(elf_exe: &elf::ElfExecutableHeader) -> VirtAddr {
+fn set_up_elf_segments(elf_exe: &elf::ElfExecutableHeader, params: &ExecParams) -> VirtAddr {
     let task = current_task();
     let mut table = task.page_table.lock();
 
@@ -105,9 +124,61 @@ fn set_up_elf_segments(elf_exe: &elf::ElfExecutableHeader) -> VirtAddr {
     allocate_and_map_pages(&mut table, stack_pages.iter(), stack_flags)
         .expect("failed to map stack pages");
 
-    #[allow(clippy::let_and_return)]
+    // Initialize stack. See "3.4 Process Initialization" in the System V AMD64
+    // ABI spec, and https://lwn.net/Articles/631631/ for a good explanation.
+
     let stack_ptr = stack_start + stack_pages.num_bytes();
-    stack_ptr
+    let mut stack_ptr = stack_ptr.as_mut_ptr::<u8>();
+
+    // TODO: Add environment variables and auxiliary vector onto stack
+
+    // Push args onto stack as nul-terminated strings (remember first arg is the program path)
+    let first_arg = params
+        .path
+        .components
+        .last()
+        .map(|s| String::from(s.as_str()))
+        .unwrap_or_default();
+    let all_args = core::iter::once(&first_arg).chain(params.args.iter());
+    let arg_locations = all_args
+        .map(|arg| {
+            // Write as nul-terminated string
+            let arg_ptr = stack_ptr.wrapping_sub(arg.len() + 1);
+            unsafe {
+                arg_ptr.copy_from_nonoverlapping(arg.as_ptr(), arg.len());
+                arg_ptr.add(arg.len()).write(0);
+            }
+            stack_ptr = arg_ptr;
+            arg_ptr as usize
+        })
+        .collect::<Vec<usize>>();
+
+    // Align stack pointer _down_ to usize alignment (stack grows down)
+    let mut stack_ptr: *mut usize = unsafe {
+        #[allow(clippy::cast_ptr_alignment)]
+        stack_ptr
+            .sub(8)
+            .add(stack_ptr.align_offset(8))
+            .cast::<usize>()
+    };
+    assert!(
+        stack_ptr as usize % core::mem::align_of::<usize>() == 0,
+        "stack_ptr {stack_ptr:p} not aligned!"
+    );
+
+    // Push argv onto stack
+    arg_locations.iter().rev().for_each(|arg_ptr| unsafe {
+        stack_ptr = stack_ptr.sub(1);
+        stack_ptr.write(*arg_ptr);
+    });
+
+    // Push argc onto stack
+    unsafe {
+        stack_ptr = stack_ptr.sub(1);
+        stack_ptr.cast::<usize>().write(arg_locations.len());
+    }
+
+    VirtAddr::new(stack_ptr as u64)
 }
 
 /// Function to go to userspace for the first time in a task.

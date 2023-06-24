@@ -126,7 +126,6 @@ impl Task {
         // TODO: This would be a lot easier if we used an actual struct for this.
 
         let stack_top = unsafe {
-            // -7 because we need to align to a u64.
             #[allow(clippy::cast_ptr_alignment)]
             let stack_top_pointer = kernel_stack.top_addr().as_mut_ptr::<u8>().cast::<usize>();
             assert!(stack_top_pointer as usize % 8 == 0, "stack top not aligned");
