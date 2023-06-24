@@ -107,6 +107,7 @@ make test
 
 ## TODO
 
+- Support indirect blocks in ext2 so I can load larger userspace programs (if I have a program with `.data`, that needs 4 pages, or 16 1024 byte blocks, which needs indirect)
 - BUG: when running shell in batch mode (e.g. `mount 2; exec /bin/hello`), it is not uncommon to see switch to idle task forever. I'm not sure what in `task_userspace_setup` could cause this.
 
   ```
@@ -569,3 +570,12 @@ Linux VFS:
 - `PERCPU_VADDR` is references in the x86 linker script to set up percpu area and make offsets look zero-based from start of percpu region
   - <https://elixir.bootlin.com/linux/v6.3.7/source/include/asm-generic/vmlinux.lds.h#L1067>
   - <https://elixir.bootlin.com/linux/v6.3.7/source/arch/x86/kernel/vmlinux.lds.S#L223>
+
+### ELF
+
+- [How programs get run: ELF binaries (LWN, 2015)](https://lwn.net/Articles/631631/)
+- <https://en.wikipedia.org/wiki/Executable_and_Linkable_Format>
+- "ELF - Tool Interface Standard (TIS) Executable and Linking Format (ELF) Specification v1.2 (1995)"
+- "DWARF Debugging Information Format Version 5 (2017)"
+- "System V Application Binary Interface, AMD64 Architecture Processor Supplement - v1.0 (2023)"
+- <https://wiki.osdev.org/ELF>
