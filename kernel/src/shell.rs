@@ -664,14 +664,13 @@ fn naive_nth_prime(n: usize) -> usize {
     }
 
     let mut i = 2;
-    let mut found_primes = 0;
-    loop {
-        i += 1;
+    let mut found_primes = 0; // 2 is prime
+    while found_primes < n {
         if is_prime(i) {
             found_primes += 1;
-            if found_primes == n {
-                return i;
-            }
         }
+        i += 1;
     }
+
+    i
 }
