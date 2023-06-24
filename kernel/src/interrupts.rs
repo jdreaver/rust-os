@@ -37,16 +37,18 @@ pub(crate) struct InterruptVector(pub(crate) u8);
 ///   - [`DEFINE_IDTENTRY_IRQ` def](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/include/asm/idtentry.h#L191)
 ///
 fn common_external_interrupt_handler(vector: InterruptVector) {
-    let &(interrupt_id, handler) = EXTERNAL_INTERRUPT_HANDLERS
-        .lock()
-        .get(vector.0 as usize)
-        .expect("Invalid interrupt vector");
-    handler(vector, interrupt_id);
-    apic::end_of_interrupt();
+    with_swapgs_accounting(|| {
+        let &(interrupt_id, handler) = EXTERNAL_INTERRUPT_HANDLERS
+            .lock()
+            .get(vector.0 as usize)
+            .expect("Invalid interrupt vector");
+        handler(vector, interrupt_id);
+        apic::end_of_interrupt();
 
-    // Now that we have signaled the end of the interrupt, we are out of the
-    // interrupt context. If we need to call the scheduler, do it.
-    sched::run_scheduler_if_needed();
+        // Now that we have signaled the end of the interrupt, we are out of the
+        // interrupt context. If we need to call the scheduler, do it.
+        sched::run_scheduler_if_needed();
+    });
 }
 
 fn default_external_interrupt_handler(vector: InterruptVector, interrupt_id: InterruptHandlerID) {

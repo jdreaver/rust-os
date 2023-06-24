@@ -107,7 +107,6 @@ make test
 
 ## TODO
 
-- BUG: While debugging a userspace program, we get a page fault because we tried to access `VirtAddr(0x38)` when doing `inc_per_cpu_PREEMPT_COUNT`, triggered in `common_external_interrupt_handler`
 - BUG: when running shell in batch mode (e.g. `mount 2; exec /bin/hello`), it is not uncommon to see switch to idle task forever. I'm not sure what in `task_userspace_setup` could cause this.
 
   ```
