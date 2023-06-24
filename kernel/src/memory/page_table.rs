@@ -243,13 +243,14 @@ pub(crate) enum TranslateResult {
 
 /// Result of mapping a virtual address to a page.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub(crate) struct AddressPageMapping {
     pub(crate) page: Page<KernPhysAddr>,
-    #[allow(dead_code)]
     pub(crate) flags: PageTableEntryFlags,
     pub(crate) offset: u64,
 }
 
+#[allow(dead_code)]
 impl AddressPageMapping {
     pub(crate) fn address(&self) -> KernPhysAddr {
         self.page.start_addr() + self.offset
