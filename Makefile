@@ -75,7 +75,7 @@ run: $(KERNEL_HDD) $(TEST_FAT_HDD) $(TEST_EXT2_HDD)
 # N.B. Run `make run-debug` in one terminal, and `make gdb` in another.
 QEMU_DEBUG_ARGS += $(QEMU_COMMON_ARGS)
 QEMU_DEBUG_ARGS += -M q35 # Use the q35 chipset, but don't use kvm acceleration for debug mode because it makes logging interrupts give less info.
-QEMU_DEBUG_ARGS += -d int,cpu_reset,guest_errors # Log some unexpected things. Run qemu-system-x86_64 -d help to see more.
+QEMU_DEBUG_ARGS += -d cpu_reset,guest_errors # Log some unexpected things. Run qemu-system-x86_64 -d help to see more. Add `int` for interrupts
 
 .PHONY: run-debug
 run-debug: $(KERNEL_HDD) $(TEST_FAT_HDD) $(TEST_EXT2_HDD)
