@@ -148,6 +148,8 @@ make test
   - Page table concurrency:
     - Consider representing each PageTableEntry as `AtomicU64`, or in the page table as `AtomicInt<u64, PageTableEntry>`
 - Userspace
+  - Pass arguments to userspace programs somehow
+  - Write a barebones Rust userspace program
   - Drop any memory we allocated for task, like task segment pages
     - Also drop any intermediate page tables we created.
     - Would it be easier to create an arena holding a process's memory so we could drop it all?
