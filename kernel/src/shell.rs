@@ -60,6 +60,23 @@ impl ShellBuffer {
 
 pub(crate) extern "C" fn run_serial_shell(_arg: *const ()) {
     serial_println!("Welcome to Rust OS! Here is a shell for you to use.");
+
+    // If there was a kernel command line, run it
+    let cmdline = boot_info::boot_info().kernel_cmdline;
+    if !cmdline.is_empty() {
+        serial_println!("Running kernel command line: {}", cmdline);
+        for command_str in cmdline.split(';') {
+            let command = parse_command(command_str.as_bytes());
+            if let Some(command) = command {
+                run_command(&command);
+            }
+        }
+    }
+
+    shell_loop();
+}
+
+fn shell_loop() {
     loop {
         NEXT_COMMAND_BUFFER.lock().redraw_buffer();
         loop {
