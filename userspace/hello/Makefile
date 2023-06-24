@@ -5,7 +5,7 @@ hello: hello.o
 	ld -o $@ $?
 
 hello.o: hello.asm
-	nasm -f elf64 -O2 $?
+	nasm -f elf64 -F dwarf -g $?
 
 # Debugging symbols
 # hello.o: hello.asm

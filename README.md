@@ -67,6 +67,16 @@ Make sure to read resource section below on using GDB with QEMU! In particular,
 use `hbreak` instead of `break` to set a breakpoint before the kernel starts and
 has page tables set up.
 
+### Debugging userspace with gdb
+
+You can use the
+[`add-symbol-file`](https://sourceware.org/gdb/onlinedocs/gdb/Files.html)
+command in GDB to add userspace programs to the symbol table, so when you are
+stepping through that code GDB knows how to map instructions to source code. For
+example, in GDB you can do `add-symbol file userspace/hello/hello` to load the
+debugging info for the `hello` binary. Then you can do `b hello.asm:6` and GDB
+will know where to stop when you run `exec /bin/hello` in the shell.
+
 ## Debugging QEMU with GDB
 
 If you want to debug QEMU itself with GDB, you can run:
@@ -325,65 +335,65 @@ The VirtIO spec uses C structs to compute offsets. Here is a C program that show
 #include <stdint.h>
 
 struct virtio_blk_config {
-	uint64_t capacity;
-	uint32_t size_max;
-	uint32_t seg_max;
-	struct virtio_blk_geometry {
-		uint16_t cylinders;
-		uint8_t heads;
-		uint8_t sectors;
-	} geometry;
-	uint32_t blk_size;
-	struct virtio_blk_topology {
-		// # of logical blocks per physical block (log2)
-		uint8_t physical_block_exp;
-		// offset of first aligned logical block
-		uint8_t alignment_offset;
-		// suggested minimum I/O size in blocks
-		uint16_t min_io_size;
-		// optimal (suggested maximum) I/O size in blocks
-		uint32_t opt_io_size;
-	} topology;
-	uint8_t writeback;
-	uint8_t unused0;
-	uint16_t num_queues;
-	uint32_t max_discard_sectors;
-	uint32_t max_discard_seg;
-	uint32_t discard_sector_alignment;
-	uint32_t max_write_zeroes_sectors;
-	uint32_t max_write_zeroes_seg;
-	uint8_t write_zeroes_may_unmap;
-	uint8_t unused1[3];
-	uint32_t max_secure_erase_sectors;
-	uint32_t max_secure_erase_seg;
-	uint32_t secure_erase_sector_alignment;
+ uint64_t capacity;
+ uint32_t size_max;
+ uint32_t seg_max;
+ struct virtio_blk_geometry {
+  uint16_t cylinders;
+  uint8_t heads;
+  uint8_t sectors;
+ } geometry;
+ uint32_t blk_size;
+ struct virtio_blk_topology {
+  // # of logical blocks per physical block (log2)
+  uint8_t physical_block_exp;
+  // offset of first aligned logical block
+  uint8_t alignment_offset;
+  // suggested minimum I/O size in blocks
+  uint16_t min_io_size;
+  // optimal (suggested maximum) I/O size in blocks
+  uint32_t opt_io_size;
+ } topology;
+ uint8_t writeback;
+ uint8_t unused0;
+ uint16_t num_queues;
+ uint32_t max_discard_sectors;
+ uint32_t max_discard_seg;
+ uint32_t discard_sector_alignment;
+ uint32_t max_write_zeroes_sectors;
+ uint32_t max_write_zeroes_seg;
+ uint8_t write_zeroes_may_unmap;
+ uint8_t unused1[3];
+ uint32_t max_secure_erase_sectors;
+ uint32_t max_secure_erase_seg;
+ uint32_t secure_erase_sector_alignment;
 };
 
 int main(void)
 {
 
-	printf("offsetof(capacity) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, capacity)),
-	printf("offsetof(size_max) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, size_max)),
-	printf("offsetof(seg_max) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, seg_max)),
-	printf("offsetof(geometry) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, geometry)),
-	printf("offsetof(blk_size) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, blk_size)),
-	printf("offsetof(topology) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, topology)),
-	printf("offsetof(writeback) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, writeback)),
-	printf("offsetof(unused0) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, unused0)),
-	printf("offsetof(num_queues) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, num_queues)),
-	printf("offsetof(max_discard_sectors) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_discard_sectors)),
-	printf("offsetof(max_discard_seg) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_discard_seg)),
-	printf("offsetof(discard_sector_alignment) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, discard_sector_alignment)),
-	printf("offsetof(max_write_zeroes_sectors) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_write_zeroes_sectors)),
-	printf("offsetof(max_write_zeroes_seg) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_write_zeroes_seg)),
-	printf("offsetof(write_zeroes_may_unmap) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, write_zeroes_may_unmap)),
-	printf("offsetof(max_secure_erase_sectors) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_secure_erase_sectors)),
-	printf("offsetof(max_secure_erase_seg) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_secure_erase_seg)),
-	printf("offsetof(secure_erase_sector_alignment) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, secure_erase_sector_alignment)),
+ printf("offsetof(capacity) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, capacity)),
+ printf("offsetof(size_max) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, size_max)),
+ printf("offsetof(seg_max) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, seg_max)),
+ printf("offsetof(geometry) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, geometry)),
+ printf("offsetof(blk_size) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, blk_size)),
+ printf("offsetof(topology) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, topology)),
+ printf("offsetof(writeback) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, writeback)),
+ printf("offsetof(unused0) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, unused0)),
+ printf("offsetof(num_queues) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, num_queues)),
+ printf("offsetof(max_discard_sectors) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_discard_sectors)),
+ printf("offsetof(max_discard_seg) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_discard_seg)),
+ printf("offsetof(discard_sector_alignment) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, discard_sector_alignment)),
+ printf("offsetof(max_write_zeroes_sectors) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_write_zeroes_sectors)),
+ printf("offsetof(max_write_zeroes_seg) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_write_zeroes_seg)),
+ printf("offsetof(write_zeroes_may_unmap) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, write_zeroes_may_unmap)),
+ printf("offsetof(max_secure_erase_sectors) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_secure_erase_sectors)),
+ printf("offsetof(max_secure_erase_seg) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, max_secure_erase_seg)),
+ printf("offsetof(secure_erase_sector_alignment) = 0x%02X\n", (long) offsetof(struct virtio_blk_config, secure_erase_sector_alignment)),
 
-	printf("sizeof(struct virtio_blk_config) = 0x%02X\n", (long) sizeof(struct virtio_blk_config));
+ printf("sizeof(struct virtio_blk_config) = 0x%02X\n", (long) sizeof(struct virtio_blk_config));
 
-	exit(EXIT_SUCCESS);
+ exit(EXIT_SUCCESS);
 }
 ```
 
@@ -453,16 +463,16 @@ Other higher-level Linux resources:
     - [x86_64 `ret_from_fork`](https://elixir.bootlin.com/linux/v6.3.2/source/arch/x86/entry/entry_64.S#L279)
       - This is where we call the passed in function w/ an arg, notably `kthread` with the kthread creation args:
         ```asm
-        	testq	%rbx, %rbx			/* from kernel_thread? */
-        	jnz	1f				/* kernel threads are uncommon */
+         testq %rbx, %rbx   /* from kernel_thread? */
+         jnz 1f    /* kernel threads are uncommon */
 
                 ...
 
         1:
-        	/* kernel thread */
-        	UNWIND_HINT_EMPTY
-        	movq	%r12, %rdi
-        	CALL_NOSPEC rbx
+         /* kernel thread */
+         UNWIND_HINT_EMPTY
+         movq %r12, %rdi
+         CALL_NOSPEC rbx
         ```
     - [`schedule_tail`, the first thing a forked thread must call](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/sched/core.c#L5230)
     - When the kthread is done we call [`do_exit`](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/exit.c#L805) and then [`do_task_dead`](https://elixir.bootlin.com/linux/v6.3.2/source/kernel/sched/core.c#L6635)
