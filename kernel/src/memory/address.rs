@@ -47,7 +47,7 @@ impl KernPhysAddr {
     }
 
     pub(crate) fn as_mut_ptr<T>(self) -> *mut T {
-        self.as_ptr::<T>() as *mut T
+        self.as_ptr::<T>().cast_mut()
     }
 }
 

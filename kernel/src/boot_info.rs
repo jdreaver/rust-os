@@ -119,10 +119,15 @@ pub(crate) fn boot_info() -> &'static BootInfo {
 
         let mut kernel_symbol_map_file = None;
         for module in module_response.modules() {
-            let path_ptr = module.path.as_ptr().expect("no path pointer") as *const u8;
+            let path_ptr = module
+                .path
+                .as_ptr()
+                .expect("no path pointer")
+                .cast_const()
+                .cast::<u8>();
             let path = unsafe { strings::c_str_from_pointer(path_ptr, 1000) };
             if path == "/kernel.symbols" {
-                let address = module.base.as_ptr().expect("no module base") as *const u8 as u64;
+                let address = module.base.as_ptr().expect("no module base").cast_const() as u64;
                 kernel_symbol_map_file = Some(KernelSymbolMapFile {
                     address: VirtAddr::new(address),
                     length: module.length,

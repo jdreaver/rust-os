@@ -226,7 +226,7 @@ fn mcfg_entries<H: AcpiHandler>(mcfg: &PhysicalMapping<H, Mcfg>) -> &[McfgEntry]
     // (see rust-osdev/acpi#58)
     let num_entries = length / core::mem::size_of::<McfgEntry>();
 
-    let start_ptr = mcfg.virtual_start().as_ptr() as *const u8;
+    let start_ptr = mcfg.virtual_start().as_ptr().cast_const().cast::<u8>();
     unsafe {
         let pointer = start_ptr
             .add(core::mem::size_of::<Mcfg>())

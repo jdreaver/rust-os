@@ -26,7 +26,7 @@ pub(crate) fn new_userspace_task(params: ExecParams) -> TaskId {
     new_task(
         params.path.as_string(),
         task_userspace_setup,
-        Box::into_raw(params) as *const (),
+        Box::into_raw(params).cast_const().cast::<()>(),
     )
 }
 
@@ -34,7 +34,7 @@ pub(crate) fn new_userspace_task(params: ExecParams) -> TaskId {
 /// is the "entrypoint" to a userspace task, and performs some setup before
 /// actually jumping to userspace.
 extern "C" fn task_userspace_setup(arg: *const ()) {
-    let params: Box<ExecParams> = unsafe { Box::from_raw(arg as *mut ExecParams) };
+    let params: Box<ExecParams> = unsafe { Box::from_raw(arg.cast_mut().cast()) };
 
     let path = &params.path;
     let inode = match vfs::get_path_inode(path) {
