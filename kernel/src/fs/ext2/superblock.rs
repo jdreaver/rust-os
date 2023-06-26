@@ -183,7 +183,7 @@ impl Superblock {
 
 /// Address of a block in the filesystem.
 #[repr(transparent)]
-#[derive(Debug, Copy, Clone, FromZeroes, FromBytes, AsBytes)]
+#[derive(Debug, Copy, Clone, FromZeroes, FromBytes, AsBytes, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct BlockAddress(pub(super) u32);
 
 impl Add<u32> for BlockAddress {

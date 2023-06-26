@@ -57,10 +57,39 @@ pub(crate) enum InodeType {
 }
 
 pub(crate) trait FileInode: Debug {
-    fn read(&mut self) -> Box<[u8]>;
+    fn read(&mut self, buffer: &mut [u8], offset: usize) -> FileInodeReadResult;
+
+    fn read_all(&mut self) -> Vec<u8> {
+        let mut buffer = Vec::new();
+        let mut offset = 0;
+        loop {
+            let mut read_buffer = vec![0u8; 4096];
+            match self.read(&mut read_buffer, offset) {
+                FileInodeReadResult::Success => {
+                    buffer.extend_from_slice(&read_buffer);
+                    offset += read_buffer.len();
+                }
+                FileInodeReadResult::Done { bytes_read } => {
+                    buffer.extend_from_slice(&read_buffer[..bytes_read]);
+                    break;
+                }
+            }
+        }
+        buffer
+    }
+
     fn write(&mut self, _data: &[u8]) -> bool {
         false
     }
+}
+
+pub(crate) enum FileInodeReadResult {
+    /// Success means entire buffer was filled.
+    Success,
+
+    /// Done means the file has been fully read. Not all bytes may have been
+    /// read, so we return how many were read.
+    Done { bytes_read: usize },
 }
 
 pub(crate) trait DirectoryInode: Debug {

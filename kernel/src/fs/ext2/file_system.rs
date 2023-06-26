@@ -177,6 +177,48 @@ impl<D: BlockDeviceDriver + 'static> FileSystem<D> {
         inodes.buffer().flush();
     }
 
+    pub(super) fn read_inode_block(&mut self, inode: &Inode, index: BlockIndex) -> BlockBuffer {
+        // First try to get a direct block
+        let direct_blocks = inode.direct_blocks;
+        if let Some(block_addr) = direct_blocks.0.get(u64::from(index) as usize) {
+            let addr = BlockIndex::from(u64::from(block_addr.0));
+            return self.device.read_blocks(self.block_size, addr, 1);
+        }
+
+        // Follow indirect block address
+        let block_indexes_per_indirect =
+            u16::from(self.block_size) as usize / core::mem::size_of::<BlockIndex>();
+        let indirect_block_index = block_indexes_per_indirect - direct_blocks.0.len();
+        assert!(
+            indirect_block_index < block_indexes_per_indirect,
+            "TODO: support double indirection. Couldn't get block {index:?}"
+        );
+
+        let indirect_block_addr = inode.singly_indirect_block;
+        assert!(
+            indirect_block_addr > BlockAddress(0),
+            "indirect block is not set!"
+        );
+
+        let indirect_block: TransmuteCollection<BlockBuffer, BlockAddress> = self
+            .device
+            .read_blocks(
+                self.block_size,
+                BlockIndex::from(u64::from(indirect_block_addr.0)),
+                1,
+            )
+            .into_collection();
+        let block_addr = indirect_block
+            .get(indirect_block_index)
+            .expect("failed to cast BlockAddress");
+
+        self.device.read_blocks(
+            self.block_size,
+            BlockIndex::from(u64::from(block_addr.0)),
+            1,
+        )
+    }
+
     pub(super) fn iter_file_blocks<F>(&mut self, inode: &Inode, mut func: F)
     where
         F: FnMut(OffsetBytes, BlockBuffer) -> bool,

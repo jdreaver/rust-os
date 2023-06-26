@@ -1,17 +1,16 @@
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
-use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-use crate::block::{BlockDevice, BlockDeviceDriver};
+use crate::block::{BlockDevice, BlockDeviceDriver, BlockIndex};
 use crate::sync::Mutex;
 use crate::vfs;
 
 use super::file_system::FileSystem;
 use super::inode::Inode;
-use super::superblock::{InodeNumber, OffsetBytes};
+use super::superblock::InodeNumber;
 
 /// VFS interface into an ext2 file system.
 #[derive(Debug)]
@@ -57,7 +56,7 @@ pub(crate) struct VFSInode<D> {
 }
 
 impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for VFSInode<D> {
-    fn read(&mut self) -> Box<[u8]> {
+    fn read(&mut self, buffer: &mut [u8], offset: usize) -> vfs::FileInodeReadResult {
         assert!(
             self.inode.is_file(),
             "expected file inode but found {:?}",
@@ -68,19 +67,36 @@ impl<D: Debug + BlockDeviceDriver + 'static> vfs::FileInode for VFSInode<D> {
 
         let block_size = usize::from(u16::from(reader.superblock().block_size()));
         let file_size = reader.superblock().inode_size(&self.inode) as usize;
-        let mut data = vec![0; file_size];
-        reader.iter_file_blocks(&self.inode, |OffsetBytes(start_bytes), block_buf| {
-            let start_bytes = start_bytes as usize;
-            let slice_end = file_size - start_bytes;
-            let slice_end = core::cmp::min(slice_end, block_size);
-            let end_bytes = start_bytes + slice_end;
+        let end = file_size.min(offset + buffer.len());
 
-            let block_data = block_buf.data();
-            data[start_bytes..end_bytes].copy_from_slice(&block_data[..slice_end]);
+        let start_block = offset / block_size;
+        let end_block = end.div_ceil(block_size);
 
-            true
-        });
-        data.into_boxed_slice()
+        let mut current_offset = offset;
+        let mut bytes_read = 0;
+
+        for block in start_block..end_block {
+            let index = BlockIndex::new(block as u64);
+            let block_buffer = reader.read_inode_block(&self.inode, index);
+            let block_data = block_buffer.data();
+
+            let slice_start = current_offset % block_size;
+            let slice_end = block_size.min(end - current_offset);
+            let slice = &block_data[slice_start..slice_end];
+
+            let buffer_start = bytes_read;
+            let buffer_end = bytes_read + slice.len();
+            buffer[buffer_start..buffer_end].copy_from_slice(slice);
+
+            bytes_read += slice.len();
+            current_offset += slice.len();
+        }
+
+        if end == file_size {
+            vfs::FileInodeReadResult::Done { bytes_read }
+        } else {
+            vfs::FileInodeReadResult::Success
+        }
     }
 
     fn write(&mut self, data: &[u8]) -> bool {

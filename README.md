@@ -107,9 +107,13 @@ make test
 
 ## TODO
 
+- VFS read/write code:
+  - Change inode `write` API to be similar to read (based on blocks)
+  - Nuke old block iteration code in ext2 now that write and read don't need it
+  - Test that reading indirect block works (can this be made an integration test? make a huge file in the test ext2 volume and assert some value at a deep offset. Have a TODO to do a write than a read as part of the integration test)
+  - Clean up and refactor new `read`/`write` code and write tests. In particular, I don't like all of the inline byte/offset <-> block math. Put that in some tested pure functions.
 - BUG: `mount 2; exec async 2 /bin/primes 10000` hits an instruction fetch page fault at `VirtAddr(0xffffffff80176168)`. I'm guessing we are still in Ring 3 somehow
   - Also saw an instruction fetch page fault for `VirtAddr(0x1)`
-- Support indirect blocks in ext2 so I can load larger userspace programs (if I have a program with `.data`, that needs 4 pages, or 16 1024 byte blocks, which needs indirect)
 - BUG: when running shell in batch mode (e.g. `mount 2; exec /bin/hello`), it is not uncommon to see switch to idle task forever. I think the problem is a race condition in the virtio-block sleeping code, or even in the primitives we use to sleep while waiting.
   - Maybe we should add some "sleep timeout" when waiting on a mutex to make this easier to debug.
 

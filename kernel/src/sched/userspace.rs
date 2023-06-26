@@ -50,7 +50,7 @@ extern "C" fn task_userspace_setup(arg: *const ()) {
         return;
     };
 
-    let bytes = file.read();
+    let bytes = file.read_all();
     let elf_exe = match elf::ElfExecutableHeader::parse(&bytes) {
         Ok(exe) => exe,
         Err(e) => {

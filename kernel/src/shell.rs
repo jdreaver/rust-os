@@ -568,7 +568,7 @@ fn run_command(command: &Command) {
                 return;
             };
 
-            let bytes = file.read();
+            let bytes = file.read_all();
             serial_println!("{}", String::from_utf8_lossy(&bytes));
         }
         Command::Exec(ExecCommand {

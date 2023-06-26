@@ -93,6 +93,18 @@ struct VFSTaskInfoFile {
     task_id: TaskId,
 }
 
+impl VFSTaskInfoFile {
+    fn data(&self) -> String {
+        sched::TASKS
+            .lock_disable_interrupts()
+            .get_task(self.task_id)
+            .map_or_else(
+                || format!("task not found..."),
+                |task| format!("{:#X?}", task),
+            )
+    }
+}
+
 impl vfs::DirectoryEntry for VFSTaskInfoFile {
     fn name(&self) -> String {
         String::from("info")
@@ -112,15 +124,27 @@ impl vfs::DirectoryEntry for VFSTaskInfoFile {
 }
 
 impl vfs::FileInode for VFSTaskInfoFile {
-    fn read(&mut self) -> Box<[u8]> {
-        sched::TASKS
-            .lock_disable_interrupts()
-            .get_task(self.task_id)
-            .map_or_else(
-                || format!("task not found..."),
-                |task| format!("{:#X?}", task),
-            )
-            .into_bytes()
-            .into_boxed_slice()
+    fn read(&mut self, buffer: &mut [u8], offset: usize) -> vfs::FileInodeReadResult {
+        sysfs_read_file(&self.data(), buffer, offset)
+    }
+}
+
+/// Generic code to implement a sysfs file read that just reads from a string.
+fn sysfs_read_file(
+    file_content: &str,
+    buffer: &mut [u8],
+    offset: usize,
+) -> vfs::FileInodeReadResult {
+    let data = file_content.as_bytes();
+    let start = offset.min(data.len());
+    let end = (offset + buffer.len()).min(data.len());
+    let copy_data = &data[start..end];
+    buffer[..copy_data.len()].copy_from_slice(copy_data);
+    if end == data.len() {
+        vfs::FileInodeReadResult::Done {
+            bytes_read: file_content.len(),
+        }
+    } else {
+        vfs::FileInodeReadResult::Success
     }
 }
