@@ -194,6 +194,11 @@ pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     logging::force_unlock_logger();
     log::error!("PANIC: {info}");
     debug::print_stack_trace();
+
+    let task_id = sched::current_task_id();
+    let processor_id = percpu::get_processor_id_no_guard();
+    log::error!("PANIC: task {task_id:?} on CPU {processor_id:?}");
+
     hlt_loop()
 }
 
