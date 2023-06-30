@@ -113,7 +113,9 @@ make test
   - Test that reading indirect block works (can this be made an integration test? make a huge file in the test ext2 volume and assert some value at a deep offset. Have a TODO to do a write than a read as part of the integration test)
   - Clean up and refactor new `read`/`write` code and write tests. In particular, I don't like all of the inline byte/offset <-> block math. Put that in some tested pure functions.
 - BUG: `mount 2; exec async 2 /bin/primes 10000` hits an instruction fetch page fault at `VirtAddr(0xffffffff80176168)`. I'm guessing we are still in Ring 3 somehow
-  - Is it because of how we are storing user stack? I'm putting it in r12, but that seems bad...
+  - Important: even if I comment out swapgs everywhere I start seeing page faults. I think there is a concurrency error somewhere else or we are clobbering the stack somehow, and this is just a symptom of that.
+    - Am I properly switching page tables? Is this done atomically? I wonder if userspace tasks are stepping on each other.
+  - Is `apic::end_of_interrupt` bad before we swapgs back? How do we properly swapgs back to userspace?
   - Walk through different scenarios where we reschedule in the middle of an interrupt during userspace execution (except I'm not sure that is happening because I have 4 CPUs and I'm just on 2 tasks)
   - Also saw an instruction fetch page fault for `VirtAddr(0x1)`
   - One of them happened right on the `mov rsp, gs:{kernel_stack}` instruction in `syscall_handler`, which means the preceding `swapgs` was incorrect. How is that possible? Are interrupts enabled somehow? Is preemption happening?

@@ -193,15 +193,16 @@ pub(super) unsafe extern "C" fn jump_to_userspace(
         asm!(
             // Store the kernel stack
             "mov gs:{kernel_stack}, rsp",
-            // Swap out the kernel GS base for the user's so userspace can't
-            // mess with our GS base.
-            "swapgs",
             // Set up and execute iretq
             "push rcx",      // Fourth arg, data segment
             "push rsi",      // Second arg, stack pointer
             "push {rflags}", // rflags
             "push rdx",      // Third arg, code segment
             "push rdi",      // First arg, instruction pointer
+            // Swap out the kernel GS base for the user's so userspace can't
+            // mess with our GS base.
+            "swapgs",
+            // Jump to userspace
             "iretq",
             kernel_stack = sym TOP_OF_KERNEL_STACK,
             rflags = const RFlags::INTERRUPT_FLAG.bits(),
