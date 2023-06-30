@@ -120,9 +120,9 @@ static NUM_CPUS_BOOTSTRAPPED: AtomicU8 = AtomicU8::new(0);
 
 fn early_per_cpu_setup(bootstrap_cpu: bool, processor_id: ProcessorID) {
     if bootstrap_cpu {
-        gdt::init_bootstrap_gdt();
+        gdt::init_bootstrap_gdt(processor_id);
     } else {
-        gdt::init_secondary_cpu_gdt();
+        gdt::init_secondary_cpu_gdt(processor_id);
     }
     interrupts::init_interrupts();
     percpu::init_current_cpu(processor_id);

@@ -174,7 +174,7 @@ macro_rules! define_per_cpu_u64 {
 ///
 /// N.B. This is a u8 because LAPIC IDs are u8s, and we use those as processor
 /// IDs (the Intel manual suggests this).
-const MAX_CPUS: u8 = 8;
+pub(crate) const MAX_CPUS: u8 = 8;
 
 const X86_64_CACHE_LINE_SIZE_BYTES: usize = 64;
 

@@ -8,6 +8,8 @@ use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector
 use x86_64::structures::tss::TaskStateSegment;
 use x86_64::VirtAddr;
 
+use crate::apic::ProcessorID;
+use crate::percpu;
 use crate::sync::InitCell;
 
 /// The GDT we use for the bootstrap processor is special because it is set up
@@ -73,7 +75,37 @@ pub(crate) fn selectors() -> Selectors {
 pub(crate) const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 pub(crate) const PAGE_FAULT_IST_INDEX: u16 = 1;
 
-fn create_tss() -> TaskStateSegment {
+/// How large to make the various TSS stacks.
+const TSS_STACK_SIZE_BYTES: usize = 4096 * 5; // TODO: Is this too large?
+
+// Statically allocate a bunch of the TSS stacks per CPU so we don't share them.
+//
+// TODO: Allocate these on the fly instead of hard coding them. GDT init
+// generally runs before the physical allocator works. We can either use a
+// bootstrap GDT with static stacks and then use the allocator for all of the
+// per CPU stacks, or we can use something like a memblock allocator in early
+// init: https://0xax.gitbooks.io/linux-insides/content/MM/linux-mm-1.html
+
+static mut PRIVILEGE_STACK_TABLES: [[u8; TSS_STACK_SIZE_BYTES]; percpu::MAX_CPUS as usize] =
+    [[0; TSS_STACK_SIZE_BYTES]; percpu::MAX_CPUS as usize];
+
+static mut DOUBLE_FAULT_STACK_TABLES: [[u8; TSS_STACK_SIZE_BYTES]; percpu::MAX_CPUS as usize] =
+    [[0; TSS_STACK_SIZE_BYTES]; percpu::MAX_CPUS as usize];
+
+static mut PAGE_FAULT_STACK_TABLES: [[u8; TSS_STACK_SIZE_BYTES]; percpu::MAX_CPUS as usize] =
+    [[0; TSS_STACK_SIZE_BYTES]; percpu::MAX_CPUS as usize];
+
+fn get_tss_stack_ptr(
+    processor_id: ProcessorID,
+    stacks: &mut [[u8; TSS_STACK_SIZE_BYTES]; percpu::MAX_CPUS as usize],
+) -> VirtAddr {
+    let stack_start = VirtAddr::from_ptr(stacks[processor_id.0 as usize].as_ptr());
+    #[allow(clippy::let_and_return)]
+    let stack_end = stack_start + TSS_STACK_SIZE_BYTES;
+    stack_end
+}
+
+fn create_tss(processor_id: ProcessorID) -> TaskStateSegment {
     // N.B. TSS is mostly used in 32 bit mode, but in 64 bit mode it is still
     // used for stack switching for fault handlers and for reserved stacks when
     // the CPU switches privilege levels. For double faults, it is important we
@@ -85,40 +117,20 @@ fn create_tss() -> TaskStateSegment {
 
     // RSP0, used when switching to kernel (ring 0 == RSP0) stack on privilege
     // level change.
-    tss.privilege_stack_table[0] = {
-        const STACK_SIZE: usize = 4096 * 5;
-        static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
+    tss.privilege_stack_table[0] =
+        unsafe { get_tss_stack_ptr(processor_id, &mut PRIVILEGE_STACK_TABLES) };
 
-        let stack_start = VirtAddr::from_ptr(unsafe { &STACK });
-        #[allow(clippy::let_and_return)]
-        let stack_end = stack_start + STACK_SIZE;
-        stack_end
-    };
+    tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] =
+        unsafe { get_tss_stack_ptr(processor_id, &mut DOUBLE_FAULT_STACK_TABLES) };
 
-    // TODO: DRY setting up these TSS stacks.
-    tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] = {
-        const STACK_SIZE: usize = 4096 * 5;
-        static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
+    tss.interrupt_stack_table[PAGE_FAULT_IST_INDEX as usize] =
+        unsafe { get_tss_stack_ptr(processor_id, &mut PAGE_FAULT_STACK_TABLES) };
 
-        let stack_start = VirtAddr::from_ptr(unsafe { &STACK });
-        #[allow(clippy::let_and_return)]
-        let stack_end = stack_start + STACK_SIZE;
-        stack_end
-    };
-    tss.interrupt_stack_table[PAGE_FAULT_IST_INDEX as usize] = {
-        const STACK_SIZE: usize = 4096 * 5;
-        static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
-
-        let stack_start = VirtAddr::from_ptr(unsafe { &STACK });
-        #[allow(clippy::let_and_return)]
-        let stack_end = stack_start + STACK_SIZE;
-        stack_end
-    };
     tss
 }
 
-pub(crate) fn init_bootstrap_gdt() {
-    BOOTSTRAP_TSS.init(create_tss());
+pub(crate) fn init_bootstrap_gdt(processor_id: ProcessorID) {
+    BOOTSTRAP_TSS.init(create_tss(processor_id));
     let tss = BOOTSTRAP_TSS.get().expect("TSS not initialized");
 
     BOOTSTRAP_GDT.init(GDT::new(tss));
@@ -128,8 +140,8 @@ pub(crate) fn init_bootstrap_gdt() {
     init_segment_selectors(&gdt.selectors);
 }
 
-pub(crate) fn init_secondary_cpu_gdt() {
-    let tss = Box::new(create_tss());
+pub(crate) fn init_secondary_cpu_gdt(processor_id: ProcessorID) {
+    let tss = Box::new(create_tss(processor_id));
 
     // N.B. TSS must be &'static to be used in the GDT, apparently. We fake
     // that.
