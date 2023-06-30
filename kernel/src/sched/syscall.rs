@@ -7,7 +7,7 @@ use crate::define_per_cpu_u64;
 use crate::percpu::get_processor_id_no_guard;
 
 use super::schedcore::{current_task_id, kill_current_task};
-use super::task::TaskExitCode;
+use super::task::{TaskExitCode, TaskRegisters};
 
 pub(super) fn syscall_init() {
     // N.B. There is some other initialization done when setting up the GDT for
@@ -48,52 +48,77 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             // Swap out the user GS base for the kernel GS base and restore the
             // kernel stack.
             "swapgs",
-            "mov gs:{user_stack}, rsp",
+            "mov gs:{user_stack_scratch}, rsp",
             "mov rsp, gs:{kernel_stack}",
 
-            // Back up registers for sysret. rcx holds caller's userspace RIP
-            // and r11 holds rflags.
+            // Construct a pointer to the syscall arguments on the stack. Must
+            // match TaskRegisters struct order (in reverse).
+            "push 0",                       // ss TODO: Put a real value (this could be a const in gdt.rs)
+            "push gs:{user_stack_scratch}", // rsp
+            "push r11",                     // rflags, part of syscall convention
+            "push 0",                       // cs TODO: Put a real value (this could be a const in gdt.rs)
+            "push rcx",                     // rip, part of syscall convention
+            "push rdi",                     // syscall number
+            // Callee-clobbered
+            "push rdi",
+            "push rsi",
+            "push rdx",
             "push rcx",
+            "push rax",
+            "push r8",
+            "push r9",
+            "push r10",
             "push r11",
-            // Callee-saved registers.
-            "push rbp",
+            // Callee-saved
             "push rbx",
+            "push rbp",
             "push r12",
             "push r13",
             "push r14",
             "push r15",
 
-            // Set up syscall handler arguments. We use the Linux x86_64 syscall
-            // calling convention, which uses rdi, rsi, rdx, r10, r8, and r9.
-            // The standard x86_64 C calling convention uses rdi, rsi, rdx, rcx,
-            // r8, r9, for arguments; note that r10 and rcx are different for
-            // the 4th arg. This is because the syscall instruction clobbers
-            // rcx. Therefore, we just set rcx to r10, and then our syscall
-            // handler will use r10 for the 4th arg.
-            "mov rcx, r10",
+            // First arg is pointer to syscall arguments on the stack
+            "mov rdi, rsp",
 
             // Call the actual syscall handler
             "call {syscall_handler_inner}",
 
             // Restore registers and run systretq to get back to userland.
+            // Callee-saved
             "pop r15",
             "pop r14",
             "pop r13",
             "pop r12",
-            "pop rbx",
             "pop rbp",
+            "pop rbx",
+            // Callee-clobbered
             "pop r11",
+            "pop r10",
+            "pop r9",
+            "pop r8",
+            "pop rax",
             "pop rcx",
+            "pop rdx",
+            "pop rsi",
+            // Syscall number
+            "pop rdi",
+            // iretq frame
+            "pop rdi", // actual rdi I guess?
+            "pop rcx",
+            "add rsp, 8", // cs, ignored
+            "pop r11",
+            "pop rax",    // rip, putting in rax for now so we can put it in rsp later
+            "add rsp, 8", // ss, ignored
 
             // Restore user stack
             "mov gs:{kernel_stack}, rsp",
-            "mov rsp, gs:{user_stack}",
+            "mov rsp, rax",
             "swapgs",
 
             // Return to userspace
             "sysretq",
             kernel_stack = sym TOP_OF_KERNEL_STACK,
-            user_stack = sym USER_STACK_SCRATCH,
+            user_stack_scratch = sym USER_STACK_SCRATCH,
             syscall_handler_inner = sym syscall_handler_inner,
             options(noreturn),
         )
@@ -101,12 +126,20 @@ pub(super) unsafe extern "C" fn syscall_handler() {
 }
 
 #[allow(clippy::similar_names)]
-extern "C" fn syscall_handler_inner(rdi: u64, rsi: u64, rdx: u64, r10: u64, r8: u64, r9: u64) {
+extern "C" fn syscall_handler_inner(registers: &mut TaskRegisters) {
     let processor_id = get_processor_id_no_guard();
     let task_id = current_task_id();
-    log::warn!("syscall handler! processor: {processor_id:?}, task: {task_id:?}, rdi: {rdi:#x}, rsi: {rsi:#x}, rdx: {rdx:#x}, r10: {r10:#x}, r8: {r8:#x}, r9: {r9:#x}");
+    log::warn!(
+        "syscall handler! processor: {processor_id:?}, task: {task_id:?}, registers: {registers:x?}"
+    );
 
-    let syscall_num = rdi;
+    let syscall_num = registers.syscall_number_or_irq_or_error_code;
+
+    let arg1 = registers.rsi;
+    let arg2 = registers.rdx;
+    let arg3 = registers.r10;
+    let arg4 = registers.r8;
+    let arg5 = registers.r9;
 
     let handler = SYSCALL_HANDLERS
         .get(syscall_num as usize)
@@ -115,10 +148,10 @@ extern "C" fn syscall_handler_inner(rdi: u64, rsi: u64, rdx: u64, r10: u64, r8: 
         .next();
     #[allow(clippy::option_if_let_else)]
     match handler {
-        Some(handler) => handler(rsi, rdx, r10, r8, r9),
+        Some(handler) => handler(arg1, arg2, arg3, arg4, arg5),
         None => {
             log::warn!(
-                "Unknown syscall {syscall_num} called with args ({rsi}, {rdx}, {r10}, {r8}, {r9})"
+                "Unknown syscall {syscall_num} called with args ({arg1}, {arg2}, {arg3}, {arg4}, {arg5})",
             );
         }
     };

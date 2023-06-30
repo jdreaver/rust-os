@@ -112,18 +112,13 @@ make test
   - Nuke old block iteration code in ext2 now that write and read don't need it
   - Test that reading indirect block works (can this be made an integration test? make a huge file in the test ext2 volume and assert some value at a deep offset. Have a TODO to do a write than a read as part of the integration test)
   - Clean up and refactor new `read`/`write` code and write tests. In particular, I don't like all of the inline byte/offset <-> block math. Put that in some tested pure functions.
-- BUG: Page faults during `mount 2; exec async 2 /bin/primes 10000`
-  - New consistent symptom: page fault accessing `0xfffffffffffffff8` on the first `push rcx` after swapping stacks in `syscall_handler`. I think `gs:{kernel_stack}` is 0 for some reason.
-    - I see a consistent swap from the first prime task on CPU 0 to the second prime task, and then the first goes to CPU 2 or 3. I think when it does the syscall on that new CPU, the kernel stack isn't correct. We need to repopulate that when we do task switches I'm thinking.
-    - Plan: store registers in a struct (push onto stack, store rsp in rdi, pass rdi as first arg to function, pass old rdi which is syscall number as second arg during syscalls), on task switch set per cpu kernel top of stack to the top of stack we stored in syscall (or whatever it should be)
+- BUG: Page faults during `mount 2; exec async 20 /bin/primes 12000`
+  - Symptom: GSBase is zero after `swapgs` in `syscall_handler` so we get a page fault on `mov gs:{user_stack_scratch}, rsp`
+    - This seems to happen right when the failing task moves CPUs. Do we need better GS accounting, or is this due to more stack corruption?
+    - Try commenting out swapgs again
+      - Indeed, I still see some page faults
   - PART SOLUTION: I was sharing Ring 3 -> Ring 0 TSS stacks (RSP0) across CPUs because I was using a single static array.
   - IDEA: Try commenting out swapgs again
-  - Is `apic::end_of_interrupt` bad before we swapgs back? How do we properly swapgs back to userspace?
-  - Walk through different scenarios where we reschedule in the middle of an interrupt during userspace execution (except I'm not sure that is happening because I have 4 CPUs and I'm just on 2 tasks)
-  - Also saw an instruction fetch page fault for `VirtAddr(0x1)`
-  - One of them happened right on the `mov rsp, gs:{kernel_stack}` instruction in `syscall_handler`, which means the preceding `swapgs` was incorrect. How is that possible? Are interrupts enabled somehow? Is preemption happening?
-    - I'm pretty sure we are messing up GS _before_ this point
-    - Also, right before this, the task was rescheduled from one CPU to another
 - BUG: when running shell in batch mode (e.g. `mount 2; exec /bin/hello`), it is not uncommon to see switch to idle task forever. I think the problem is a race condition in the virtio-block sleeping code, or even in the primitives we use to sleep while waiting.
   - Actually quite easy to repro with GDB when I was running `make run-debug CMDLINE='mount 2; exec async 2 /bin/primes 10000'`
   - BE CAREFUL: sometimes this is a false alarm and you just have to hit Enter to re-print the shell. However, I've seen it consistently when running with `q35`, debugging, and no KVM acceleration
@@ -168,6 +163,7 @@ make test
   - Page table concurrency:
     - Consider representing each PageTableEntry as `AtomicU64`, or in the page table as `AtomicInt<u64, PageTableEntry>`
 - Userspace
+  - Run scheduler after syscalls. Ensure that we are properly restoring user context (registers and such) given we might change CPUs (ensure any per CPU vars used are updated)
   - Write a barebones Rust userspace program
   - Drop any memory we allocated for task, like task segment pages
     - Also drop any intermediate page tables we created.

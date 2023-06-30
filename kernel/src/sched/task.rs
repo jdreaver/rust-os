@@ -103,6 +103,14 @@ impl From<TaskId> for u32 {
 #[repr(packed)]
 #[allow(dead_code)]
 pub(super) struct TaskRegisters {
+    // Callee-saved registers
+    pub(super) r15: u64,
+    pub(super) r14: u64,
+    pub(super) r13: u64,
+    pub(super) r12: u64,
+    pub(super) rbp: u64,
+    pub(super) rbx: u64,
+
     // Callee-clobbered general purpose registers
     pub(super) r11: u64,
     pub(super) r10: u64,
