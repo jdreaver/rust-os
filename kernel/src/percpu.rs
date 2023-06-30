@@ -170,12 +170,6 @@ macro_rules! define_per_cpu_u64 {
     };
 }
 
-define_per_cpu_u8!(MY_PERCPU_U8);
-define_per_cpu_u16!(MY_PERCPU_U16);
-define_per_cpu_u32!(MY_PERCPU_U32);
-define_per_cpu_i64!(MY_PERCPU_I64);
-define_per_cpu_u64!(MY_PERCPU_U64);
-
 /// Maximum number of CPUs the kernel supports.
 ///
 /// N.B. This is a u8 because LAPIC IDs are u8s, and we use those as processor

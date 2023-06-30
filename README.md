@@ -113,9 +113,15 @@ make test
   - Test that reading indirect block works (can this be made an integration test? make a huge file in the test ext2 volume and assert some value at a deep offset. Have a TODO to do a write than a read as part of the integration test)
   - Clean up and refactor new `read`/`write` code and write tests. In particular, I don't like all of the inline byte/offset <-> block math. Put that in some tested pure functions.
 - BUG: `mount 2; exec async 2 /bin/primes 10000` hits an instruction fetch page fault at `VirtAddr(0xffffffff80176168)`. I'm guessing we are still in Ring 3 somehow
+  - Walk through different scenarios where we reschedule in the middle of an interrupt during userspace execution (except I'm not sure that is happening because I have 4 CPUs and I'm just on 2 tasks)
   - Also saw an instruction fetch page fault for `VirtAddr(0x1)`
+  - One of them happened right on the `mov rsp, gs:{kernel_stack}` instruction in `syscall_handler`, which means the preceding `swapgs` was incorrect. How is that possible? Are interrupts enabled somehow? Is preemption happening?
+    - I'm pretty sure we are messing up GS _before_ this point
+    - Also, right before this, the task was rescheduled from one CPU to another
 - BUG: when running shell in batch mode (e.g. `mount 2; exec /bin/hello`), it is not uncommon to see switch to idle task forever. I think the problem is a race condition in the virtio-block sleeping code, or even in the primitives we use to sleep while waiting.
+  - WAIT: This might actually be a false alarm. We kill the task after a successful exit and then go to idle task, and we just have to hit enter to re-print shell. Make sure this is actually a problem.
   - Maybe we should add some "sleep timeout" when waiting on a mutex to make this easier to debug.
+  - Actually quite easy to repro with GDB when I was running `make run-debug CMDLINE='mount 2; exec async 2 /bin/primes 10000'`
 
   ```
   Waiting for userspace task TaskId(6) to finish...
