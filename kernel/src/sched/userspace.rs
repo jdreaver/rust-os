@@ -58,7 +58,6 @@ extern "C" fn task_userspace_setup(arg: *const ()) {
             return;
         }
     };
-    log::info!("ELF header: {:#?}", elf_exe);
 
     let instruction_ptr = elf_exe.entrypoint;
     let stack_ptr = set_up_elf_segments(&elf_exe, &params);
