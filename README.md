@@ -114,6 +114,7 @@ make test
   - Clean up and refactor new `read`/`write` code and write tests. In particular, I don't like all of the inline byte/offset <-> block math. Put that in some tested pure functions.
 - BUG: Page faults during `mount 2; exec async 2 /bin/primes 10000`
   - New consistent symptom: page fault accessing `0xfffffffffffffff8` on the first `push rcx` after swapping stacks in `syscall_handler`. I think `gs:{kernel_stack}` is 0 for some reason.
+    - I see a consistent swap from the first prime task on CPU 0 to the second prime task, and then the first goes to CPU 2 or 3. I think when it does the syscall on that new CPU, the kernel stack isn't correct. We need to repopulate that when we do task switches I'm thinking.
   - PART SOLUTION: I was sharing Ring 3 -> Ring 0 TSS stacks (RSP0) across CPUs because I was using a single static array.
   - IDEA: Try commenting out swapgs again
   - Is `apic::end_of_interrupt` bad before we swapgs back? How do we properly swapgs back to userspace?
@@ -123,9 +124,9 @@ make test
     - I'm pretty sure we are messing up GS _before_ this point
     - Also, right before this, the task was rescheduled from one CPU to another
 - BUG: when running shell in batch mode (e.g. `mount 2; exec /bin/hello`), it is not uncommon to see switch to idle task forever. I think the problem is a race condition in the virtio-block sleeping code, or even in the primitives we use to sleep while waiting.
-  - WAIT: This might actually be a false alarm. We kill the task after a successful exit and then go to idle task, and we just have to hit enter to re-print shell. Make sure this is actually a problem.
-  - Maybe we should add some "sleep timeout" when waiting on a mutex to make this easier to debug.
   - Actually quite easy to repro with GDB when I was running `make run-debug CMDLINE='mount 2; exec async 2 /bin/primes 10000'`
+  - BE CAREFUL: sometimes this is a false alarm and you just have to hit Enter to re-print the shell. However, I've seen it consistently when running with `q35`, debugging, and no KVM acceleration
+  - Maybe we should add some "sleep timeout" when waiting on a mutex to make this easier to debug.
 
   ```
   Waiting for userspace task TaskId(6) to finish...

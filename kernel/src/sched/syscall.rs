@@ -3,8 +3,11 @@ use core::arch::asm;
 use x86_64::registers::rflags::RFlags;
 use x86_64::VirtAddr;
 
-use crate::sched::TaskExitCode;
-use crate::{define_per_cpu_u64, sched};
+use crate::define_per_cpu_u64;
+use crate::percpu::get_processor_id_no_guard;
+
+use super::schedcore::{current_task_id, kill_current_task};
+use super::task::TaskExitCode;
 
 pub(super) fn syscall_init() {
     // N.B. There is some other initialization done when setting up the GDT for
@@ -99,7 +102,9 @@ pub(super) unsafe extern "C" fn syscall_handler() {
 
 #[allow(clippy::similar_names)]
 extern "C" fn syscall_handler_inner(rdi: u64, rsi: u64, rdx: u64, r10: u64, r8: u64, r9: u64) {
-    log::warn!("syscall handler! rdi: {rdi:#x}, rsi: {rsi:#x}, rdx: {rdx:#x}, r10: {r10:#x}, r8: {r8:#x}, r9: {r9:#x}");
+    let processor_id = get_processor_id_no_guard();
+    let task_id = current_task_id();
+    log::warn!("syscall handler! processor: {processor_id:?}, task: {task_id:?}, rdi: {rdi:#x}, rsi: {rsi:#x}, rdx: {rdx:#x}, r10: {r10:#x}, r8: {r8:#x}, r9: {r9:#x}");
 
     let syscall_num = rdi;
 
@@ -127,7 +132,7 @@ static SYSCALL_HANDLERS: [Option<SyscallHandler>; 2] = [
 ];
 
 fn syscall_exit(exit_code: u64, _: u64, _: u64, _: u64, _: u64) {
-    sched::kill_current_task(TaskExitCode::from(exit_code));
+    kill_current_task(TaskExitCode::from(exit_code));
 }
 
 fn syscall_print(data_ptr: u64, data_len: u64, _: u64, _: u64, _: u64) {
