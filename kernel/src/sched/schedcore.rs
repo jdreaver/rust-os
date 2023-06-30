@@ -199,6 +199,7 @@ pub(crate) fn run_scheduler() {
         return;
     };
 
+    set_per_cpu_TOP_OF_KERNEL_STACK(next_stack_ptr.0);
     unsafe {
         switch_to_task(prev_stack_ptr, next_stack_ptr, next_page_table);
     }
