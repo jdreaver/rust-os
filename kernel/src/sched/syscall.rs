@@ -33,10 +33,21 @@ define_per_cpu_u64!(
     pub(super) TOP_OF_KERNEL_STACK
 );
 
+define_per_cpu_u64!(
+    /// Used during syscalls to store and restore the user stack
+    pub(super) USER_STACK_SCRATCH
+);
+
 #[naked]
 pub(super) unsafe extern "C" fn syscall_handler() {
     unsafe {
         asm!(
+            // Swap out the user GS base for the kernel GS base and restore the
+            // kernel stack.
+            "swapgs",
+            "mov gs:{user_stack}, rsp",
+            "mov rsp, gs:{kernel_stack}",
+
             // Back up registers for sysret. rcx holds caller's userspace RIP
             // and r11 holds rflags.
             "push rcx",
@@ -48,15 +59,6 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             "push r13",
             "push r14",
             "push r15",
-
-            // Save user stack in r12, which is callee-saved, and should be
-            // preserved across the syscall handler.
-            "mov r12, rsp",
-
-            // Swap out the user GS base for the kernel GS base and restore the
-            // kernel stack.
-            "swapgs",
-            "mov rsp, gs:{kernel_stack}",
 
             // Set up syscall handler arguments. We use the Linux x86_64 syscall
             // calling convention, which uses rdi, rsi, rdx, r10, r8, and r9.
@@ -70,11 +72,6 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             // Call the actual syscall handler
             "call {syscall_handler_inner}",
 
-            // Restore user stack (stored in r12 earlier)
-            "mov gs:{kernel_stack}, rsp",
-            "swapgs",
-            "mov rsp, r12",
-
             // Restore registers and run systretq to get back to userland.
             "pop r15",
             "pop r14",
@@ -84,8 +81,16 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             "pop rbp",
             "pop r11",
             "pop rcx",
+
+            // Restore user stack
+            "mov gs:{kernel_stack}, rsp",
+            "mov rsp, gs:{user_stack}",
+            "swapgs",
+
+            // Return to userspace
             "sysretq",
             kernel_stack = sym TOP_OF_KERNEL_STACK,
+            user_stack = sym USER_STACK_SCRATCH,
             syscall_handler_inner = sym syscall_handler_inner,
             options(noreturn),
         )
