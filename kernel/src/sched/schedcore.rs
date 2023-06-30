@@ -10,6 +10,7 @@ use crate::{define_per_cpu_u32, define_per_cpu_u8};
 use crate::{percpu, tick};
 
 use super::preempt::{get_preempt_count_no_guard, set_preempt_count};
+use super::syscall::set_per_cpu_TOP_OF_KERNEL_STACK;
 use super::task::{
     DesiredTaskState, KernelTaskStartFunction, Task, TaskExitCode, TaskId, TaskKernelStackPointer,
     TASKS,
@@ -146,7 +147,7 @@ pub(crate) fn start_multitasking(
     let dummy_stack_ptr = TaskKernelStackPointer(0);
     let prev_stack_ptr = core::ptr::addr_of!(dummy_stack_ptr);
     let current_task = current_task();
-    let next_stack_ptr = current_task.kernel_stack_pointer;
+    let next_stack_ptr = current_task.registers.rsp;
     let next_page_table = current_task.page_table.lock().physical_address();
 
     // Drop to decrement reference count or else we will leak because
@@ -275,11 +276,11 @@ fn task_swap_parameters(
     let prev_task = TASKS
         .lock_disable_interrupts()
         .get_task_assert(prev_task_id);
-    let prev_stack_ptr = core::ptr::addr_of!(prev_task.kernel_stack_pointer);
+    let prev_stack_ptr = core::ptr::addr_of!(prev_task.registers.rsp);
     let next_task = TASKS
         .lock_disable_interrupts()
         .get_task_assert(next_task_id);
-    let next_stack_ptr = next_task.kernel_stack_pointer;
+    let next_stack_ptr = next_task.registers.rsp;
     let next_page_table = next_task.page_table.lock().physical_address();
 
     // Give the next task some time slice

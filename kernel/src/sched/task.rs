@@ -78,7 +78,7 @@ impl Tasks {
 pub(crate) struct Task {
     pub(super) id: TaskId,
     pub(super) name: String,
-    pub(super) kernel_stack_pointer: TaskKernelStackPointer,
+    pub(super) registers: TaskRegisters,
     pub(super) desired_state: AtomicEnum<u8, DesiredTaskState>,
     pub(super) exit_wait_cell: WaitCell<TaskExitCode>,
     pub(super) page_table: SpinLock<Level4PageTable>,
@@ -95,6 +95,36 @@ impl From<TaskId> for u32 {
     fn from(task_id: TaskId) -> Self {
         task_id.0
     }
+}
+
+/// Used to store kernel stack context in the task so we know where to resume
+/// execution.
+#[derive(Debug, Default)]
+#[repr(packed)]
+#[allow(dead_code)]
+pub(super) struct TaskRegisters {
+    // Callee-clobbered general purpose registers
+    pub(super) r11: u64,
+    pub(super) r10: u64,
+    pub(super) r9: u64,
+    pub(super) r8: u64,
+    pub(super) rax: u64,
+    pub(super) rcx: u64,
+    pub(super) rdx: u64,
+    pub(super) rsi: u64,
+    pub(super) rdi: u64,
+
+    // On syscall entry, this is the syscall number. During a CPU exception,
+    // this is the error code. When doing a hardware interrupt, this is the IRQ
+    // number.
+    pub(super) syscall_number_or_irq_or_error_code: u64,
+
+    // Return frame for iretq
+    pub(super) rip: u64,
+    pub(super) cs: u64,
+    pub(super) rflags: u64,
+    pub(super) rsp: TaskKernelStackPointer,
+    pub(super) ss: u64,
 }
 
 /// Function to run when starting a kernel task.
@@ -122,8 +152,6 @@ impl Task {
         // for when we run switch_to_task. The general purpose registers don't
         // matter, but the rip register must point to where we want to start
         // execution.
-        //
-        // TODO: This would be a lot easier if we used an actual struct for this.
 
         let stack_top = unsafe {
             #[allow(clippy::cast_ptr_alignment)]
@@ -150,7 +178,12 @@ impl Task {
 
             let num_general_purpose_registers = 15;
             let stack_top_offset = num_general_purpose_registers + 2; // +1 for zeroed rbp, +1 for the RIP
-            stack_top_pointer.sub(stack_top_offset) as usize
+            stack_top_pointer.sub(stack_top_offset) as u64
+        };
+
+        let registers = TaskRegisters {
+            rsp: TaskKernelStackPointer(stack_top),
+            ..Default::default()
         };
 
         let page_table = memory::clone_kernel_page_table();
@@ -158,7 +191,7 @@ impl Task {
         Self {
             id,
             name,
-            kernel_stack_pointer: TaskKernelStackPointer(stack_top),
+            registers,
             desired_state: AtomicEnum::new(DesiredTaskState::ReadyToRun),
             exit_wait_cell: WaitCell::new(),
             page_table: SpinLock::new(page_table),
@@ -169,8 +202,8 @@ impl Task {
 }
 
 #[repr(transparent)]
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub(super) struct TaskKernelStackPointer(pub(super) usize);
+#[derive(Debug, Default, PartialEq, Eq, Copy, Clone)]
+pub(super) struct TaskKernelStackPointer(pub(super) u64);
 
 /// `DesiredTaskState` is the _desired_ state for a task (duh). For example, if
 /// the state is `ReadyToRun`, it means that the task would like CPU time, but

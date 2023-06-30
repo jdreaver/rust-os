@@ -115,6 +115,7 @@ make test
 - BUG: Page faults during `mount 2; exec async 2 /bin/primes 10000`
   - New consistent symptom: page fault accessing `0xfffffffffffffff8` on the first `push rcx` after swapping stacks in `syscall_handler`. I think `gs:{kernel_stack}` is 0 for some reason.
     - I see a consistent swap from the first prime task on CPU 0 to the second prime task, and then the first goes to CPU 2 or 3. I think when it does the syscall on that new CPU, the kernel stack isn't correct. We need to repopulate that when we do task switches I'm thinking.
+    - Plan: store registers in a struct (push onto stack, store rsp in rdi, pass rdi as first arg to function, pass old rdi which is syscall number as second arg during syscalls), on task switch set per cpu kernel top of stack to the top of stack we stored in syscall (or whatever it should be)
   - PART SOLUTION: I was sharing Ring 3 -> Ring 0 TSS stacks (RSP0) across CPUs because I was using a single static array.
   - IDEA: Try commenting out swapgs again
   - Is `apic::end_of_interrupt` bad before we swapgs back? How do we properly swapgs back to userspace?
