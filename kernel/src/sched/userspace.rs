@@ -13,7 +13,7 @@ use crate::{elf, gdt, vfs};
 
 use super::schedcore::{current_task, new_task};
 use super::syscall::TOP_OF_KERNEL_STACK;
-use super::task::TaskId;
+use super::task::{IRetqRegisters, TaskId, TaskKernelStackPointer};
 
 /// Parameters to create a new process.
 pub(crate) struct ExecParams {
@@ -64,7 +64,7 @@ extern "C" fn task_userspace_setup(arg: *const ()) {
     let stack_ptr = set_up_elf_segments(&elf_exe, &params);
 
     let user_code_segment_idx: u64 = u64::from(gdt::selectors().user_code_selector.0);
-    let user_data_segment_idx: u64 = u64::from(gdt::selectors().user_data_selector.0);
+    let user_stack_segment_idx: u64 = u64::from(gdt::selectors().user_data_selector.0);
 
     // N.B. It is important that jump_to_userspace is marked as returning !,
     // which means it never returns, because I _think_ that the compiler will
@@ -74,13 +74,16 @@ extern "C" fn task_userspace_setup(arg: *const ()) {
     drop(file);
     drop(elf_exe);
     drop(bytes);
+
+    let iretq_frame = IRetqRegisters {
+        rip: instruction_ptr.as_u64(),
+        cs: user_code_segment_idx,
+        rflags: RFlags::INTERRUPT_FLAG.bits(),
+        rsp: TaskKernelStackPointer(stack_ptr.as_u64()),
+        ss: user_stack_segment_idx,
+    };
     unsafe {
-        jump_to_userspace(
-            instruction_ptr,
-            stack_ptr,
-            user_code_segment_idx,
-            user_data_segment_idx,
-        );
+        jump_to_userspace(&iretq_frame);
     };
 }
 
@@ -183,29 +186,21 @@ fn set_up_elf_segments(elf_exe: &elf::ElfExecutableHeader, params: &ExecParams) 
 
 /// Function to go to userspace for the first time in a task.
 #[naked]
-pub(super) unsafe extern "C" fn jump_to_userspace(
-    user_instruction_pointer: VirtAddr,
-    user_stack_pointer: VirtAddr,
-    user_code_segment_idx: u64,
-    user_data_segment_idx: u64,
-) -> ! {
+pub(super) unsafe extern "C" fn jump_to_userspace(registers: &IRetqRegisters) -> ! {
     unsafe {
         asm!(
             // Store the kernel stack
             "mov gs:{kernel_stack}, rsp",
-            // Set up and execute iretq
-            "push rcx",      // Fourth arg, data segment
-            "push rsi",      // Second arg, stack pointer
-            "push {rflags}", // rflags
-            "push rdx",      // Third arg, code segment
-            "push rdi",      // First arg, instruction pointer
             // Swap out the kernel GS base for the user's so userspace can't
             // mess with our GS base.
             "swapgs",
+            // Set up stack for iretq. The stack should be in this order (from
+            // top to bottom): instruction pointer, code segment, rflags, stack
+            // pointer, data segment.
+            "mov rsp, rdi",
             // Jump to userspace
             "iretq",
             kernel_stack = sym TOP_OF_KERNEL_STACK,
-            rflags = const RFlags::INTERRUPT_FLAG.bits(),
             options(noreturn),
         )
     }
