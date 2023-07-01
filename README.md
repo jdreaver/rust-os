@@ -107,11 +107,9 @@ make test
 
 ## TODO
 
-- VFS read/write code:
-  - Change inode `write` API to be similar to read (based on blocks)
-  - Nuke old block iteration code in ext2 now that write and read don't need it
-  - Test that reading indirect block works (can this be made an integration test? make a huge file in the test ext2 volume and assert some value at a deep offset. Have a TODO to do a write than a read as part of the integration test)
-  - Clean up and refactor new `read`/`write` code and write tests. In particular, I don't like all of the inline byte/offset <-> block math. Put that in some tested pure functions.
+- Replace `x86_64` crate IDT and rust `extern "x86-interrupt"` calls with my own assembly wrappers so I have finer control over registers, `swapgs`, etc
+- Replace `x86_64` crate GDT and TSS with custom stuff so I can ensure `const` values for GDT offsets instead of needing to `add_entry` in the right order.
+  - Once I do this, set proper cs and ss values in the syscall handler (currently I set them to 0 in `TaskRegisters`)
 - BUG: Page faults during `mount 2; exec async 20 /bin/primes 12000`
   - Remember the bug only happens when we have more tasks than CPUs
   - Symptom: GSBase is zero after `swapgs` in `syscall_handler` so we get a page fault on `mov gs:{user_stack_scratch}, rsp`
@@ -120,6 +118,11 @@ make test
       - Often when commenting out swapgs I see the exit syscall getting called twice. This is due to preempt_count being nonzero apparently
   - PART SOLUTION: I was sharing Ring 3 -> Ring 0 TSS stacks (RSP0) across CPUs because I was using a single static array.
   - IDEA: Try commenting out swapgs again
+- VFS read/write code:
+  - Change inode `write` API to be similar to read (based on blocks)
+  - Nuke old block iteration code in ext2 now that write and read don't need it
+  - Test that reading indirect block works (can this be made an integration test? make a huge file in the test ext2 volume and assert some value at a deep offset. Have a TODO to do a write than a read as part of the integration test)
+  - Clean up and refactor new `read`/`write` code and write tests. In particular, I don't like all of the inline byte/offset <-> block math. Put that in some tested pure functions.
 - BUG: when running shell in batch mode (e.g. `mount 2; exec /bin/hello`), it is not uncommon to see switch to idle task forever. I think the problem is a race condition in the virtio-block sleeping code, or even in the primitives we use to sleep while waiting.
   - Actually quite easy to repro with GDB when I was running `make run-debug CMDLINE='mount 2; exec async 2 /bin/primes 10000'`
   - BE CAREFUL: sometimes this is a false alarm and you just have to hit Enter to re-print the shell. However, I've seen it consistently when running with `q35`, debugging, and no KVM acceleration
