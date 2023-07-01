@@ -11,10 +11,7 @@ use crate::{percpu, tick};
 
 use super::preempt::{get_preempt_count_no_guard, set_preempt_count};
 use super::syscall::set_per_cpu_TOP_OF_KERNEL_STACK;
-use super::task::{
-    DesiredTaskState, KernelTaskStartFunction, Task, TaskExitCode, TaskId, TaskKernelStackPointer,
-    TASKS,
-};
+use super::task::{DesiredTaskState, KernelTaskStartFunction, Task, TaskExitCode, TaskId, TASKS};
 use super::{stack, syscall};
 
 static RUN_QUEUE: SpinLock<RunQueue> = SpinLock::new(RunQueue::new());
@@ -144,7 +141,7 @@ pub(crate) fn start_multitasking(
 
     // Just a dummy location for switch_to_task to store the previous stack
     // pointer.
-    let dummy_stack_ptr = TaskKernelStackPointer(0);
+    let dummy_stack_ptr = 0;
     let prev_stack_ptr = core::ptr::addr_of!(dummy_stack_ptr);
     let current_task = current_task();
     let next_stack_ptr = current_task.registers.iretq_frame.rsp;
@@ -199,7 +196,6 @@ pub(crate) fn run_scheduler() {
         return;
     };
 
-    set_per_cpu_TOP_OF_KERNEL_STACK(next_stack_ptr.0);
     unsafe {
         switch_to_task(prev_stack_ptr, next_stack_ptr, next_page_table);
     }
@@ -240,13 +236,7 @@ fn check_current_task_needs_preemption() -> bool {
     true
 }
 
-fn task_swap_parameters(
-    run_queue: &mut RunQueue,
-) -> Option<(
-    *const TaskKernelStackPointer,
-    TaskKernelStackPointer,
-    PhysAddr,
-)> {
+fn task_swap_parameters(run_queue: &mut RunQueue) -> Option<(*const u64, u64, PhysAddr)> {
     let processor_id = percpu::get_processor_id_no_guard();
     let idle_task_id = TaskId(get_per_cpu_no_guard_IDLE_TASK_ID());
 
@@ -300,6 +290,8 @@ fn task_swap_parameters(
         next_task.name,
         next_task.id,
     );
+
+    set_per_cpu_TOP_OF_KERNEL_STACK(next_task.kernel_stack.top_addr().as_u64());
 
     Some((prev_stack_ptr, next_stack_ptr, next_page_table))
 }
@@ -381,8 +373,8 @@ pub(crate) fn wait_on_task(target_task_id: TaskId) -> Option<TaskExitCode> {
 /// Architecture-specific assembly code to switch from one task to another.
 #[naked]
 pub(super) unsafe extern "C" fn switch_to_task(
-    previous_task_stack_pointer: *const TaskKernelStackPointer,
-    next_task_stack_pointer: TaskKernelStackPointer,
+    previous_task_stack_pointer: *const u64,
+    next_task_stack_pointer: u64,
     next_page_table: PhysAddr,
 ) {
     unsafe {

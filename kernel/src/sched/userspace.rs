@@ -13,7 +13,7 @@ use crate::{elf, gdt, vfs};
 
 use super::schedcore::{current_task, new_task};
 use super::syscall::TOP_OF_KERNEL_STACK;
-use super::task::{IRetqRegisters, TaskId, TaskKernelStackPointer};
+use super::task::{IRetqRegisters, TaskId};
 
 /// Parameters to create a new process.
 pub(crate) struct ExecParams {
@@ -78,7 +78,7 @@ extern "C" fn task_userspace_setup(arg: *const ()) {
         rip: instruction_ptr.as_u64(),
         cs: user_code_segment_idx,
         rflags: RFlags::INTERRUPT_FLAG.bits(),
-        rsp: TaskKernelStackPointer(stack_ptr.as_u64()),
+        rsp: stack_ptr.as_u64(),
         ss: user_stack_segment_idx,
     };
     unsafe {

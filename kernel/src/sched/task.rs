@@ -85,7 +85,7 @@ pub(crate) struct Task {
 
     /// How much longer the task can run before it is preempted.
     pub(super) remaining_slice: AtomicInt<u64, Milliseconds>,
-    pub(super) _kernel_stack: stack::KernelStack,
+    pub(super) kernel_stack: stack::KernelStack,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -139,7 +139,7 @@ pub(super) struct IRetqRegisters {
     pub(super) rip: u64,
     pub(super) cs: u64,
     pub(super) rflags: u64,
-    pub(super) rsp: TaskKernelStackPointer,
+    pub(super) rsp: u64,
     pub(super) ss: u64,
 }
 
@@ -198,7 +198,7 @@ impl Task {
         };
 
         let iretq_frame = IRetqRegisters {
-            rsp: TaskKernelStackPointer(stack_top),
+            rsp: stack_top,
             ..Default::default()
         };
         let registers = TaskRegisters {
@@ -216,14 +216,10 @@ impl Task {
             exit_wait_cell: WaitCell::new(),
             page_table: SpinLock::new(page_table),
             remaining_slice: AtomicInt::new(Milliseconds::new(0)),
-            _kernel_stack: kernel_stack,
+            kernel_stack,
         }
     }
 }
-
-#[repr(transparent)]
-#[derive(Debug, Default, PartialEq, Eq, Copy, Clone)]
-pub(super) struct TaskKernelStackPointer(pub(super) u64);
 
 /// `DesiredTaskState` is the _desired_ state for a task (duh). For example, if
 /// the state is `ReadyToRun`, it means that the task would like CPU time, but
