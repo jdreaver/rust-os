@@ -100,19 +100,19 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             "pop rcx",
             "pop rdx",
             "pop rsi",
+            "pop rdi",
             // Syscall number
             "pop rdi",
             // iretq frame
-            "pop rdi", // actual rdi I guess?
             "pop rcx",
             "add rsp, 8", // cs, ignored
             "pop r11",
-            "pop rax",    // rip, putting in rax for now so we can put it in rsp later
+            "pop rax",    // rsp, putting in rax for now so we can put it in rsp later
             "add rsp, 8", // ss, ignored
 
-            // Restore user stack
+            // Store kernel stack and restore user stack
             "mov gs:{kernel_stack}, rsp",
-            "mov rsp, rax",
+            "mov rsp, rax", // rsp was popped into rax earlier
             "swapgs",
 
             // Return to userspace

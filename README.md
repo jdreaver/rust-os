@@ -115,8 +115,7 @@ make test
 - BUG: Page faults during `mount 2; exec async 20 /bin/primes 12000`
   - Symptom: GSBase is zero after `swapgs` in `syscall_handler` so we get a page fault on `mov gs:{user_stack_scratch}, rsp`
     - This seems to happen right when the failing task moves CPUs. Do we need better GS accounting, or is this due to more stack corruption?
-    - Try commenting out swapgs again
-      - Indeed, I still see some page faults
+    - Ignoring swapgs: when I comment out all swapgs calls I still get some page faults, which makes me suspect swapgs/GSBase is a red herring
   - PART SOLUTION: I was sharing Ring 3 -> Ring 0 TSS stacks (RSP0) across CPUs because I was using a single static array.
   - IDEA: Try commenting out swapgs again
 - BUG: when running shell in batch mode (e.g. `mount 2; exec /bin/hello`), it is not uncommon to see switch to idle task forever. I think the problem is a race condition in the virtio-block sleeping code, or even in the primitives we use to sleep while waiting.
