@@ -345,6 +345,8 @@ pub(super) fn kill_current_task(exit_code: TaskExitCode) {
     drop(current_task);
 
     run_scheduler();
+
+    panic!("run_scheduler in kill_current_task returned");
 }
 
 /// Puts the current task to sleep and returns the current task ID, but does

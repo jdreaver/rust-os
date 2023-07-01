@@ -113,9 +113,11 @@ make test
   - Test that reading indirect block works (can this be made an integration test? make a huge file in the test ext2 volume and assert some value at a deep offset. Have a TODO to do a write than a read as part of the integration test)
   - Clean up and refactor new `read`/`write` code and write tests. In particular, I don't like all of the inline byte/offset <-> block math. Put that in some tested pure functions.
 - BUG: Page faults during `mount 2; exec async 20 /bin/primes 12000`
+  - Remember the bug only happens when we have more tasks than CPUs
   - Symptom: GSBase is zero after `swapgs` in `syscall_handler` so we get a page fault on `mov gs:{user_stack_scratch}, rsp`
     - This seems to happen right when the failing task moves CPUs. Do we need better GS accounting, or is this due to more stack corruption?
     - Ignoring swapgs: when I comment out all swapgs calls I still get some page faults, which makes me suspect swapgs/GSBase is a red herring
+      - Often when commenting out swapgs I see the exit syscall getting called twice. This is due to preempt_count being nonzero apparently
   - PART SOLUTION: I was sharing Ring 3 -> Ring 0 TSS stacks (RSP0) across CPUs because I was using a single static array.
   - IDEA: Try commenting out swapgs again
 - BUG: when running shell in batch mode (e.g. `mount 2; exec /bin/hello`), it is not uncommon to see switch to idle task forever. I think the problem is a race condition in the virtio-block sleeping code, or even in the primitives we use to sleep while waiting.
