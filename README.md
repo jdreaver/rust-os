@@ -114,6 +114,7 @@ make test
   - Clean up and refactor new `read`/`write` code and write tests. In particular, I don't like all of the inline byte/offset <-> block math. Put that in some tested pure functions.
 - BUG: when running shell in batch mode (e.g. `mount 2; exec /bin/hello`), it is not uncommon to see switch to idle task forever. I think the problem is a race condition in the virtio-block sleeping code, or even in the primitives we use to sleep while waiting.
   - Actually quite easy to repro with GDB when I was running `make run-debug CMDLINE='mount 2; exec async 2 /bin/primes 10000'`
+    - Even easier repro is to just turn off `accel=kvm`
   - BE CAREFUL: sometimes this is a false alarm and you just have to hit Enter to re-print the shell. However, I've seen it consistently when running with `q35`, debugging, and no KVM acceleration
   - Maybe we should add some "sleep timeout" when waiting on a mutex to make this easier to debug.
 
