@@ -1,6 +1,21 @@
 //! Global Descriptor Table (GDT) and Task State Segment (TSS) setup.
+//!
+//! All memory accesses pass through the Global DescriptorTable (GDT). This
+//! table holds segment descriptors that provide location and access bits for
+//! different memory segments. We use a flat memory model, so segments cover the
+//! entire address space, and the GDT is used to delineate between kernel and
+//! user code.
+//!
+//! Also, in order to use the `syscall`/`sysret` instructions, we need to set up
+//! the STAR register to tell those instructions which segments to use, and they
+//! expect a very specific layout of the GDT. See
+//! <https://wiki.osdev.org/GDT_Tutorial> and
+//! <https://wiki.osdev.org/SYSENTER#AMD:_SYSCALL.2FSYSRET> for more details.
+//!
+//! See "2.1.1 Global and Local Descriptor Tables" in the Intel SDM Vol 3 and
+//! <https://wiki.osdev.org/Global_Descriptor_Table>.
 
-use alloc::boxed::Box;
+use core::mem::MaybeUninit;
 
 use x86_64::instructions::tables::load_tss;
 use x86_64::registers::segmentation::{Segment, CS, DS, ES, FS, GS, SS};
@@ -10,61 +25,36 @@ use x86_64::VirtAddr;
 
 use crate::apic::ProcessorID;
 use crate::percpu;
-use crate::sync::InitCell;
 
-/// The GDT we use for the bootstrap processor is special because it is set up
-/// before we have a memory allocator. Other processors' GDTs live on the heap.
-/// However, all of the GDTs look the same, with the exception of the TSS (which
-/// must be unique per processor), so it is safe to use reference the selectors
-/// on any CPU.
-static BOOTSTRAP_GDT: InitCell<GDT> = InitCell::new();
+// TODO: Create a percpu abstraction to do this more ergonomically and also
+// ensure these are cache aligned. The problem is this needs to be created
+// before the percpu machinery is initialized.
+static mut PER_CPU_GDT: [MaybeUninit<GlobalDescriptorTable>; percpu::MAX_CPUS as usize] =
+    MaybeUninit::uninit_array();
 
-/// `TSS` for `BOOTSTRAP_GDT`.
-static BOOTSTRAP_TSS: InitCell<TaskStateSegment> = InitCell::new();
+fn init_gdt(tss: &'static TaskStateSegment) -> GlobalDescriptorTable {
+    let mut gdt = GlobalDescriptorTable::new();
+    let kernel_code_selector = gdt.add_entry(Descriptor::kernel_code_segment());
+    let kernel_data_selector = gdt.add_entry(Descriptor::kernel_data_segment());
 
-/// All memory accesses pass through the Global DescriptorTable (GDT). This
-/// table holds segment descriptors that provide location and access bits for
-/// different memory segments. We use a flat memory model, so segments cover the
-/// entire address space, and the GDT is used to delineate between kernel and
-/// user code.
-///
-/// Also, in order to use the `syscall`/`sysret` instructions, we need to set up
-/// the STAR register to tell those instructions which segments to use, and they
-/// expect a very specific layout of the GDT. See
-/// <https://wiki.osdev.org/GDT_Tutorial> and
-/// <https://wiki.osdev.org/SYSENTER#AMD:_SYSCALL.2FSYSRET> for more details.
-///
-/// See "2.1.1 Global and Local Descriptor Tables" in the Intel SDM Vol 3 and
-/// <https://wiki.osdev.org/Global_Descriptor_Table>.
-struct GDT {
-    gdt: GlobalDescriptorTable,
-}
+    // User code/data segments in 64 bit mode are here just to set the
+    // privilege level to ring 3.
+    //
+    // N.B. The ordering here matters for some reason when we set the STAR
+    // register. The user data segment must be added _before_ the user code
+    // segment.
+    let user_data_selector = gdt.add_entry(Descriptor::user_data_segment());
+    let user_code_selector = gdt.add_entry(Descriptor::user_code_segment());
 
-impl GDT {
-    fn new(tss: &'static TaskStateSegment) -> Self {
-        let mut gdt = GlobalDescriptorTable::new();
-        let kernel_code_selector = gdt.add_entry(Descriptor::kernel_code_segment());
-        let kernel_data_selector = gdt.add_entry(Descriptor::kernel_data_segment());
+    let tss_selector = gdt.add_entry(Descriptor::tss_segment(tss));
 
-        // User code/data segments in 64 bit mode are here just to set the
-        // privilege level to ring 3.
-        //
-        // N.B. The ordering here matters for some reason when we set the STAR
-        // register. The user data segment must be added _before_ the user code
-        // segment.
-        let user_data_selector = gdt.add_entry(Descriptor::user_data_segment());
-        let user_code_selector = gdt.add_entry(Descriptor::user_code_segment());
+    assert_eq!(kernel_code_selector, KERNEL_CODE_SELECTOR);
+    assert_eq!(kernel_data_selector, KERNEL_DATA_SELECTOR);
+    assert_eq!(user_data_selector, USER_DATA_SELECTOR);
+    assert_eq!(user_code_selector, USER_CODE_SELECTOR);
+    assert_eq!(tss_selector, TSS_SELECTOR);
 
-        let tss_selector = gdt.add_entry(Descriptor::tss_segment(tss));
-
-        assert_eq!(kernel_code_selector, KERNEL_CODE_SELECTOR);
-        assert_eq!(kernel_data_selector, KERNEL_DATA_SELECTOR);
-        assert_eq!(user_data_selector, USER_DATA_SELECTOR);
-        assert_eq!(user_code_selector, USER_CODE_SELECTOR);
-        assert_eq!(tss_selector, TSS_SELECTOR);
-
-        Self { gdt }
-    }
+    gdt
 }
 
 // Hard-code these as consts so we can use them in assembly easier.
@@ -94,9 +84,6 @@ const TSS_STACK_SIZE_BYTES: usize = 4096 * 5; // TODO: Is this too large?
 // per CPU stacks, or we can use something like a memblock allocator in early
 // init: https://0xax.gitbooks.io/linux-insides/content/MM/linux-mm-1.html
 
-static mut PRIVILEGE_STACK_TABLES: [[u8; TSS_STACK_SIZE_BYTES]; percpu::MAX_CPUS as usize] =
-    [[0; TSS_STACK_SIZE_BYTES]; percpu::MAX_CPUS as usize];
-
 static mut DOUBLE_FAULT_STACK_TABLES: [[u8; TSS_STACK_SIZE_BYTES]; percpu::MAX_CPUS as usize] =
     [[0; TSS_STACK_SIZE_BYTES]; percpu::MAX_CPUS as usize];
 
@@ -113,6 +100,12 @@ fn get_tss_stack_ptr(
     stack_end
 }
 
+// TODO: Create a percpu abstraction to do this more ergonomically and also
+// ensure these are cache aligned. The problem is this needs to be created
+// before the percpu machinery is initialized.
+static mut PER_CPU_TSS: [TaskStateSegment; percpu::MAX_CPUS as usize] =
+    [TaskStateSegment::new(); percpu::MAX_CPUS as usize];
+
 fn create_tss(processor_id: ProcessorID) -> TaskStateSegment {
     // N.B. TSS is mostly used in 32 bit mode, but in 64 bit mode it is still
     // used for stack switching for fault handlers and for reserved stacks when
@@ -123,11 +116,6 @@ fn create_tss(processor_id: ProcessorID) -> TaskStateSegment {
     // fault.
     let mut tss = TaskStateSegment::new();
 
-    // RSP0, used when switching to kernel (ring 0 == RSP0) stack on privilege
-    // level change.
-    tss.privilege_stack_table[0] =
-        unsafe { get_tss_stack_ptr(processor_id, &mut PRIVILEGE_STACK_TABLES) };
-
     tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] =
         unsafe { get_tss_stack_ptr(processor_id, &mut DOUBLE_FAULT_STACK_TABLES) };
 
@@ -137,30 +125,17 @@ fn create_tss(processor_id: ProcessorID) -> TaskStateSegment {
     tss
 }
 
-pub(crate) fn init_bootstrap_gdt(processor_id: ProcessorID) {
-    BOOTSTRAP_TSS.init(create_tss(processor_id));
-    let tss = BOOTSTRAP_TSS.get().expect("TSS not initialized");
+pub(crate) fn init_per_cpu_gdt(processor_id: ProcessorID) {
+    let tss: &'static mut TaskStateSegment = unsafe { &mut PER_CPU_TSS[processor_id.0 as usize] };
+    *tss = create_tss(processor_id);
 
-    BOOTSTRAP_GDT.init(GDT::new(tss));
-    let gdt = BOOTSTRAP_GDT.get().expect("GDT not initialized");
-    gdt.gdt.load();
+    let gdt: &'static mut MaybeUninit<GlobalDescriptorTable> =
+        unsafe { &mut PER_CPU_GDT[processor_id.0 as usize] };
+    gdt.write(init_gdt(tss));
 
-    init_segment_selectors();
-}
-
-pub(crate) fn init_secondary_cpu_gdt(processor_id: ProcessorID) {
-    let tss = Box::new(create_tss(processor_id));
-
-    // N.B. TSS must be &'static to be used in the GDT, apparently. We fake
-    // that.
-    //
-    // Safety: we leak the TSS, so it is indeed &'static.
-    let tss = unsafe { &*(Box::leak(tss) as *const _) };
-
-    let gdt = Box::new(GDT::new(tss));
-    // Leak the GDT so it is &'static.
-    let gdt: &'static GDT = unsafe { &*(Box::leak(gdt) as *const _) };
-    gdt.gdt.load();
+    unsafe {
+        gdt.assume_init_mut().load();
+    };
 
     init_segment_selectors();
 }
@@ -198,4 +173,14 @@ fn init_segment_selectors() {
         KERNEL_DATA_SELECTOR,
     )
     .unwrap_or_else(|err| panic!("Failed to set STAR: {err}"));
+}
+
+/// The TSS RSP0 is used when switching to kernel (ring 0 == RSP0) stack on
+/// privilege level change. It needs to be set to the kernel stack for the task
+/// currently running on the CPU.
+pub(crate) fn set_tss_rsp0(processor_id: ProcessorID, rsp0: VirtAddr) {
+    unsafe {
+        let tss: &'static mut TaskStateSegment = &mut PER_CPU_TSS[processor_id.0 as usize];
+        tss.privilege_stack_table[0] = rsp0;
+    }
 }

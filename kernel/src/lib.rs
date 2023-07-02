@@ -5,6 +5,8 @@
 #![feature(cell_leak)]
 #![feature(int_roundings)]
 #![feature(offset_of)]
+#![feature(maybe_uninit_uninit_array)]
+#![feature(const_maybe_uninit_uninit_array)]
 #![feature(naked_functions)]
 #![feature(pointer_is_aligned)]
 #![feature(strict_provenance)]
@@ -81,10 +83,9 @@ pub fn start() -> ! {
     logging::init();
 
     let boot_info_data = boot_info::boot_info();
-    early_per_cpu_setup(
-        true,
-        ProcessorID(boot_info_data.bootstrap_processor_lapic_id as u8),
-    );
+    early_per_cpu_setup(ProcessorID(
+        boot_info_data.bootstrap_processor_lapic_id as u8,
+    ));
 
     log::info!("kernel cmdline: {}", boot_info_data.kernel_cmdline);
     global_setup(boot_info_data);
@@ -118,12 +119,8 @@ pub fn start() -> ! {
 /// point before continuing with init.
 static NUM_CPUS_BOOTSTRAPPED: AtomicU8 = AtomicU8::new(0);
 
-fn early_per_cpu_setup(bootstrap_cpu: bool, processor_id: ProcessorID) {
-    if bootstrap_cpu {
-        gdt::init_bootstrap_gdt(processor_id);
-    } else {
-        gdt::init_secondary_cpu_gdt(processor_id);
-    }
+fn early_per_cpu_setup(processor_id: ProcessorID) {
+    gdt::init_per_cpu_gdt(processor_id);
     interrupts::init_interrupts();
     percpu::init_current_cpu(processor_id);
     tick::per_cpu_init();
@@ -183,7 +180,7 @@ extern "C" fn bootstrap_secondary_cpu(info: *const limine::LimineSmpInfo) -> ! {
     let info = unsafe { &*info };
     let processor_id = ProcessorID(info.lapic_id as u8);
     // log::info!("bootstrapping CPU: {info:#x?}");
-    early_per_cpu_setup(false, processor_id);
+    early_per_cpu_setup(processor_id);
     later_per_cpu_setup();
     loop {
         x86_64::instructions::hlt();

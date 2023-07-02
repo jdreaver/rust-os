@@ -4,6 +4,7 @@ use alloc::sync::Arc;
 use core::arch::asm;
 use x86_64::PhysAddr;
 
+use crate::gdt::set_tss_rsp0;
 use crate::hpet::Milliseconds;
 use crate::sync::SpinLock;
 use crate::{define_per_cpu_u32, define_per_cpu_u8};
@@ -291,7 +292,9 @@ fn task_swap_parameters(run_queue: &mut RunQueue) -> Option<(*const u64, u64, Ph
         next_task.id,
     );
 
+    // Reset per CPU kernel stack pointer and TSS rsp0
     set_per_cpu_TOP_OF_KERNEL_STACK(next_task.kernel_stack.top_addr().as_u64());
+    set_tss_rsp0(processor_id, next_task.kernel_stack.top_addr());
 
     Some((prev_stack_ptr, next_stack_ptr, next_page_table))
 }

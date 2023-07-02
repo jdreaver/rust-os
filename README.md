@@ -107,29 +107,6 @@ make test
 
 ## TODO
 
-- (maybe not needed) Replace `x86_64` crate IDT and rust `extern "x86-interrupt"` calls with my own assembly wrappers so I have finer control over registers, `swapgs`, etc
-- BUG: Page faults and general protection faults during `mount 2; exec async 4 /bin/primes 15000`
-  - Remember the bug only happens when we have more tasks than CPUs
-  - Symptom: General protection fault on the `ret` in `switch_to` assembly
-    - Only happens with `accel=kvm`. Maybe it is a race condition with concurrency?
-    - A page fault happens when we try to print the stack trace for this general protection fault, saying we tried to access address 0x13. Is GS still wrong somehow???
-    - I think the problem is `ret` is performing a cross privilege jump
-      - I found the return stack pointer jumping to:
-
-        ```
-        +x /1xg $rsp
-        0xffffffff80174908 <_ZN7rust_os3gdt22PRIVILEGE_STACK_TABLES17h78a510436a437615E+20040>:	0x0003000000000002
-        ```
-    - Ideas:
-      - Are we disabling and/or enabling interrupts at the wrong time, causing us to clobber the `PRIVILEGE_STACK_TABLES` stack?
-      - Should we even be calling `switch_to` while in the `PRIVILEGE_STACK_TABLES` stack? Shouldn't tasks be using their own dedicated stack? I think this one might be it.
-  - (Old) Symptom: GSBase is zero after `swapgs` in `syscall_handler` so we get a page fault on `mov gs:{user_stack_scratch}, rsp`
-    - This seems to happen right when the failing task moves CPUs. Do we need better GS accounting, or is this due to more stack corruption?
-    - Ignoring swapgs: when I comment out all swapgs calls I still get some page faults, which makes me suspect swapgs/GSBase is a red herring
-      - Often when commenting out swapgs I see the exit syscall getting called twice. This is due to preempt_count being nonzero apparently
-  - PART SOLUTION: I was sharing Ring 3 -> Ring 0 TSS stacks (RSP0) across CPUs because I was using a single static array.
-  - PART SOLUTION: In interrupts now use the CS register requested privilege level to decide if we are going back to userspace.
-  - IDEA: Try commenting out swapgs again
 - VFS read/write code:
   - Change inode `write` API to be similar to read (based on blocks)
   - Nuke old block iteration code in ext2 now that write and read don't need it
@@ -159,6 +136,7 @@ make test
   - Integration tests:
     - Spawn a bunch of processes and hope we don't crash?
     - maybe some expected failures to ensure we call panic handler?
+- GSBase for usermode: we need to make sure we swap the usermode GS segment base when doing task switching
 - Memory management
   - Consider locking global physical page allocator inside page table functions so we don't need to pass in `&mut PhysicalMemoryAllocator`, and then most of `mapping.rs` can go away.
     - Then again, the explicitness is nice. Maybe make helpers to take both a page table lock and an allocator lock?
@@ -192,7 +170,11 @@ make test
   - Segfault a user process and kill it instead of panicking and crashing the kernel
     - Be careful about locking the scheduler in the page fault handler. It is possible a spin lock was already taken on the scheduler and we'll deadlock (all though that shouldn't happen on the current CPU. Hmm)
   - Create a type showing the intended memory mapping of a process and turn that into a page table. This should make it easier to reason about the memory map.
+- (maybe not needed) Replace `x86_64` crate IDT and rust `extern "x86-interrupt"` calls with my own assembly wrappers so I have finer control over registers, `swapgs`, etc
 - Per CPU
+  - Create abstraction to make arrays of per cpu variables so GDT code is cleaner (although the percpu init function needs the GDT to be created already, for some reason)
+    - Ensure cache line alignment!
+    - Alternatively, support percpu structs, ensuring they are cache aligned. We should be able to either read/write the whole struct (wrapped in a `PreemptGuard`) or individual fields.
   - Maybe have a helper to take locks for multiple CPUs in a consistent way to prevent deadlocks, like ordering by processor ID. (Linux scheduler code does this for per CPU run queues)
   - Logging dependency on percpu:
     - Consider making init dependencies more explicit, by passing around a thing that was initialized, or even dumb tokens like `struct PerCPUInitialized;`.
