@@ -14,9 +14,6 @@ use super::config::VirtIONotifyConfig;
 
 /// Wrapper around `VirtQueue` that supports associating extra data with each
 /// descriptor.
-///
-/// TODO: It would be better if we could entirely own the virtqueue we are
-/// wrapping.
 #[derive(Debug)]
 pub(super) struct VirtQueueData<D> {
     data: Vec<Option<D>>,
