@@ -113,6 +113,16 @@ make test
   - Symptom: General protection fault on the `ret` in `switch_to` assembly
     - Only happens with `accel=kvm`. Maybe it is a race condition with concurrency?
     - A page fault happens when we try to print the stack trace for this general protection fault, saying we tried to access address 0x13. Is GS still wrong somehow???
+    - I think the problem is `ret` is performing a cross privilege jump
+      - I found the return stack pointer jumping to:
+
+        ```
+        +x /1xg $rsp
+        0xffffffff80174908 <_ZN7rust_os3gdt22PRIVILEGE_STACK_TABLES17h78a510436a437615E+20040>:	0x0003000000000002
+        ```
+    - Ideas:
+      - Are we disabling and/or enabling interrupts at the wrong time, causing us to clobber the `PRIVILEGE_STACK_TABLES` stack?
+      - Should we even be calling `switch_to` while in the `PRIVILEGE_STACK_TABLES` stack? Shouldn't tasks be using their own dedicated stack? I think this one might be it.
   - (Old) Symptom: GSBase is zero after `swapgs` in `syscall_handler` so we get a page fault on `mov gs:{user_stack_scratch}, rsp`
     - This seems to happen right when the failing task moves CPUs. Do we need better GS accounting, or is this due to more stack corruption?
     - Ignoring swapgs: when I comment out all swapgs calls I still get some page faults, which makes me suspect swapgs/GSBase is a red herring
