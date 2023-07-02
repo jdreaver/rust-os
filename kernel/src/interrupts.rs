@@ -3,8 +3,9 @@ use core::sync::atomic::{AtomicU8, Ordering};
 use paste::paste;
 use seq_macro::seq;
 use x86_64::registers::control::Cr2;
+use x86_64::structures::gdt::SegmentSelector;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
-use x86_64::VirtAddr;
+use x86_64::{PrivilegeLevel, VirtAddr};
 
 use crate::memory::HIGHER_HALF_START;
 use crate::sched::is_kernel_guard_page;
@@ -36,8 +37,8 @@ pub(crate) struct InterruptVector(pub(crate) u8);
 /// - [Definition for `common_interrupt`](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/kernel/irq.c#L240)
 ///   - [`DEFINE_IDTENTRY_IRQ` def](https://elixir.bootlin.com/linux/v6.3/source/arch/x86/include/asm/idtentry.h#L191)
 ///
-fn common_external_interrupt_handler(vector: InterruptVector) {
-    with_swapgs_accounting(|| {
+fn common_external_interrupt_handler(stack_frame: &InterruptStackFrame, vector: InterruptVector) {
+    with_swapgs_accounting(stack_frame, || {
         let &(interrupt_id, handler) = EXTERNAL_INTERRUPT_HANDLERS
             .lock()
             .get(vector.0 as usize)
@@ -75,8 +76,8 @@ static EXTERNAL_INTERRUPT_HANDLERS: SpinLock<
 macro_rules! external_stub_interrupt_handler {
     ($idt:ident $vector:literal) => {
         paste! {
-            extern "x86-interrupt" fn [<_idt_entry_ $vector>](_: InterruptStackFrame) {
-                common_external_interrupt_handler(InterruptVector($vector));
+            extern "x86-interrupt" fn [<_idt_entry_ $vector>](stack_frame: InterruptStackFrame) {
+                common_external_interrupt_handler(&stack_frame, InterruptVector($vector));
             }
 
             $idt[$vector].set_handler_fn([<_idt_entry_ $vector>]);
@@ -224,25 +225,25 @@ pub(crate) fn install_interrupt_reserved_vector(
 }
 
 extern "x86-interrupt" fn divide_error_handler(stack_frame: InterruptStackFrame) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         panic!("EXCEPTION: DIVIDE ERROR\nStack Frame: {stack_frame:#?}");
     });
 }
 
 extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         panic!("EXCEPTION: DEBUG\nStack Frame: {stack_frame:#?}");
     });
 }
 
 extern "x86-interrupt" fn non_maskable_interrupt_handler(stack_frame: InterruptStackFrame) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         panic!("EXCEPTION: NON MASKABLE INTERRUPT\nStack Frame: {stack_frame:#?}");
     });
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         logging::force_unlock_logger();
         log::warn!("EXCEPTION: BREAKPOINT");
         log::warn!("{stack_frame:#?}");
@@ -250,25 +251,25 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn overflow_handler(stack_frame: InterruptStackFrame) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         panic!("EXCEPTION: OVERFLOW\nStack Frame: {stack_frame:#?}");
     });
 }
 
 extern "x86-interrupt" fn bound_range_exceeded_handler(stack_frame: InterruptStackFrame) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         panic!("EXCEPTION: BOUND RANGE EXCEEDED\nStack Frame: {stack_frame:#?}");
     });
 }
 
 extern "x86-interrupt" fn invalid_opcode_handler(stack_frame: InterruptStackFrame) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         panic!("EXCEPTION: INVALID_OPCODE\nStack Frame: {stack_frame:#?}");
     });
 }
 
 extern "x86-interrupt" fn device_not_available_handler(stack_frame: InterruptStackFrame) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         panic!("EXCEPTION: DEVICE NOT AVAILABLE\nStack Frame: {stack_frame:#?}");
     });
 }
@@ -293,7 +294,7 @@ extern "x86-interrupt" fn invalid_tss_handler(
     stack_frame: InterruptStackFrame,
     selector_index: u64,
 ) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         panic!("EXCEPTION: INVALID TSS\nSelector Index: {selector_index}\nStack Frame: {stack_frame:#?}");
     });
 }
@@ -302,7 +303,7 @@ extern "x86-interrupt" fn segment_not_present_handler(
     stack_frame: InterruptStackFrame,
     selector_index: u64,
 ) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         panic!("EXCEPTION: SEGMENT NOT PRESENT\nSelector Index: {selector_index}\nStack Frame: {stack_frame:#?}");
     });
 }
@@ -311,7 +312,7 @@ extern "x86-interrupt" fn stack_segment_fault_handler(
     stack_frame: InterruptStackFrame,
     selector_index: u64,
 ) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         panic!("EXCEPTION: STACK_SEGMENT_FAULT\nSelector Index: {selector_index}\nStack Frame: {stack_frame:#?}");
     });
 }
@@ -320,7 +321,7 @@ extern "x86-interrupt" fn general_protection_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: u64,
 ) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         panic!("EXCEPTION: GENERAL PROTECTION FAULT\nError code: {error_code}\nStack Frame: {stack_frame:#?}");
     });
 }
@@ -329,7 +330,7 @@ extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         let accessed_address = Cr2::read();
         let kernel_guard_access_msg = if is_kernel_guard_page(accessed_address) {
             "KERNEL GUARD PAGE WAS ACCESSED, LIKELY A STACK OVERFLOW!!!\n"
@@ -346,7 +347,7 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 extern "x86-interrupt" fn x87_floating_point_handler(stack_frame: InterruptStackFrame) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         panic!("EXCEPTION: X87 FLOATING POINT\nStack Frame: {stack_frame:#?}");
     });
 }
@@ -355,7 +356,7 @@ extern "x86-interrupt" fn alignment_check_handler(
     stack_frame: InterruptStackFrame,
     _error_code: u64,
 ) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         panic!("EXCEPTION: ALIGNMENT CHECK\nStack Frame: {stack_frame:#?}");
     });
 }
@@ -374,13 +375,13 @@ extern "x86-interrupt" fn machine_check_handler(stack_frame: InterruptStackFrame
 }
 
 extern "x86-interrupt" fn simd_floating_point_handler(stack_frame: InterruptStackFrame) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         panic!("EXCEPTION: SIMD FLOATING POINT\nStack Frame: {stack_frame:#?}");
     });
 }
 
 extern "x86-interrupt" fn virtualization_handler(stack_frame: InterruptStackFrame) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         panic!("EXCEPTION: VIRTUALIZATION\nStack Frame: {stack_frame:#?}");
     });
 }
@@ -389,7 +390,7 @@ extern "x86-interrupt" fn vmm_communication_exception_handler(
     stack_frame: InterruptStackFrame,
     vmexit_error_code: u64,
 ) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         panic!("EXCEPTION: VMM COMMUNICATION\nVM exit error code: {vmexit_error_code}\nStack Frame: {stack_frame:#?}");
     });
 }
@@ -398,7 +399,7 @@ extern "x86-interrupt" fn security_exception_handler(
     stack_frame: InterruptStackFrame,
     error_code: u64,
 ) {
-    with_swapgs_accounting(|| {
+    with_swapgs_accounting(&stack_frame, || {
         panic!("EXCEPTION: SECURITY\nError code: {error_code}\nStack Frame: {stack_frame:#?}");
     });
 }
@@ -417,7 +418,7 @@ fn gsbase_is_kernel() -> bool {
 }
 
 /// Runs swapgs if necessary because we came from userspace.
-fn with_swapgs_accounting<F, R>(f: F) -> R
+fn with_swapgs_accounting<F, R>(stack_frame: &InterruptStackFrame, f: F) -> R
 where
     F: FnOnce() -> R,
 {
@@ -432,7 +433,12 @@ where
     let ret = f();
 
     // Perform swapgs again if going back to userspace.
-    if !came_from_kernel {
+    //
+    // N.B. CS selector is padded with zeroes when put in interrupt stack frame.
+    let cs_u16 = u16::try_from(stack_frame.code_segment).expect("failed to convert cs to u16");
+    let cs_selector = SegmentSelector(cs_u16);
+    let going_to_userspace = cs_selector.rpl() == PrivilegeLevel::Ring3;
+    if going_to_userspace {
         unsafe {
             x86_64::instructions::segmentation::GS::swap();
         };

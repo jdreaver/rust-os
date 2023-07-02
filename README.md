@@ -107,14 +107,18 @@ make test
 
 ## TODO
 
-- Replace `x86_64` crate IDT and rust `extern "x86-interrupt"` calls with my own assembly wrappers so I have finer control over registers, `swapgs`, etc
-- BUG: Page faults during `mount 2; exec async 20 /bin/primes 12000`
+- (maybe not needed) Replace `x86_64` crate IDT and rust `extern "x86-interrupt"` calls with my own assembly wrappers so I have finer control over registers, `swapgs`, etc
+- BUG: Page faults and general protection faults during `mount 2; exec async 4 /bin/primes 15000`
   - Remember the bug only happens when we have more tasks than CPUs
-  - Symptom: GSBase is zero after `swapgs` in `syscall_handler` so we get a page fault on `mov gs:{user_stack_scratch}, rsp`
+  - Symptom: General protection fault on the `ret` in `switch_to` assembly
+    - Only happens with `accel=kvm`. Maybe it is a race condition with concurrency?
+    - A page fault happens when we try to print the stack trace for this general protection fault, saying we tried to access address 0x13. Is GS still wrong somehow???
+  - (Old) Symptom: GSBase is zero after `swapgs` in `syscall_handler` so we get a page fault on `mov gs:{user_stack_scratch}, rsp`
     - This seems to happen right when the failing task moves CPUs. Do we need better GS accounting, or is this due to more stack corruption?
     - Ignoring swapgs: when I comment out all swapgs calls I still get some page faults, which makes me suspect swapgs/GSBase is a red herring
       - Often when commenting out swapgs I see the exit syscall getting called twice. This is due to preempt_count being nonzero apparently
   - PART SOLUTION: I was sharing Ring 3 -> Ring 0 TSS stacks (RSP0) across CPUs because I was using a single static array.
+  - PART SOLUTION: In interrupts now use the CS register requested privilege level to decide if we are going back to userspace.
   - IDEA: Try commenting out swapgs again
 - VFS read/write code:
   - Change inode `write` API to be similar to read (based on blocks)
