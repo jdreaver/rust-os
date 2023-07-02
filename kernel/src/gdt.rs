@@ -22,9 +22,22 @@ static BOOTSTRAP_GDT: InitCell<GDT> = InitCell::new();
 /// `TSS` for `BOOTSTRAP_GDT`.
 static BOOTSTRAP_TSS: InitCell<TaskStateSegment> = InitCell::new();
 
+/// All memory accesses pass through the Global DescriptorTable (GDT). This
+/// table holds segment descriptors that provide location and access bits for
+/// different memory segments. We use a flat memory model, so segments cover the
+/// entire address space, and the GDT is used to delineate between kernel and
+/// user code.
+///
+/// Also, in order to use the `syscall`/`sysret` instructions, we need to set up
+/// the STAR register to tell those instructions which segments to use, and they
+/// expect a very specific layout of the GDT. See
+/// <https://wiki.osdev.org/GDT_Tutorial> and
+/// <https://wiki.osdev.org/SYSENTER#AMD:_SYSCALL.2FSYSRET> for more details.
+///
+/// See "2.1.1 Global and Local Descriptor Tables" in the Intel SDM Vol 3 and
+/// <https://wiki.osdev.org/Global_Descriptor_Table>.
 struct GDT {
     gdt: GlobalDescriptorTable,
-    selectors: Selectors,
 }
 
 impl GDT {
@@ -32,7 +45,6 @@ impl GDT {
         let mut gdt = GlobalDescriptorTable::new();
         let kernel_code_selector = gdt.add_entry(Descriptor::kernel_code_segment());
         let kernel_data_selector = gdt.add_entry(Descriptor::kernel_data_segment());
-        let tss_selector = gdt.add_entry(Descriptor::tss_segment(tss));
 
         // User code/data segments in 64 bit mode are here just to set the
         // privilege level to ring 3.
@@ -42,35 +54,31 @@ impl GDT {
         // segment.
         let user_data_selector = gdt.add_entry(Descriptor::user_data_segment());
         let user_code_selector = gdt.add_entry(Descriptor::user_code_segment());
-        Self {
-            gdt,
-            selectors: Selectors {
-                kernel_code_selector,
-                kernel_data_selector,
-                tss_selector,
-                user_code_selector,
-                user_data_selector,
-            },
-        }
+
+        let tss_selector = gdt.add_entry(Descriptor::tss_segment(tss));
+
+        assert_eq!(kernel_code_selector, KERNEL_CODE_SELECTOR);
+        assert_eq!(kernel_data_selector, KERNEL_DATA_SELECTOR);
+        assert_eq!(user_data_selector, USER_DATA_SELECTOR);
+        assert_eq!(user_code_selector, USER_CODE_SELECTOR);
+        assert_eq!(tss_selector, TSS_SELECTOR);
+
+        Self { gdt }
     }
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct Selectors {
-    pub(crate) kernel_code_selector: SegmentSelector,
-    pub(crate) kernel_data_selector: SegmentSelector,
-    pub(crate) tss_selector: SegmentSelector,
-    pub(crate) user_code_selector: SegmentSelector,
-    pub(crate) user_data_selector: SegmentSelector,
-}
+// Hard-code these as consts so we can use them in assembly easier.
 
-pub(crate) fn selectors() -> Selectors {
-    BOOTSTRAP_GDT
-        .get()
-        .expect("GDT no initialized")
-        .selectors
-        .clone()
-}
+pub(crate) const KERNEL_CODE_SELECTOR: SegmentSelector =
+    SegmentSelector::new(1, x86_64::PrivilegeLevel::Ring0);
+pub(crate) const KERNEL_DATA_SELECTOR: SegmentSelector =
+    SegmentSelector::new(2, x86_64::PrivilegeLevel::Ring0);
+pub(crate) const USER_DATA_SELECTOR: SegmentSelector =
+    SegmentSelector::new(3, x86_64::PrivilegeLevel::Ring3);
+pub(crate) const USER_CODE_SELECTOR: SegmentSelector =
+    SegmentSelector::new(4, x86_64::PrivilegeLevel::Ring3);
+pub(crate) const TSS_SELECTOR: SegmentSelector =
+    SegmentSelector::new(5, x86_64::PrivilegeLevel::Ring0);
 
 pub(crate) const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 pub(crate) const PAGE_FAULT_IST_INDEX: u16 = 1;
@@ -137,7 +145,7 @@ pub(crate) fn init_bootstrap_gdt(processor_id: ProcessorID) {
     let gdt = BOOTSTRAP_GDT.get().expect("GDT not initialized");
     gdt.gdt.load();
 
-    init_segment_selectors(&gdt.selectors);
+    init_segment_selectors();
 }
 
 pub(crate) fn init_secondary_cpu_gdt(processor_id: ProcessorID) {
@@ -154,16 +162,16 @@ pub(crate) fn init_secondary_cpu_gdt(processor_id: ProcessorID) {
     let gdt: &'static GDT = unsafe { &*(Box::leak(gdt) as *const _) };
     gdt.gdt.load();
 
-    init_segment_selectors(&gdt.selectors);
+    init_segment_selectors();
 }
 
-fn init_segment_selectors(selectors: &Selectors) {
+fn init_segment_selectors() {
     unsafe {
         // Reload to the CS (code segment) and DS (data segment) registers to
         // point to the new GDT, not the GDT we built for bootstrapping.
-        CS::set_reg(selectors.kernel_code_selector);
-        DS::set_reg(selectors.kernel_data_selector);
-        load_tss(selectors.tss_selector);
+        CS::set_reg(KERNEL_CODE_SELECTOR);
+        DS::set_reg(KERNEL_DATA_SELECTOR);
+        load_tss(TSS_SELECTOR);
 
         // NOTE: It is very important that the legacy data segment registers
         // (ES, FS, GS, SS) are set to zero. If they are not, the CPU will
@@ -184,10 +192,10 @@ fn init_segment_selectors(selectors: &Selectors) {
     // Use STAR to set the kernel and userspace segment selectors for the
     // SYSCALL and SYSRET instructions.
     x86_64::registers::model_specific::Star::write(
-        selectors.user_code_selector,
-        selectors.user_data_selector,
-        selectors.kernel_code_selector,
-        selectors.kernel_data_selector,
+        USER_CODE_SELECTOR,
+        USER_DATA_SELECTOR,
+        KERNEL_CODE_SELECTOR,
+        KERNEL_DATA_SELECTOR,
     )
     .unwrap_or_else(|err| panic!("Failed to set STAR: {err}"));
 }

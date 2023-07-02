@@ -4,6 +4,7 @@ use x86_64::registers::rflags::RFlags;
 use x86_64::VirtAddr;
 
 use crate::define_per_cpu_u64;
+use crate::gdt::{USER_CODE_SELECTOR, USER_DATA_SELECTOR};
 use crate::percpu::get_processor_id_no_guard;
 
 use super::schedcore::{current_task_id, kill_current_task};
@@ -53,10 +54,10 @@ pub(super) unsafe extern "C" fn syscall_handler() {
 
             // Construct a pointer to the syscall arguments on the stack. Must
             // match TaskRegisters struct order (in reverse).
-            "push 0",                       // ss TODO: Put a real value (this could be a const in gdt.rs)
+            "push {user_data_selector}",    // ss
             "push gs:{user_stack_scratch}", // rsp
             "push r11",                     // rflags, part of syscall convention
-            "push 0",                       // cs TODO: Put a real value (this could be a const in gdt.rs)
+            "push {user_code_selector}",    // cs
             "push rcx",                     // rip, part of syscall convention
             "push rdi",                     // syscall number
             // Callee-clobbered
@@ -118,6 +119,8 @@ pub(super) unsafe extern "C" fn syscall_handler() {
             // Return to userspace
             "sysretq",
             kernel_stack = sym TOP_OF_KERNEL_STACK,
+            user_data_selector = const USER_DATA_SELECTOR.0,
+            user_code_selector = const USER_CODE_SELECTOR.0,
             user_stack_scratch = sym USER_STACK_SCRATCH,
             syscall_handler_inner = sym syscall_handler_inner,
             options(noreturn),

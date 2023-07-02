@@ -62,8 +62,8 @@ extern "C" fn task_userspace_setup(arg: *const ()) {
     let instruction_ptr = elf_exe.entrypoint;
     let stack_ptr = set_up_elf_segments(&elf_exe, &params);
 
-    let user_code_segment_idx: u64 = u64::from(gdt::selectors().user_code_selector.0);
-    let user_stack_segment_idx: u64 = u64::from(gdt::selectors().user_data_selector.0);
+    let user_code_segment_idx: u64 = u64::from(gdt::USER_CODE_SELECTOR.0);
+    let user_stack_segment_idx: u64 = u64::from(gdt::USER_DATA_SELECTOR.0);
 
     // N.B. It is important that jump_to_userspace is marked as returning !,
     // which means it never returns, because I _think_ that the compiler will

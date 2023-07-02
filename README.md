@@ -108,8 +108,6 @@ make test
 ## TODO
 
 - Replace `x86_64` crate IDT and rust `extern "x86-interrupt"` calls with my own assembly wrappers so I have finer control over registers, `swapgs`, etc
-- Replace `x86_64` crate GDT and TSS with custom stuff so I can ensure `const` values for GDT offsets instead of needing to `add_entry` in the right order.
-  - Once I do this, set proper cs and ss values in the syscall handler (currently I set them to 0 in `TaskRegisters`)
 - BUG: Page faults during `mount 2; exec async 20 /bin/primes 12000`
   - Remember the bug only happens when we have more tasks than CPUs
   - Symptom: GSBase is zero after `swapgs` in `syscall_handler` so we get a page fault on `mov gs:{user_stack_scratch}, rsp`
