@@ -106,13 +106,12 @@ pub fn start() -> ! {
 
     tick::global_init();
 
-    sched::start_multitasking(
+    sched::new_task(
         String::from("shell"),
         shell::run_serial_shell,
         core::ptr::null::<()>(),
     );
-
-    panic!("ERROR: ended multi-tasking");
+    sched::start_scheduler();
 }
 
 /// Records how many CPUs have been bootstrapped. Used as a synchronization
@@ -182,9 +181,7 @@ extern "C" fn bootstrap_secondary_cpu(info: *const limine::LimineSmpInfo) -> ! {
     // log::info!("bootstrapping CPU: {info:#x?}");
     early_per_cpu_setup(processor_id);
     later_per_cpu_setup();
-    loop {
-        x86_64::instructions::hlt();
-    }
+    sched::start_scheduler();
 }
 
 pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {

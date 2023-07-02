@@ -133,13 +133,7 @@ pub(crate) fn current_task() -> Arc<Task> {
 
 /// Switches from the bootstrap code, which isn't a task, to the first actual
 /// kernel task.
-pub(crate) fn start_multitasking(
-    init_task_name: String,
-    init_task_start_fn: KernelTaskStartFunction,
-    init_task_arg: *const (),
-) {
-    new_task(init_task_name, init_task_start_fn, init_task_arg);
-
+pub(crate) fn start_scheduler() -> ! {
     // Just a dummy location for switch_to_task to store the previous stack
     // pointer.
     let dummy_stack_ptr = 0;
@@ -155,6 +149,8 @@ pub(crate) fn start_multitasking(
     unsafe {
         switch_to_task(prev_stack_ptr, next_stack_ptr, next_page_table);
     }
+
+    panic!("ERROR: returned from switch_to_task in start_scheduler");
 }
 
 pub(crate) fn new_task(name: String, start_fn: KernelTaskStartFunction, arg: *const ()) -> TaskId {
