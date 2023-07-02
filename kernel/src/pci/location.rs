@@ -4,7 +4,7 @@ use crate::memory::KernPhysAddr;
 /// region. See "7.2.2 PCI Express Enhanced Configuration Access Mechanism
 /// (ECAM)" of the PCI Express Base Specification, as well as
 /// <https://wiki.osdev.org/PCI_Express>.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct PCIDeviceLocation {
     /// Physical address where the PCI Express extended configuration mechanism
     /// memory region starts for this device.

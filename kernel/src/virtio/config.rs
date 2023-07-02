@@ -18,7 +18,7 @@ use super::features::Features;
 use super::queue::VirtQueueIndex;
 
 /// Holds the configuration for a VirtIO device.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct VirtIODeviceConfig {
     /// Common PCI configuration registers.
     pci_config: PCIDeviceConfig,
@@ -62,7 +62,7 @@ impl VirtIODeviceConfig {
         let mut device_config_phys_addr = None;
         for capability in pci_config.iter_capabilities() {
             let capability = unsafe {
-                VirtIOPCICapabilityHeader::from_pci_capability(pci_type0_config, &capability)
+                VirtIOPCICapabilityHeader::from_pci_capability(&pci_type0_config, &capability)
             };
             let Some(capability) = capability else { continue; };
 
@@ -124,12 +124,12 @@ impl VirtIODeviceConfig {
         })
     }
 
-    pub(super) fn pci_config(&self) -> PCIDeviceConfig {
-        self.pci_config
+    pub(super) fn pci_config(&self) -> &PCIDeviceConfig {
+        &self.pci_config
     }
 
-    pub(super) fn pci_type0_config(&self) -> PCIDeviceConfigType0 {
-        self.pci_type0_config
+    pub(super) fn pci_type0_config(&self) -> &PCIDeviceConfigType0 {
+        &self.pci_type0_config
     }
 
     pub(super) fn common_virtio_config(&self) -> VirtIOPCICommonConfigRegisters {
@@ -181,7 +181,7 @@ impl VirtIODeviceConfig {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) struct VirtIOPCICapabilityHeader {
     /// The body of the PCID device for this VirtIO device.
     device_config_body: PCIDeviceConfigType0,
@@ -203,26 +203,27 @@ impl VirtIOPCICapabilityHeader {
     ///
     /// Caller must ensure that the capability header is from a VirtIO device.
     pub(super) unsafe fn from_pci_capability(
-        device_config_body: PCIDeviceConfigType0,
+        device_config_body: &PCIDeviceConfigType0,
         header: &PCIDeviceCapabilityHeader,
     ) -> Option<Self> {
         // VirtIO-specific capabilities must have an ID for vendor-specific.
         let PCIDeviceCapability::VendorSpecific(_) = header.capability() else { return None; };
 
         Some(Self {
-            device_config_body,
+            // TODO: Remove need for clone() here
+            device_config_body: device_config_body.clone(),
             registers: VirtIOPCICapabilityHeaderRegisters::from_address(header.address()),
         })
     }
 
-    fn config_type(self) -> VirtIOPCIConfigType {
+    fn config_type(&self) -> VirtIOPCIConfigType {
         let cfg_type = self.registers.cfg_type().read();
         VirtIOPCIConfigType::from_cfg_type(cfg_type).expect("invalid VirtIO config type")
     }
 
     /// Returns the VirtIO device configuration associated with this capability
     /// header.
-    fn config(self) -> VirtIOConfig {
+    fn config(&self) -> VirtIOConfig {
         match self.config_type() {
             VirtIOPCIConfigType::Common => VirtIOConfig::Common(unsafe {
                 let config_addr = self.compute_and_map_config_address();
@@ -258,7 +259,7 @@ impl VirtIOPCICapabilityHeader {
 
     /// Compute and map physical address for VirtIO capabilities that need to
     /// reach through a BAR to access their configuration.
-    pub(super) fn compute_and_map_config_address(self) -> KernPhysAddr {
+    pub(super) fn compute_and_map_config_address(&self) -> KernPhysAddr {
         let bar_idx = self.registers.bar().read();
         let physical_offset = self.registers.offset().read();
         let region_size = u64::from(self.registers.cap_len().read());
@@ -318,7 +319,7 @@ impl VirtIOPCIConfigType {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum VirtIOConfig {
     Common(VirtIOPCICommonConfigRegisters),
     Notify(VirtIONotifyConfig),

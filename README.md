@@ -209,7 +209,6 @@ make test
   - Have tasks record what they are waiting on when they go to sleep, even if it is just a `String`
   - Long shot: have a way to detect if we are in an atomic context, like an interrupt or exception context. Then, whenever we take a lock, record the context of the holder. Then, if we try to take a lock from an atomic context, and the current holder is in a non-atomic context, panic, admonishing us to ensure we use `lock_disable_interrupts`.
     - Recording the current context in general seems like a really neat idea, and a great way to debug things. For example, it could be a way to forbid memory allocation in interrupt handlers, try to do anything with `current_task` (like set sleep, even fetch current task, etc) inside of interrupts, trying to user percpu before it is set up (maybe we set context for "bootstrap stage"? then we could pick the correct logging implementation depending on stage? Also if we decide to oops or panic we could set a flag so many things like locks know to give up) etc (I can't think of more ideas right now but I know I've wanted this)
-- Consider storing task context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>. This makes it easier to manipulate during setup.
 - Pre-process DWARF info to use for stack traces so we don't need to keep frame pointers around (we currently have `-C force-frame-pointers=yes`)
   - Do something like Linux's ORC <https://blogs.oracle.com/linux/post/unwinding-stack-frame-pointers-and-orc>
 - Driver model:
@@ -220,8 +219,7 @@ make test
   - Create a physically contiguous heap, or slab allocator, or something for virtio buffer requests so we don't waste an entire page per tiny allocation.
     - Ensure we are still satisfying any alignment requirements for buffers. Read the spec!
   - Remember features we negotiate, and ensure we are accounting for the different features in the logic (especially around notifications)
-- PCI device locking and `&mut` (and really locking anything that wraps registers)
-  - Ensure modifying PCI devices requires a `&mut` reference to some actual "device" object. That means we shouldn't pass around raw registers. Something should be wrapping these.
+- PCI: don't do so much cloning. Have clearer ownership, and take advantage of refs and mutable refs to avoid concurrency bugs.
 - IOAPIC: Throw an error if IOAPIC number assigned to twice
 - IRQ locking:
   - Linux uses spin locks for each IRQ, as well as masking interrupts but telling the APIC it got the interrupt <https://www.oreilly.com/library/view/understanding-the-linux/0596005652/ch04s06.html>

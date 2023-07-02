@@ -5,7 +5,7 @@ use crate::registers::RegisterRO;
 
 use super::location::PCIDeviceLocation;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct PCIConfigDeviceID {
     registers: PCIConfigDeviceIDRegisters,
 }
@@ -25,30 +25,30 @@ register_struct!(
 );
 
 impl PCIConfigDeviceID {
-    pub(crate) unsafe fn new(location: PCIDeviceLocation) -> Self {
+    pub(crate) unsafe fn new(location: &PCIDeviceLocation) -> Self {
         let address = location.device_base_address();
         let registers = PCIConfigDeviceIDRegisters::from_address(address);
         Self { registers }
     }
 
-    pub(crate) fn registers(self) -> PCIConfigDeviceIDRegisters {
+    pub(crate) fn registers(&self) -> PCIConfigDeviceIDRegisters {
         self.registers
     }
 
-    pub(crate) fn vendor_id(self) -> u16 {
+    pub(crate) fn vendor_id(&self) -> u16 {
         self.registers.vendor_id().read()
     }
 
-    pub(crate) fn device_id(self) -> u16 {
+    pub(crate) fn device_id(&self) -> u16 {
         self.registers.device_id().read()
     }
 
-    pub(crate) fn known_vendor_id(self) -> &'static str {
+    pub(crate) fn known_vendor_id(&self) -> &'static str {
         let vendor_id = self.registers.vendor_id().read();
         lookup_vendor_id(vendor_id)
     }
 
-    pub(crate) fn known_device_id(self) -> &'static str {
+    pub(crate) fn known_device_id(&self) -> &'static str {
         let vendor_id = self.registers.vendor_id().read();
         let device_id = self.registers.device_id().read();
         lookup_known_device_id(vendor_id, device_id)

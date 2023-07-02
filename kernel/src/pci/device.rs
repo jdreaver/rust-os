@@ -67,7 +67,7 @@ register_struct!(
     }
 );
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct PCIDeviceConfig {
     location: PCIDeviceLocation,
 
@@ -88,7 +88,7 @@ impl PCIDeviceConfig {
     unsafe fn new(location: PCIDeviceLocation) -> Option<Self> {
         #[allow(unused_unsafe)]
         // If the vendor ID is 0xFFFF, then there is no device at this location.
-        let device_id = unsafe { PCIConfigDeviceID::new(location) };
+        let device_id = unsafe { PCIConfigDeviceID::new(&location) };
         if device_id.registers().vendor_id().read() == 0xFFFF {
             return None;
         }
@@ -103,11 +103,11 @@ impl PCIDeviceConfig {
         })
     }
 
-    pub(crate) fn device_id(self) -> PCIConfigDeviceID {
-        self.device_id
+    pub(crate) fn device_id(&self) -> &PCIConfigDeviceID {
+        &self.device_id
     }
 
-    pub(crate) fn common_registers(self) -> PCIDeviceCommonConfigRegisters {
+    pub(crate) fn common_registers(&self) -> PCIDeviceCommonConfigRegisters {
         self.common_registers
     }
 
@@ -116,7 +116,8 @@ impl PCIDeviceConfig {
         let body = match layout {
             PCIDeviceConfigHeaderLayout::GeneralDevice => {
                 PCIDeviceConfigTypes::GeneralDevice(unsafe {
-                    PCIDeviceConfigType0::from_common_config(*self)
+                    // TODO: Remove self.clone()
+                    PCIDeviceConfigType0::from_common_config(self.clone())
                 })
             }
             PCIDeviceConfigHeaderLayout::PCIToPCIBridge => PCIDeviceConfigTypes::PCIToPCIBridge,
@@ -124,7 +125,7 @@ impl PCIDeviceConfig {
         Ok(body)
     }
 
-    pub(crate) fn iter_capabilities(self) -> PCIDeviceCapabilityIterator {
+    pub(crate) fn iter_capabilities(&self) -> PCIDeviceCapabilityIterator {
         // Check if the device even has capabilities.
         let has_caps = self.common_registers().status().read().capabilities_list();
         if !has_caps {
@@ -248,7 +249,7 @@ impl PCIDeviceConfigHeaderLayout {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) enum PCIDeviceConfigTypes {
     GeneralDevice(PCIDeviceConfigType0),
     PCIToPCIBridge,
@@ -281,7 +282,7 @@ register_struct!(
     }
 );
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct PCIDeviceConfigType0 {
     common_config: PCIDeviceConfig,
     registers: PCIDeviceConfigType0Registers,
@@ -296,7 +297,7 @@ impl PCIDeviceConfigType0 {
         }
     }
 
-    fn bar_addresses(self) -> BARAddresses<6> {
+    fn bar_addresses(&self) -> BARAddresses<6> {
         BARAddresses {
             bars: [
                 self.registers.raw_bar0().read(),
@@ -324,7 +325,7 @@ impl PCIDeviceConfigType0 {
     /// also returns the physical address of the desired start of the desired
     /// region.
     pub(crate) fn bar_region_physical_address(
-        self,
+        &self,
         bar_idx: u8,
         physical_offset: u32,
         region_size: u64,
@@ -364,7 +365,7 @@ impl PCIDeviceConfigType0 {
         config_start_addr
     }
 
-    pub(crate) fn msix_config(self) -> Option<MSIXConfig> {
+    pub(crate) fn msix_config(&self) -> Option<MSIXConfig> {
         for cap in self.common_config.iter_capabilities() {
             if let PCIDeviceCapability::MSIX(msix_cap) = cap.capability() {
                 return Some(MSIXConfig::new(self, msix_cap));
@@ -510,7 +511,7 @@ pub(crate) struct MSIXConfig {
 }
 
 impl MSIXConfig {
-    pub(super) fn new(device_config: PCIDeviceConfigType0, capability: MSIXCapability) -> Self {
+    pub(super) fn new(device_config: &PCIDeviceConfigType0, capability: MSIXCapability) -> Self {
         // N.B. The table size is encoded as N - 1 for some reason, so we add 1.
         let table_size = capability.registers.message_control().read().table_size() + 1;
 

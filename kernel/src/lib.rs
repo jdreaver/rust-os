@@ -162,7 +162,8 @@ fn global_setup(boot_info_data: &boot_info::BootInfo) {
     let pci_config_region_base_address = acpi_info.pci_config_region_base_address();
     pci::for_pci_devices_brute_force(pci_config_region_base_address, |device| {
         let Some(device_config) = virtio::VirtIODeviceConfig::from_pci_config(device) else { return; };
-        virtio::try_init_virtio_rng(device_config);
+        // TODO: Remove clone here
+        virtio::try_init_virtio_rng(device_config.clone());
         virtio::try_init_virtio_block(device_config);
     });
 

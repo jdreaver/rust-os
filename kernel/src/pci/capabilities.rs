@@ -15,7 +15,7 @@ pub(crate) enum PCIDeviceCapability {
     Other(PCIDeviceCapabilityHeader),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct PCIDeviceCapabilityHeader {
     config_base_address: KernPhysAddr,
     registers: PCIDeviceCapabilityHeaderRegisters,
@@ -49,10 +49,13 @@ impl PCIDeviceCapabilityHeader {
     pub(crate) fn capability(&self) -> PCIDeviceCapability {
         match self.registers.id().read() {
             MSIXCapability::MSIX_CAPABILITY_ID => PCIDeviceCapability::MSIX(
-                MSIXCapability::from_capability(*self).expect("failed to create MSIX capability"),
+                MSIXCapability::from_capability(self).expect("failed to create MSIX capability"),
             ),
-            Self::VENDOR_SPECIFIC_CAPABILITY_ID => PCIDeviceCapability::VendorSpecific(*self),
-            _ => PCIDeviceCapability::Other(*self),
+            // TODO: Remove self.clone() from these calls
+            Self::VENDOR_SPECIFIC_CAPABILITY_ID => {
+                PCIDeviceCapability::VendorSpecific(self.clone())
+            }
+            _ => PCIDeviceCapability::Other(self.clone()),
         }
     }
 
@@ -87,8 +90,9 @@ impl Iterator for PCIDeviceCapabilityIterator {
     type Item = PCIDeviceCapabilityHeader;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self.ptr;
-        self.ptr = self.ptr.and_then(|ptr| ptr.next_capability());
+        // TODO: Remove clone() calls here
+        let next = self.ptr.clone();
+        self.ptr = self.ptr.clone().and_then(|ptr| ptr.next_capability());
         next
     }
 }
@@ -108,7 +112,7 @@ pub(crate) struct MSIXCapability {
 impl MSIXCapability {
     pub(crate) const MSIX_CAPABILITY_ID: u8 = 0x11;
 
-    pub(crate) fn from_capability(capability: PCIDeviceCapabilityHeader) -> Option<Self> {
+    pub(crate) fn from_capability(capability: &PCIDeviceCapabilityHeader) -> Option<Self> {
         if capability.registers.id().read() != Self::MSIX_CAPABILITY_ID {
             return None;
         }
@@ -228,11 +232,15 @@ impl MSIXTable {
 }
 
 #[repr(transparent)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct MSIXTableEntry(RawMSIXTableEntry);
 
 impl MSIXTableEntry {
-    pub(crate) fn set_interrupt_vector(self, processor_id: ProcessorID, vector: InterruptVector) {
+    pub(crate) fn set_interrupt_vector(
+        &mut self,
+        processor_id: ProcessorID,
+        vector: InterruptVector,
+    ) {
         self.0
             .message_address()
             .write(MSIXMessageAddress::new(processor_id));
@@ -262,7 +270,7 @@ register_struct!(
 /// Intel one. See "11.11.1 Message Address Register Format" in the Intel 64
 /// Manual Volume 3.
 #[repr(transparent)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct MSIXMessageAddress(RawMSIXMessageAddress);
 
 impl MSIXMessageAddress {

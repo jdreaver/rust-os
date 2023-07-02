@@ -356,7 +356,7 @@ impl Iterator for VirtQueueDescriptorChainIterator<'_> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[repr(C)]
 /// See "2.7.5 The Virtqueue Descriptor Table". This is "raw" because we have
 /// `ChainedVirtQueueDescriptor`
