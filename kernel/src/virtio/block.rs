@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 use bitflags::bitflags;
@@ -122,17 +121,16 @@ fn virtio_block_interrupt(_vector: InterruptVector, handler_id: InterruptHandler
 
         match request {
             BlockRequest::Read { .. } => {
-                let bytes = unsafe {
-                    core::slice::from_raw_parts(
-                        buffer.address().as_ptr::<u8>(),
-                        raw_request.data_len as usize,
-                    )
+                let response = VirtIOBlockReadResponse {
+                    buffer,
+                    data_len: raw_request.data_len as usize,
                 };
-                let bytes_box = Box::from(bytes);
-                data.sender.send(VirtIOBlockResponse::Read { data: bytes_box });
+                data.sender.send(VirtIOBlockResponse::Read(response));
             }
             BlockRequest::Write { .. } => {
                 data.sender.send(VirtIOBlockResponse::Write);
+                // N.B. Buffer gets dropped here. Do it explicitly.
+                drop(buffer);
             }
             BlockRequest::GetID => {
                 let s = unsafe {
@@ -145,11 +143,10 @@ fn virtio_block_interrupt(_vector: InterruptVector, handler_id: InterruptHandler
                     )
                 };
                 data.sender.send(VirtIOBlockResponse::GetID { id: String::from(s) });
+                // N.B. Buffer gets dropped here. Do it explicitly.
+                drop(buffer);
             }
         }
-
-        // N.B. Buffer gets dropped here. Do it explicitly.
-        drop(buffer);
     });
 }
 
@@ -557,7 +554,19 @@ struct BlockDeviceDescData {
 
 #[derive(Debug)]
 pub(crate) enum VirtIOBlockResponse {
-    Read { data: Box<[u8]> },
+    Read(VirtIOBlockReadResponse),
     Write, // No data, just ACK that it completed
     GetID { id: String },
+}
+
+#[derive(Debug)]
+pub(crate) struct VirtIOBlockReadResponse {
+    buffer: PhysicalBuffer,
+    data_len: usize,
+}
+
+impl VirtIOBlockReadResponse {
+    pub(crate) fn data(&mut self) -> &mut [u8] {
+        &mut self.buffer.as_slice_mut()[..self.data_len]
+    }
 }

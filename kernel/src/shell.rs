@@ -478,11 +478,11 @@ fn run_command(command: &Command) {
             serial_println!("Reading VirtIO block sector {sector}...");
             let cell = virtio::virtio_block_read(*device_id, *sector, 1);
             let response = cell.wait_sleep();
-            let virtio::VirtIOBlockResponse::Read{ ref data } = response else {
+            let virtio::VirtIOBlockResponse::Read(mut response) = response else {
                 log::error!("Unexpected response from block request: {response:x?}");
                 return;
             };
-            serial_println!("Got block data: {data:x?}");
+            serial_println!("Got block data: {:x?}", response.data());
         }
         Command::VirtIOBlock(VirtIOBlockCommand::Write {
             device_id,
@@ -642,10 +642,11 @@ fn run_command(command: &Command) {
         }
         Command::FATBIOS { device_id } => {
             let response = virtio::virtio_block_read(*device_id, 0, 1).wait_sleep();
-            let virtio::VirtIOBlockResponse::Read{ ref data } = response else {
+            let virtio::VirtIOBlockResponse::Read(mut response) = response else {
                 log::error!("Unexpected response from block request: {response:x?}");
                 return;
             };
+            let data = response.data();
             let bios_param_block: fat::BIOSParameterBlock =
                 unsafe { data.as_ptr().cast::<fat::BIOSParameterBlock>().read() };
             serial_println!("BIOS Parameter Block: {:#x?}", bios_param_block);

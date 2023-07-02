@@ -112,17 +112,6 @@ make test
   - Nuke old block iteration code in ext2 now that write and read don't need it
   - Test that reading indirect block works (can this be made an integration test? make a huge file in the test ext2 volume and assert some value at a deep offset. Have a TODO to do a write than a read as part of the integration test)
   - Clean up and refactor new `read`/`write` code and write tests. In particular, I don't like all of the inline byte/offset <-> block math. Put that in some tested pure functions.
-- BUG: when running shell in batch mode (e.g. `mount 2; exec /bin/hello`), it is not uncommon to see switch to idle task forever. I think the problem is a race condition in the virtio-block sleeping code, or even in the primitives we use to sleep while waiting.
-  - NEXT ACTION: Either avoid allocations in interrupts or build our own allocator that disabled interrupts.
-  - PROBLEM: This seems to be a deadlock. When it happens in GDB I run `thread apply all where` and I see they are all spinning
-    - Three way lock between internal linked_list allocator spin lock, and scheduler lock. One task doing `run_scheduler`, one doing linked list alloc in a virtio-block interrupt, and one doing both (`remove_killed_pending_tasks` does allocations on `Vec` I guess)
-      - I think one problem is the internal linked list allocator spin lock doesn't disable interrupts. Maybe we shouldn't be doing allocations in interrupts.
-      - In fact I'm not uncertain a single task didn't deadlock itself. It was doing userspace setup, which requires allocations, and then a virtio-lock interrupt came in, which also did allocations.
-  - Actually quite easy to repro with GDB when I was running `make run-debug CMDLINE='mount 2; exec async 4 /bin/primes 2000'`
-    - Even easier repro is to just turn off `accel=kvm`
-  - Debug ideas:
-    - Add some "sleep timeout" when waiting on mutex and spinlock to make this easier to debug.
-    - Have tasks record all the spinlocks and mutexes they are holding so we can dump them
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - Consider combining all crates into kernel again now that we support tests
     - Make sure the bitmap-alloc proptest tests are still useful! Force a few failures. I'm a bit worried that proptest w/ no_std and panic == abort isn't useful
@@ -134,6 +123,7 @@ make test
 - Memory management
   - Consider locking global physical page allocator inside page table functions so we don't need to pass in `&mut PhysicalMemoryAllocator`, and then most of `mapping.rs` can go away.
     - Then again, the explicitness is nice. Maybe make helpers to take both a page table lock and an allocator lock?
+  - Linked list allocator crate I'm using has an internal spinlock doesn't disable interrupts. This caused a deadlock when I did an allocation in the virtio-block handler. I even have a comment saying don't do that. I should perhaps stop using `LockedHeap` and instead use my own wrapper around `Heap` that does interrupts, or write my own allocator, like a percpu allocator.
   - `Page` type improvements
     - Make typed page sizes like the x86_64 crate does
   - Add support for huge pages in `map_to`, and then use them for both the heap and mapping physical memory
@@ -217,6 +207,10 @@ make test
   - Linux has a neat debugging system for mutexes <https://docs.kernel.org/locking/mutex-design.html#semantics>
   - Should we fail if we are holding a spinlock for too long?
   - Consider naming spinlocks, and having the lock holder put their name once they take the lock. Then if we fail we can dump all of this info.
+  - Have a way to dump stack trace from all threads on demand. If we deadlock across many threads, then have a way to do this in panic.
+  - Have tasks record what they are waiting on when they go to sleep, even if it is just a `String`
+  - Long shot: have a way to detect if we are in an atomic context, like an interrupt or exception context. Then, whenever we take a lock, record the context of the holder. Then, if we try to take a lock from an atomic context, and the current holder is in a non-atomic context, panic, admonishing us to ensure we use `lock_disable_interrupts`.
+    - Recording the current context in general seems like a really neat idea, and a great way to debug things. For example, it could be a way to forbid memory allocation in interrupt handlers, etc (I can't think of more ideas right now but I know I've wanted this)
 - Consider storing task context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>. This makes it easier to manipulate during setup.
 - Pre-process DWARF info to use for stack traces so we don't need to keep frame pointers around (we currently have `-C force-frame-pointers=yes`)
   - Do something like Linux's ORC <https://blogs.oracle.com/linux/post/unwinding-stack-frame-pointers-and-orc>
@@ -295,6 +289,9 @@ In QEMU:
   - <https://forum.osdev.org/viewtopic.php?f=13&t=39998>
 - <https://airbus-seclab.github.io/qemu_blog/brk.html>
 - <https://qemu-project.gitlab.io/qemu/system/gdb.html>
+
+Multiple threads:
+- Use `info threads` to see `rip` on all CPUs, and use `thread apply all` to run commands across CPUs, e.g. `thread apply all backtrace`.
 
 ### Rust OS dev
 

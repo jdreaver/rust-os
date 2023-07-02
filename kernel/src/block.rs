@@ -201,10 +201,10 @@ impl BlockDeviceDriver for VirtioBlockDevice {
     fn read_device_blocks(&self, start_block: BlockIndex, num_blocks: usize) -> Box<[u8]> {
         let response = virtio::virtio_block_read(self.device_id, start_block.0, num_blocks as u32)
             .wait_sleep();
-        let virtio::VirtIOBlockResponse::Read{ ref data } = response else {
+        let virtio::VirtIOBlockResponse::Read(mut response) = response else {
             panic!("unexpected virtio block response: {:?}", response);
         };
-        data.clone()
+        Box::from(&*response.data())
     }
 
     fn write_device_blocks(&self, start_block: BlockIndex, data: &[u8]) {
