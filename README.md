@@ -113,25 +113,16 @@ make test
   - Test that reading indirect block works (can this be made an integration test? make a huge file in the test ext2 volume and assert some value at a deep offset. Have a TODO to do a write than a read as part of the integration test)
   - Clean up and refactor new `read`/`write` code and write tests. In particular, I don't like all of the inline byte/offset <-> block math. Put that in some tested pure functions.
 - BUG: when running shell in batch mode (e.g. `mount 2; exec /bin/hello`), it is not uncommon to see switch to idle task forever. I think the problem is a race condition in the virtio-block sleeping code, or even in the primitives we use to sleep while waiting.
-  - Consider how interrupts are handled with multiple CPUs, locks across CPUs, etc.
-    - What if we get preempted right before we go to sleep?
-  - Actually quite easy to repro with GDB when I was running `make run-debug CMDLINE='mount 2; exec async 2 /bin/primes 10000'`
+  - NEXT ACTION: Either avoid allocations in interrupts or build our own allocator that disabled interrupts.
+  - PROBLEM: This seems to be a deadlock. When it happens in GDB I run `thread apply all where` and I see they are all spinning
+    - Three way lock between internal linked_list allocator spin lock, and scheduler lock. One task doing `run_scheduler`, one doing linked list alloc in a virtio-block interrupt, and one doing both (`remove_killed_pending_tasks` does allocations on `Vec` I guess)
+      - I think one problem is the internal linked list allocator spin lock doesn't disable interrupts. Maybe we shouldn't be doing allocations in interrupts.
+      - In fact I'm not uncertain a single task didn't deadlock itself. It was doing userspace setup, which requires allocations, and then a virtio-lock interrupt came in, which also did allocations.
+  - Actually quite easy to repro with GDB when I was running `make run-debug CMDLINE='mount 2; exec async 4 /bin/primes 2000'`
     - Even easier repro is to just turn off `accel=kvm`
-  - BE CAREFUL: sometimes this is a false alarm and you just have to hit Enter to re-print the shell. However, I've seen it consistently when running with `q35`, debugging, and no KVM acceleration
-  - Maybe we should add some "sleep timeout" when waiting on a mutex to make this easier to debug.
-
-  ```
-  Waiting for userspace task TaskId(6) to finish...
-  [INFO] SCHEDULER: (CPU ProcessorID(0)) Switching from 'shell' TaskId(5) to '/bin/primes' TaskId(6)
-  [WARN] CPU ProcessorID(0): TaskId(6) preempt_count is 1, not preempting
-  [INFO] SCHEDULER: (CPU ProcessorID(0)) Switching from '/bin/primes' TaskId(6) to 'CPU ProcessorID(0) __IDLE_TASK__' TaskId(1)
-  [INFO] SCHEDULER: (CPU ProcessorID(0)) Switching from 'CPU ProcessorID(0) __IDLE_TASK__' TaskId(1) to '/bin/primes' TaskId(6)
-  [WARN] CPU ProcessorID(0): TaskId(6) preempt_count is 1, not preempting
-  [WARN] CPU ProcessorID(0): TaskId(6) preempt_count is 1, not preempting
-  [WARN] CPU ProcessorID(0): TaskId(6) preempt_count is 1, not preempting
-  [INFO] SCHEDULER: (CPU ProcessorID(0)) Switching from '/bin/primes' TaskId(6) to 'CPU ProcessorID(0) __IDLE_TASK__' TaskId(1)
-  ```
-
+  - Debug ideas:
+    - Add some "sleep timeout" when waiting on mutex and spinlock to make this easier to debug.
+    - Have tasks record all the spinlocks and mutexes they are holding so we can dump them
 - Tests: Add thorough unit test suite we can trigger with shell command.
   - Consider combining all crates into kernel again now that we support tests
     - Make sure the bitmap-alloc proptest tests are still useful! Force a few failures. I'm a bit worried that proptest w/ no_std and panic == abort isn't useful
