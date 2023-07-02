@@ -123,7 +123,6 @@ make test
 - Memory management
   - Consider locking global physical page allocator inside page table functions so we don't need to pass in `&mut PhysicalMemoryAllocator`, and then most of `mapping.rs` can go away.
     - Then again, the explicitness is nice. Maybe make helpers to take both a page table lock and an allocator lock?
-  - Linked list allocator crate I'm using has an internal spinlock doesn't disable interrupts. This caused a deadlock when I did an allocation in the virtio-block handler. I even have a comment saying don't do that. I should perhaps stop using `LockedHeap` and instead use my own wrapper around `Heap` that does interrupts, or write my own allocator, like a percpu allocator.
   - `Page` type improvements
     - Make typed page sizes like the x86_64 crate does
   - Add support for huge pages in `map_to`, and then use them for both the heap and mapping physical memory
@@ -209,7 +208,7 @@ make test
   - Have a way to dump stack trace from all threads on demand. If we deadlock across many threads, then have a way to do this in panic.
   - Have tasks record what they are waiting on when they go to sleep, even if it is just a `String`
   - Long shot: have a way to detect if we are in an atomic context, like an interrupt or exception context. Then, whenever we take a lock, record the context of the holder. Then, if we try to take a lock from an atomic context, and the current holder is in a non-atomic context, panic, admonishing us to ensure we use `lock_disable_interrupts`.
-    - Recording the current context in general seems like a really neat idea, and a great way to debug things. For example, it could be a way to forbid memory allocation in interrupt handlers, etc (I can't think of more ideas right now but I know I've wanted this)
+    - Recording the current context in general seems like a really neat idea, and a great way to debug things. For example, it could be a way to forbid memory allocation in interrupt handlers, try to do anything with `current_task` (like set sleep, even fetch current task, etc) inside of interrupts, trying to user percpu before it is set up (maybe we set context for "bootstrap stage"? then we could pick the correct logging implementation depending on stage? Also if we decide to oops or panic we could set a flag so many things like locks know to give up) etc (I can't think of more ideas right now but I know I've wanted this)
 - Consider storing task context explicitly in struct like xv6 does <https://github.com/mit-pdos/xv6-public/blob/master/swtch.S>. This makes it easier to manipulate during setup.
 - Pre-process DWARF info to use for stack traces so we don't need to keep frame pointers around (we currently have `-C force-frame-pointers=yes`)
   - Do something like Linux's ORC <https://blogs.oracle.com/linux/post/unwinding-stack-frame-pointers-and-orc>
