@@ -98,8 +98,7 @@ didn't seem to work well under it, and it isn't clear how cargo configs should
 work across workspaces, e.g. <https://github.com/rust-lang/cargo/issues/7004>
 and <https://rustwiki.org/en/cargo/reference/config.html>). That means `cargo
 test` doesn't work at the top level. Also, we don't use Rust's testing library
-for kernel code. Instead we do more integration-style tests. Pure code that
-_can_ be tested is put in a separate crate and those use Rust's test system.
+for kernel code. Instead we do more integration-style tests.
 
 ```
 make test
@@ -195,7 +194,6 @@ make test
   - find a way to implement using `&mut` and locking without deadlocks from e.g. non-maskable interrupts, holding the lock in the shell while trying to debug print inside kernel code, etc.
   - Consider multiple serial ports: one that spits out logs from the kernel, and one dedicated to the shell.
 - Spurious wakeups: refactor killing and sleeping so we don't rely on never having spurious wakeups, and so we don't need to rely on `&mut self` for scheduler to immediately run scheduler just once (we should run scheduler in a loop in case of spurious wakeup).
-- ansiterm: move this to a separate crate with tests?
 - Task struct access: investigate not hiding all tasks (or just the current tasks) inside the big scheduler lock. Are there situations where it is okay to modify a task if the scheduler is running concurrently? Can we lock individual tasks? Is this inviting a deadlock?
   - For example, putting a task to sleep or waking it up. Is this bad to do concurrently with the scheduler? Maybe instead of calling this the "state" it can be thought of as a "state intent", which the scheduler should action next time it changes the task's scheduling. Wait queues and channels do this, but they need a scheduler lock under the hood.
   - Consider using per CPU for storing the currently running task instead of having a Vec of those in `Scheduler`
@@ -226,7 +224,6 @@ make test
   - <https://docs.kernel.org/core-api/genericirq.html> mentions that a generic handler is hard b/c of APIC , IO/APIC, etc ACKs, which is why `__do_IRQ` no longer exists
 - Try replacing bitmap allocator with a buddy allocator, perhaps itself implemented with multiple bitmaps <https://wiki.osdev.org/Page_Frame_Allocation>
 - `registers.rs` and macros
-  - Consider moving `registers.rs` stuff into dedicated crate with unit tests
   - Also document `registers.rs` stuff
   - Consider using a proc macro to annotate fields on structs instead of
     code-generating the entire struct. This might get rid of the need for my PCI
