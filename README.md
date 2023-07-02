@@ -64,8 +64,8 @@ make gdb
 ```
 
 Make sure to read resource section below on using GDB with QEMU! In particular,
-use `hbreak` instead of `break` to set a breakpoint before the kernel starts and
-has page tables set up.
+if you are running with `accel=kvm`, use `hbreak` instead of `break` to set a
+breakpoint before the kernel starts and has page tables set up.
 
 ### Debugging userspace with gdb
 
