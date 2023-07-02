@@ -26,11 +26,8 @@ impl<T: Clone> WaitCell<T> {
 
     /// Sends value to all waiting tasks and wakes them up.
     pub(crate) fn send_all_consumers(&self, val: T) {
-        // Lock task_ids _before_ setting the value, or else a task might add
-        // itself to the list of waiting tasks after we awaken tasks and never
-        // get woken up.
-        let mut task_ids = self.waiting_tasks.lock_disable_interrupts();
         self.cell.set(val);
+        let mut task_ids = self.waiting_tasks.lock_disable_interrupts();
         for task_id in task_ids.drain(..) {
             sched::awaken_task(task_id);
         }
@@ -38,20 +35,22 @@ impl<T: Clone> WaitCell<T> {
 
     /// Waits until the value is initialized, sleeping if necessary.
     pub(crate) fn wait_sleep(&self) -> T {
-        // Add ourselves to the list of waiting tasks. It is important this is
-        // done before we check for the value being set, and that this is done
-        // with a lock on `waiting_tasks` (which is also taken in
-        // `send_all_consumers`), otherwise we might miss the value being set
-        // and go to sleep forever because no one will wake us up.
-        let task_id = sched::current_task_id();
-        self.waiting_tasks.lock_disable_interrupts().push(task_id);
-
         loop {
+            // Set desired_state to sleeping before checking value to avoid race
+            // condition where we get woken up before we go to sleep.
+            let task_id = sched::prepare_to_sleep();
+
+            // TODO: If we have a spurious wakeup we might add ourselves twice
+            // because we would have never been removed from waiting_tasks in
+            // the first place. Seems fine for now.
+            self.waiting_tasks.lock_disable_interrupts().push(task_id);
+
             let message = self.cell.get_clone();
             if let Some(message) = message {
+                sched::awaken_task(task_id);
                 return message;
             }
-            sched::go_to_sleep();
+            sched::run_scheduler();
         }
     }
 }

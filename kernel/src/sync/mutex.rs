@@ -39,11 +39,16 @@ impl<T> Mutex<T> {
     /// Attempts to lock the mutex and sleeps while unsuccessful.
     pub(crate) fn lock(&self) -> MutexGuard<'_, T> {
         loop {
+            // Set desired_state to sleeping before checking value to avoid race
+            // condition where we get woken up before we go to sleep.
+            let task_id = sched::prepare_to_sleep();
+
             let guard = self.inner.try_lock_allow_preempt();
             if let Some(guard) = guard {
                 // TODO: We should probably remove ourselves from the waiting
                 // task list here, but I think worst case is that we just have
                 // to keep trying to wake up tasks.
+                sched::awaken_task(task_id);
                 return MutexGuard {
                     inner_guard: guard,
                     parent: self,
@@ -52,9 +57,9 @@ impl<T> Mutex<T> {
 
             // Go to sleep
             self.waiting_tasks
-                .lock()
-                .push_back(sched::current_task_id());
-            sched::go_to_sleep();
+                .lock_disable_interrupts()
+                .push_back(task_id);
+            sched::run_scheduler();
         }
     }
 }

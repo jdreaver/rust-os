@@ -322,16 +322,10 @@ pub(crate) fn scheduler_tick(time_between_ticks: Milliseconds) {
 
 /// Puts the current task to sleep for the given number of milliseconds.
 pub(crate) fn sleep_timeout(timeout: Milliseconds) {
-    let task_id = go_to_sleep_no_run_scheduler();
+    let task_id = prepare_to_sleep();
     tick::add_relative_timer(timeout, move || {
         awaken_task(task_id);
     });
-    run_scheduler();
-}
-
-/// Puts the current task to sleep and runs the scheduler
-pub(crate) fn go_to_sleep() {
-    go_to_sleep_no_run_scheduler();
     run_scheduler();
 }
 
@@ -354,18 +348,21 @@ pub(super) fn kill_current_task(exit_code: TaskExitCode) {
 
 /// Puts the current task to sleep and returns the current task ID, but does
 /// _not_ run the scheduler.
-fn go_to_sleep_no_run_scheduler() -> TaskId {
+pub(crate) fn prepare_to_sleep() -> TaskId {
     set_per_cpu_NEEDS_RESCHEDULE(1);
     let current_task = current_task();
     current_task.desired_state.swap(DesiredTaskState::Sleeping);
     current_task.id
 }
 
-/// Awakens the given task and sets needs_reschedule to true.
+/// Awakens the given task and sets needs_reschedule to true if it wasn't
+/// already ready to run.
 pub(crate) fn awaken_task(task_id: TaskId) {
     let task = TASKS.lock_disable_interrupts().get_task_assert(task_id);
-    task.desired_state.swap(DesiredTaskState::ReadyToRun);
-    set_per_cpu_NEEDS_RESCHEDULE(1);
+    let old_state = task.desired_state.swap(DesiredTaskState::ReadyToRun);
+    if old_state != DesiredTaskState::ReadyToRun {
+        set_per_cpu_NEEDS_RESCHEDULE(1);
+    }
 }
 
 /// Waits until the given task is finished.

@@ -61,11 +61,16 @@ pub(crate) struct OnceReceiver<T> {
 impl<T> OnceReceiver<T> {
     pub(crate) fn wait_sleep(self) -> T {
         loop {
+            // Set desired_state to sleeping before checking value to avoid race
+            // condition where we get woken up before we go to sleep.
+            let task_id = sched::prepare_to_sleep();
+
             let message = self.cell.get_once();
             if let Some(message) = message {
+                sched::awaken_task(task_id);
                 return message;
             }
-            sched::go_to_sleep();
+            sched::run_scheduler();
         }
     }
 }
