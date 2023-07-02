@@ -141,8 +141,7 @@ make test
   - Page table concurrency:
     - Consider representing each PageTableEntry as `AtomicU64`, or in the page table as `AtomicInt<u64, PageTableEntry>`
 - Userspace
-  - Run scheduler after syscalls. Ensure that we are properly restoring user context (registers and such) given we might change CPUs (ensure any per CPU vars used are updated)
-  - Write a barebones Rust userspace program
+  - Write a barebones Rust userspace program. Should it share code with the kernel, even just e.g. an interface module for syscalls?
   - Drop any memory we allocated for task, like task segment pages
     - Also drop any intermediate page tables we created.
     - Would it be easier to create an arena holding a process's memory so we could drop it all?

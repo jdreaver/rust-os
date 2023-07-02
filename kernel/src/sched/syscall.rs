@@ -7,7 +7,7 @@ use crate::define_per_cpu_u64;
 use crate::gdt::{USER_CODE_SELECTOR, USER_DATA_SELECTOR};
 use crate::percpu::get_processor_id_no_guard;
 
-use super::schedcore::{current_task_id, kill_current_task};
+use super::schedcore::{current_task_id, kill_current_task, run_scheduler};
 use super::task::{TaskExitCode, TaskRegisters};
 
 pub(super) fn syscall_init() {
@@ -158,6 +158,9 @@ extern "C" fn syscall_handler_inner(registers: &mut TaskRegisters) {
             );
         }
     };
+
+    // Run scheduler after syscalls
+    run_scheduler();
 }
 
 type SyscallHandler = fn(u64, u64, u64, u64, u64);
