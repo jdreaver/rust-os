@@ -148,7 +148,6 @@ make test
   - Ensure that _every_ time we go to userspace, especially if we get rescheduled to another CPU, we store the kernel stack in the GS register. Do we need to add something to when we exit interrupt handlers, like a `return_to_userspace`?
   - Re-enable interrupts while handling syscalls (or don't? at least be explicit)
     - If we expect interrupts to be disabled, make a comment where we disabled and where we do e.g. `swapgs` or something else that expects interrupts disabled
-  - Figure out how to get to userspace for the first time with sysretq instead of iretq
   - Segfault a user process and kill it instead of panicking and crashing the kernel
     - Be careful about locking the scheduler in the page fault handler. It is possible a spin lock was already taken on the scheduler and we'll deadlock (all though that shouldn't happen on the current CPU. Hmm)
   - Create a type showing the intended memory mapping of a process and turn that into a page table. This should make it easier to reason about the memory map.
