@@ -139,7 +139,7 @@ pub(crate) fn start_scheduler() -> ! {
     let dummy_stack_ptr = 0;
     let prev_stack_ptr = core::ptr::addr_of!(dummy_stack_ptr);
     let current_task = current_task();
-    let next_stack_ptr = current_task.registers.iretq_frame.rsp;
+    let next_stack_ptr = current_task.registers.rsp;
     let next_page_table = current_task.page_table.lock().physical_address();
 
     // Drop to decrement reference count or else we will leak because
@@ -264,11 +264,11 @@ fn task_swap_parameters(run_queue: &mut RunQueue) -> Option<(*const u64, u64, Ph
     let prev_task = TASKS
         .lock_disable_interrupts()
         .get_task_assert(prev_task_id);
-    let prev_stack_ptr = core::ptr::addr_of!(prev_task.registers.iretq_frame.rsp);
+    let prev_stack_ptr = core::ptr::addr_of!(prev_task.registers.rsp);
     let next_task = TASKS
         .lock_disable_interrupts()
         .get_task_assert(next_task_id);
-    let next_stack_ptr = next_task.registers.iretq_frame.rsp;
+    let next_stack_ptr = next_task.registers.rsp;
     let next_page_table = next_task.page_table.lock().physical_address();
 
     // Give the next task some time slice

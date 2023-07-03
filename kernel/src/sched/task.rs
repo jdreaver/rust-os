@@ -128,14 +128,6 @@ pub(super) struct TaskRegisters {
     pub(super) syscall_number_or_irq_or_error_code: u64,
 
     // Return frame for iretq
-    pub(super) iretq_frame: IRetqRegisters,
-}
-
-/// Return frame for iretq
-#[derive(Debug, Clone, Copy, Default)]
-#[repr(packed)]
-#[allow(dead_code)]
-pub(super) struct IRetqRegisters {
     pub(super) rip: u64,
     pub(super) cs: u64,
     pub(super) rflags: u64,
@@ -197,12 +189,8 @@ impl Task {
             stack_top_pointer.sub(stack_top_offset) as u64
         };
 
-        let iretq_frame = IRetqRegisters {
-            rsp: stack_top,
-            ..Default::default()
-        };
         let registers = TaskRegisters {
-            iretq_frame,
+            rsp: stack_top,
             ..Default::default()
         };
 
