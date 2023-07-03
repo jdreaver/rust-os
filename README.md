@@ -126,6 +126,7 @@ make test
     - Make typed page sizes like the x86_64 crate does
   - Add support for huge pages in `map_to`, and then use them for both the heap and mapping physical memory
   - Map all physical memory starting at `0xffff_8000_0000_0000`. Limine just does 4 GiB, but make sure to do it all.
+    - Keep the first page at 0x0 unmapped though!
   - Free all levels of page tables that are no longer in use (including the top level!) like when all entries are no longer in use. This must be done recursively up the tree. This might be easier with a more general struct per page with reference counts, like Linux's `struct page`.
     - A less general and simpler problem is freeing an entire page table, like when a process exits. When we do this though we have to ensure we don't free the kernel pages, just the user process pages!
   - Make our own `PhysAddr` and don't allow it to be converted to a pointer via `as_ptr()` (the x86_64 one doesn't have this btw)
@@ -163,8 +164,6 @@ make test
     - Maybe add debug_assert! calls ensuring percpu has been initialized before any percpu vars are used. (Make sure they get removed in release builds)
     - Linux has an early printk function, maybe for stuff like this?
     - Logging in already "slow" by kernel standards. Maybe it is okay to do some boolean check to take locks or not.
-- Task start safety: find a way to make casting the `arg: *const ()` pointer way safer. It is easy to mess up.
-  - I think we need a macro for this, which is fine. Or, maybe we can get away with casts. Hmm.
 - Arc memory leak detection:
   - Calling `run_scheduler()` (or more specifically `switch_to_task`) while holding an `Arc` reference (especially `Arc<Task>`) can cause a memory leak because we might switch away from the given task forever. Currently I manually `drop` things before calling these functions. Is there a way I could make calling `run_scheduler` basically impossible?
     - Same problem happens when jumping to userspace for the first time.

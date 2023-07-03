@@ -295,3 +295,47 @@ pub(super) extern "C" fn task_setup(task_fn: KernelTaskStartFunction, arg: *cons
 
     panic!("somehow returned to task_setup for dead task after running scheduler");
 }
+
+/// Macro to generate task start function with type safety, so user doesn't have
+/// to worry about casting to and from `*const ()`.
+#[macro_export]
+macro_rules! task_creator_cast {
+    ($vis:vis $name:ident, $arg_type:ty, $start_fn:ident) => {
+        ::paste::paste! {
+            $vis fn $name(
+                name: alloc::string::String,
+                arg: $arg_type,
+            ) -> $crate::sched::TaskId {
+                let arg = arg as *const ();
+                $crate::sched::new_task(name, [<_start_ $name>], arg)
+            }
+
+            $vis extern "C" fn [<_start_ $name>](arg: *const ()) {
+                let arg: $arg_type = arg as $arg_type;
+                $start_fn(arg);
+            }
+        }
+    };
+}
+
+/// Macro to generate task start function with type safety, so user doesn't have
+/// to worry about boxing and unboxing `*const ()`.
+#[macro_export]
+macro_rules! task_creator_box {
+    ($vis:vis $name:ident, $arg_type:ty, $start_fn:ident) => {
+        ::paste::paste! {
+            $vis fn $name(
+                name: alloc::string::String,
+                arg: alloc::boxed::Box<$arg_type>,
+            ) -> $crate::sched::TaskId {
+                let arg = alloc::boxed::Box::into_raw(arg).cast_const().cast::<()>();
+                $crate::sched::new_task(name, [<_start_ $name>], arg)
+            }
+
+            $vis extern "C" fn [<_start_ $name>](arg: *const ()) {
+                let arg: Box<$arg_type> = unsafe { Box::from_raw(arg.cast_mut().cast()) };
+                $start_fn(arg);
+            }
+        }
+    };
+}

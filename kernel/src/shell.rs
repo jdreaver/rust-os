@@ -11,7 +11,7 @@ use crate::sync::SpinLock;
 use crate::vfs::FilePath;
 use crate::{
     acpi, ansiterm, boot_info, debug, graphics, memory, pci, sched, serial, serial_print,
-    serial_println, tick, vfs, virtio,
+    serial_println, task_creator_cast, tick, vfs, virtio,
 };
 
 static NEXT_COMMAND_BUFFER: SpinLock<ShellBuffer> = SpinLock::new(ShellBuffer::new());
@@ -664,11 +664,7 @@ fn run_command(command: &Command) {
             serial_println!("Slept for {ms}");
         }
         Command::Prime(PrimeCommand::Sync { nth_prime }) => {
-            let task_id = sched::new_task(
-                format!("prime sync {nth_prime}"),
-                calculate_prime_task,
-                *nth_prime as *const (),
-            );
+            let task_id = calculate_prime_task(format!("prime sync {nth_prime}"), *nth_prime);
             serial_println!("Waiting for task {task_id:?} to finish...");
             let exit_code = sched::wait_on_task(task_id);
             serial_println!("Task {task_id:?} finished! Exit code: {exit_code:?}");
@@ -679,24 +675,16 @@ fn run_command(command: &Command) {
         }) => {
             serial_println!("spawning {num_processes} processes to calculate {nth_prime}th prime");
             for i in 0..*num_processes {
-                sched::new_task(
-                    format!("prime async {nth_prime} {i}"),
-                    calculate_prime_task,
-                    *nth_prime as *const (),
-                );
+                calculate_prime_task(format!("prime async {nth_prime} {i}"), *nth_prime);
             }
             sched::run_scheduler();
         }
     }
 }
 
-extern "C" fn calculate_prime_task(arg: *const ()) {
-    let n = arg as usize;
-    let p = naive_nth_prime(n);
-    log::info!("calculate_prime_task DONE: {n}th prime: {p}");
-}
+task_creator_cast!(calculate_prime_task, usize, naive_nth_prime);
 
-fn naive_nth_prime(n: usize) -> usize {
+fn naive_nth_prime(n: usize) {
     fn is_prime(x: usize) -> bool {
         for i in 2..x {
             if x % i == 0 {
@@ -715,5 +703,5 @@ fn naive_nth_prime(n: usize) -> usize {
         i += 1;
     }
 
-    i
+    log::info!("calculate_prime_task DONE: {n}th prime: {i}");
 }

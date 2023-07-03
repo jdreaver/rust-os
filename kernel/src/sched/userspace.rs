@@ -9,9 +9,9 @@ use x86_64::VirtAddr;
 use crate::memory::{
     allocate_and_map_pages, set_page_flags, Page, PageRange, PageSize, PageTableEntryFlags,
 };
-use crate::{elf, gdt, vfs};
+use crate::{elf, gdt, task_creator_box, vfs};
 
-use super::schedcore::{current_task, new_task};
+use super::schedcore::current_task;
 use super::syscall::TOP_OF_KERNEL_STACK;
 use super::task::{IRetqRegisters, TaskId};
 
@@ -22,20 +22,15 @@ pub(crate) struct ExecParams {
 }
 
 pub(crate) fn new_userspace_task(params: ExecParams) -> TaskId {
-    let params = Box::new(params);
-    new_task(
-        params.path.as_string(),
-        task_userspace_setup,
-        Box::into_raw(params).cast_const().cast::<()>(),
-    )
+    create_userspace_task(params.path.as_string(), Box::new(params))
 }
+
+task_creator_box!(create_userspace_task, ExecParams, task_userspace_setup);
 
 /// Kernel function that is called when we are starting a userspace task. This
 /// is the "entrypoint" to a userspace task, and performs some setup before
 /// actually jumping to userspace.
-extern "C" fn task_userspace_setup(arg: *const ()) {
-    let params: Box<ExecParams> = unsafe { Box::from_raw(arg.cast_mut().cast()) };
-
+extern "C" fn task_userspace_setup(params: Box<ExecParams>) {
     let path = &params.path;
     let inode = match vfs::get_path_inode(path) {
         Ok(inode) => inode,
