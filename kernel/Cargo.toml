@@ -8,6 +8,7 @@ acpi = "4.1"
 bitfield-struct = "0.3"
 bitflags = "2.3"
 bitmap-alloc = { path = "../crates/bitmap-alloc" }
+bitvec = { version = "1", default-features = false, features = ["atomic", "alloc"] }
 elf = { version = "0.7", default-features = false }
 limine = "=0.1.10"
 linked_list_allocator = "0.9"
@@ -27,9 +28,8 @@ x86_64 = "0.14"
 zerocopy = { git = "https://github.com/google/zerocopy", rev = "b5b30d0287734c004bb2c1c97cc53a460443a57f" }
 
 # Test dependencies
-bitvec = { version = "1", default-features = false, features = ["atomic", "alloc"], optional = true }
 proptest = { version = "1", default-features = false, features = ["alloc", "unstable"], optional = true }
 
 [features]
 default = ["tests"]
-tests = ["bitvec", "proptest"]
+tests = ["proptest"]
