@@ -3,11 +3,11 @@ use core::fmt;
 use bitvec::prelude::AsBits;
 use ring_buffer::RingBuffer;
 
-use crate::font::{
+use super::font::{
     FONT_HEIGHT_PIXELS, FONT_SPACE_CHARACTER_INDEX, FONT_START_CHAR_ASCII_CODE, FONT_WIDTH_PIXELS,
     OPENGL_FONT,
 };
-use crate::framebuffer::{ARGB32Bit, VESAFramebuffer32Bit, ARGB32BIT_BLACK, ARGB32BIT_WHITE};
+use super::framebuffer::{ARGB32Bit, VESAFramebuffer32Bit, ARGB32BIT_BLACK, ARGB32BIT_WHITE};
 
 /// ASCII character along with a color.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

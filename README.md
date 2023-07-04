@@ -106,6 +106,11 @@ make test
 
 ## TODO
 
+- framebuffer crate removal
+  - Change all `pub` to `pub(super)`
+  - Remove dead code
+  - Change tests to use `kernel_test` framework
+  - Fix page fault caused by `write-framebuffer hello` (I think page table changes broke this)
 - VFS read/write code:
   - Change inode `write` API to be similar to read (based on blocks)
   - Nuke old block iteration code in ext2 now that write and read don't need it

@@ -1,6 +1,11 @@
-use core::fmt::Write;
+mod font;
+mod framebuffer;
+mod text_buffer;
 
-use vesa_framebuffer::{TextBuffer, VESAFramebuffer32Bit};
+pub(crate) use framebuffer::*;
+pub(crate) use text_buffer::*;
+
+use core::fmt::Write;
 
 use crate::boot_info;
 use crate::sync::SpinLock;

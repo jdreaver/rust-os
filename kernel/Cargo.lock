@@ -250,6 +250,7 @@ dependencies = [
  "bitfield-struct",
  "bitflags 2.3.3",
  "bitmap-alloc",
+ "bitvec",
  "elf",
  "limine",
  "linked_list_allocator",
@@ -258,11 +259,11 @@ dependencies = [
  "pc-keyboard",
  "pic8259",
  "proptest",
+ "ring_buffer",
  "seq-macro",
  "spin",
  "test-infra",
  "test-macro",
- "vesa_framebuffer",
  "x86_64",
  "zerocopy",
 ]
@@ -356,15 +357,6 @@ name = "unicode-ident"
 version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22049a19f4a68748a168c0fc439f9516686aa045927ff767eca0a85101fb6e73"
-
-[[package]]
-name = "vesa_framebuffer"
-version = "0.1.0"
-dependencies = [
- "bitvec",
- "limine",
- "ring_buffer",
-]
 
 [[package]]
 name = "volatile"
