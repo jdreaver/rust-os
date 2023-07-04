@@ -353,7 +353,7 @@ impl Iterator for InodeBlockIterator {
 }
 
 #[cfg(feature = "tests")]
-pub(super) mod tests {
+mod tests {
     use super::*;
 
     use crate::tests::kernel_test;

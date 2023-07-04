@@ -126,9 +126,13 @@ fn draw_char(framebuffer: &mut VESAFramebuffer32Bit, x: usize, y: usize, c: Colo
     framebuffer.draw_bitmap(x, y, bitmap, FONT_WIDTH_PIXELS, c.color, ARGB32BIT_BLACK);
 }
 
-#[cfg(test)]
+#[cfg(feature = "tests")]
 mod test {
     use super::*;
+
+    use alloc::vec::Vec;
+
+    use crate::tests::kernel_test;
 
     fn assert_line_text_equal(line: &[ColorChar], expected: &[u8]) {
         assert_eq!(line.len(), expected.len());
@@ -142,7 +146,7 @@ mod test {
         assert_eq!(left_chars, right_chars);
     }
 
-    #[test]
+    #[kernel_test]
     fn test_text_buffer_writer() {
         use core::fmt::Write;
         let mut text_buffer: TextBuffer<4, 4> = TextBuffer::new();
@@ -155,7 +159,7 @@ mod test {
         assert_line_text_equal(text_buffer.buffer.get_mut(2).unwrap(), b"abc\0");
     }
 
-    #[test]
+    #[kernel_test]
     fn test_text_buffer_implicit_line_wrap() {
         use core::fmt::Write;
         let mut text_buffer: TextBuffer<5, 4> = TextBuffer::new();

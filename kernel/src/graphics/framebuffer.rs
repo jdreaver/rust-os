@@ -220,14 +220,16 @@ pub(super) const ARGB32BIT_BLUE: ARGB32Bit = ARGB32Bit {
     blue: 0xFF,
 };
 
-#[cfg(test)]
+#[cfg(feature = "tests")]
 mod test {
     use super::*;
 
-    #[test]
+    use crate::tests::kernel_test;
+
+    #[kernel_test]
     fn test_color_value_from_mask() {
-        assert_eq!(color_value_from_mask(8, 16), 0x0000FF00);
-        assert_eq!(color_value_from_mask(8, 8), 0x00FF0000);
-        assert_eq!(color_value_from_mask(8, 0), 0xFF000000);
+        assert_eq!(color_value_from_mask(8, 16), 0x0000_FF00);
+        assert_eq!(color_value_from_mask(8, 8), 0x00FF_0000);
+        assert_eq!(color_value_from_mask(8, 0), 0xFF00_0000);
     }
 }
