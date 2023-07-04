@@ -11,23 +11,23 @@ use super::framebuffer::{ARGB32Bit, VESAFramebuffer32Bit, ARGB32BIT_BLACK, ARGB3
 
 /// ASCII character along with a color.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct ColorChar {
+pub(super) struct ColorChar {
     char_byte: u8,
     color: ARGB32Bit,
 }
 
 impl ColorChar {
-    pub fn new(char_byte: u8, color: ARGB32Bit) -> Self {
+    pub(super) fn new(char_byte: u8, color: ARGB32Bit) -> Self {
         Self { char_byte, color }
     }
 
-    pub fn white_char(char_byte: u8) -> Self {
+    pub(super) fn white_char(char_byte: u8) -> Self {
         Self::new(char_byte, ARGB32BIT_WHITE)
     }
 }
 
 /// A cursor-based text buffer that can print text to a framebuffer.
-pub struct TextBuffer<const N: usize = 50, const W: usize = 100> {
+pub(super) struct TextBuffer<const N: usize = 50, const W: usize = 100> {
     /// Ring buffer that holds the text lines.
     buffer: RingBuffer<[ColorChar; W], N>,
 
@@ -36,7 +36,7 @@ pub struct TextBuffer<const N: usize = 50, const W: usize = 100> {
 }
 
 impl<const N: usize, const W: usize> TextBuffer<N, W> {
-    pub const fn new() -> Self {
+    pub(super) const fn new() -> Self {
         Self {
             buffer: RingBuffer::new(),
             cursor: 0,
@@ -51,7 +51,7 @@ impl<const N: usize, const W: usize> TextBuffer<N, W> {
     /// Writes a character to the internal `TextLineBuffer`, but doesn't flush
     /// the text to the framebuffer. You must call `flush` to draw the text to
     /// the framebuffer.
-    pub fn write_char(&mut self, c: ColorChar) {
+    pub(super) fn write_char(&mut self, c: ColorChar) {
         // Wrap text for newline and consume char
         if c.char_byte == b'\n' {
             self.new_line();
@@ -77,7 +77,7 @@ impl<const N: usize, const W: usize> TextBuffer<N, W> {
 
     /// Clear the framebuffer and then draw all the text that fits in the
     /// framebuffer.
-    pub fn flush(&mut self, framebuffer: &mut VESAFramebuffer32Bit) {
+    pub(super) fn flush(&mut self, framebuffer: &mut VESAFramebuffer32Bit) {
         framebuffer.clear();
 
         // Start at the last line of the text buffer and draw lines until we run

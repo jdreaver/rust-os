@@ -2,13 +2,13 @@ mod font;
 mod framebuffer;
 mod text_buffer;
 
-pub(crate) use framebuffer::*;
-pub(crate) use text_buffer::*;
-
 use core::fmt::Write;
 
 use crate::boot_info;
 use crate::sync::SpinLock;
+
+use framebuffer::VESAFramebuffer32Bit;
+use text_buffer::TextBuffer;
 
 static FRAMEBUFFER: SpinLock<Option<VESAFramebuffer32Bit>> = SpinLock::new(None);
 

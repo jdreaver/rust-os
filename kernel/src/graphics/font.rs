@@ -1,10 +1,10 @@
 // Font starts at space character, or ASCII 32
-pub const FONT_START_CHAR_ASCII_CODE: u8 = 32;
+pub(super) const FONT_START_CHAR_ASCII_CODE: u8 = 32;
 
-pub const FONT_WIDTH_PIXELS: usize = 8;
-pub const FONT_HEIGHT_PIXELS: usize = 13;
+pub(super) const FONT_WIDTH_PIXELS: usize = 8;
+pub(super) const FONT_HEIGHT_PIXELS: usize = 13;
 
-pub const FONT_SPACE_CHARACTER_INDEX: usize = 0;
+pub(super) const FONT_SPACE_CHARACTER_INDEX: usize = 0;
 
 // TODO: Another cool font to investigate:
 // https://github.com/isometimes/rpi4-osdev/blob/master/part5-framebuffer/terminal.h
@@ -13,7 +13,7 @@ pub const FONT_SPACE_CHARACTER_INDEX: usize = 0;
 /// <https://courses.cs.washington.edu/courses/cse457/98a/tech/OpenGL/font.c>,
 /// except bytes for each character are reversed (the first byte is the topmost
 /// row of pixels, and the last byte is the bottommost row of pixels).
-pub const OPENGL_FONT: [[u8; FONT_HEIGHT_PIXELS]; 95] = [
+pub(super) const OPENGL_FONT: [[u8; FONT_HEIGHT_PIXELS]; 95] = [
     // Starts with space, which is 32 in ASCII
     [
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

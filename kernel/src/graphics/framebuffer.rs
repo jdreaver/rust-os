@@ -12,7 +12,7 @@ use bitvec::prelude as bv;
 /// - <https://wiki.osdev.org/User:Omarrx024/VESA_Tutorial>
 /// - <https://wiki.osdev.org/Drawing_In_a_Linear_Framebuffer>
 #[derive(Debug)]
-pub struct VESAFramebuffer32Bit {
+pub(super) struct VESAFramebuffer32Bit {
     /// Pointer to the start of the framebuffer.
     ///
     /// N.B. We store this as `u8` so we do per-byte pointer arithmetic, and we
@@ -40,7 +40,9 @@ impl VESAFramebuffer32Bit {
     ///
     /// Caller needs to ensure that the framebuffer is valid, and probably
     /// blindly trust `limine`.
-    pub unsafe fn from_limine_framebuffer(fb: &limine::LimineFramebuffer) -> Result<Self, &str> {
+    pub(super) unsafe fn from_limine_framebuffer(
+        fb: &limine::LimineFramebuffer,
+    ) -> Result<Self, &str> {
         if fb.bpp != 32 {
             return Err("limine framebuffer must be 32 bits per pixel");
         }
@@ -79,11 +81,11 @@ impl VESAFramebuffer32Bit {
         })
     }
 
-    pub fn width_pixels(&self) -> usize {
+    pub(super) fn width_pixels(&self) -> usize {
         self.width_pixels
     }
 
-    pub fn height_pixels(&self) -> usize {
+    pub(super) fn height_pixels(&self) -> usize {
         self.height_pixels
     }
 
@@ -98,7 +100,7 @@ impl VESAFramebuffer32Bit {
     ///
     /// Also, we don't need `&mut self` here technically since we are doing
     /// `unsafe` under the hood, but it's nice to have to prevent data races.
-    pub fn draw_pixel(&mut self, x: usize, y: usize, color: ARGB32Bit) {
+    pub(super) fn draw_pixel(&mut self, x: usize, y: usize, color: ARGB32Bit) {
         assert!(x < self.width_pixels, "x coordinate out of bounds");
         assert!(y < self.height_pixels, "y coordinate out of bounds");
 
@@ -114,7 +116,7 @@ impl VESAFramebuffer32Bit {
 
     /// Draws the given Nx8 bitmap to the framebuffer. Use the foreground color
     /// for `1` bits and the background for `0` bits.
-    pub fn draw_bitmap<S: bv::BitStore>(
+    pub(super) fn draw_bitmap<S: bv::BitStore>(
         &mut self,
         x: usize,
         y: usize,
@@ -136,7 +138,7 @@ impl VESAFramebuffer32Bit {
         }
     }
 
-    pub fn clear(&mut self) {
+    pub(super) fn clear(&mut self) {
         // for i in 0..(self.pitch * self.height_pixels) {
         //     unsafe {
         //         *self.address.add(i) = 0x00;
@@ -170,7 +172,7 @@ fn color_value_from_mask(mask_size: u8, mask_shift: u8) -> u32 {
 /// `VESAFramebuffer32Bit`.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct ARGB32Bit {
+pub(super) struct ARGB32Bit {
     // Note that the fields are in reverse order from how they are stored in
     // memory. This is because the x86 is little endian and we are expected to
     // write u32 values to memory.
@@ -180,35 +182,35 @@ pub struct ARGB32Bit {
     alpha: u8,
 }
 
-pub const ARGB32BIT_WHITE: ARGB32Bit = ARGB32Bit {
+pub(super) const ARGB32BIT_WHITE: ARGB32Bit = ARGB32Bit {
     alpha: 0xFF,
     red: 0xFF,
     green: 0xFF,
     blue: 0xFF,
 };
 
-pub const ARGB32BIT_BLACK: ARGB32Bit = ARGB32Bit {
+pub(super) const ARGB32BIT_BLACK: ARGB32Bit = ARGB32Bit {
     alpha: 0xFF,
     red: 0x00,
     green: 0x00,
     blue: 0x00,
 };
 
-pub const ARGB32BIT_RED: ARGB32Bit = ARGB32Bit {
+pub(super) const ARGB32BIT_RED: ARGB32Bit = ARGB32Bit {
     alpha: 0x00,
     red: 0xFF,
     green: 0x00,
     blue: 0x00,
 };
 
-pub const ARGB32BIT_GREEN: ARGB32Bit = ARGB32Bit {
+pub(super) const ARGB32BIT_GREEN: ARGB32Bit = ARGB32Bit {
     alpha: 0xFF,
     red: 0x00,
     green: 0xFF,
     blue: 0x00,
 };
 
-pub const ARGB32BIT_BLUE: ARGB32Bit = ARGB32Bit {
+pub(super) const ARGB32BIT_BLUE: ARGB32Bit = ARGB32Bit {
     alpha: 0xFF,
     red: 0x00,
     green: 0x00,
