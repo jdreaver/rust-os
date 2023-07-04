@@ -145,7 +145,6 @@ make test
     - Also drop any intermediate page tables we created.
     - Would it be easier to create an arena holding a process's memory so we could drop it all?
   - Make sure we can use NO_EXECUTE bit in page table (need some EFER setting?)
-  - Ensure that _every_ time we go to userspace, especially if we get rescheduled to another CPU, we store the kernel stack in the GS register. Do we need to add something to when we exit interrupt handlers, like a `return_to_userspace`?
   - Re-enable interrupts while handling syscalls (or don't? at least be explicit)
     - If we expect interrupts to be disabled, make a comment where we disabled and where we do e.g. `swapgs` or something else that expects interrupts disabled
   - Segfault a user process and kill it instead of panicking and crashing the kernel

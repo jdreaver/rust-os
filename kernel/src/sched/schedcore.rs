@@ -327,7 +327,7 @@ pub(crate) fn sleep_timeout(timeout: Milliseconds) {
 
 pub(super) fn kill_current_task(exit_code: TaskExitCode) {
     let current_task = current_task();
-    log::info!("killing task {} {:?}", current_task.name, current_task.id);
+    log::info!("killing task {} {:?} with code {exit_code:?}", current_task.name, current_task.id);
     current_task.desired_state.swap(DesiredTaskState::Killed);
 
     // Inform waiters that the task has exited.

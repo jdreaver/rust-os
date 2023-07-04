@@ -30,6 +30,7 @@ syscall_print:
         mov	rsi, rdi        ; string to print
         mov	rdi, 1          ; print syscall
         syscall
+        ret
 
 global syscall_exit
 
