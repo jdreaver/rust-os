@@ -107,9 +107,17 @@ make test
 ## TODO
 
 - Fix page fault caused by `write-framebuffer hello` (I think page table changes broke this)
-  - It is just when `framebuffer.clear();` is called. When that is commented out stuff works fine.
-  - The address of the page fault changes. It this caused by some kind of interrupt during the clear?
+  - PROBLEM: We are trying to use 0xa0000 (and 0xb0000) for page tables, but that is reserved memory. Limine's memory map does not make these regions contiguous, and it doesn't even mention the region from 0xa0000 to 0x100000.
+  - When we create higher half entry for ffffd58000000000 (i = 428 in loop), we allocate a page at 0xb0000, and when we do `new_table_page.zero()` it doesn't zero it out. The page has all 1 bits.
+    - The `rep stosq` loop here doesn't seem to do anything <https://github.com/rust-lang/compiler-builtins/blob/82feed32e9dbe675622098accb852d1a5f660dd4/src/mem/x86_64.rs#L117>
+    - Both gdb and QEMU show `0xffff8000000b0000` as mapped to `0xb0000`, and the value as 0xffff...
+    - Even a manual for loop setting to zero does nothing. Is something wrong with the page table mapping 0xb0000 itself?
+    - Even a write to 0xb0000 before unmapping identity map does nothing. That address must be special. Hmmm
+      - `info mtree` in qemu says it is vga-lowmem. Googling seems to suggest this is where VGA characters are kept.
+  - I'm almost certain we are stomping on the page table somehow
     - Are interrupts + task switches broken in kernel code? I would expect the prime number thing to break if so. Maybe just the shell for some reason?
+  - Maybe we are overflowing the TSS stacks, or overflowing due to interrupts?
+  - `info mem` in QEMU looks funny after mapping higher half
 - VFS read/write code:
   - Change inode `write` API to be similar to read (based on blocks)
   - Nuke old block iteration code in ext2 now that write and read don't need it

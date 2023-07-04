@@ -202,7 +202,7 @@ pub(crate) fn test_new_page_table() {
     serial_println!("Mapping {map_virt:?} to {map_phys:?}, result: {:?}", result);
 
     let target = table.translate_address(map_virt.start_addr());
-    serial_println!("Target of {target_addr:x?}: {target:x?}");
+    serial_println!("Target of {:x?}: {target:x?}", map_virt.start_addr());
 
     let unmap_result =
         KERNEL_PHYSICAL_ALLOCATOR.with_lock(|allocator| table.unmap(allocator, map_virt, false));

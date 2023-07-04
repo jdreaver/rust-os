@@ -267,7 +267,7 @@ pub(crate) fn limine_memory_regions() -> impl Iterator<Item = bitmap_alloc::Memo
     limine_memory_map_entries().map(|entry| bitmap_alloc::MemoryRegion {
         start_address: entry.base as usize,
         len_bytes: entry.len,
-        // See not above about usable vs reclaimable.
+        // See note above about usable vs reclaimable.
         free: entry.typ == limine::LimineMemoryMapEntryType::Usable,
     })
 }
