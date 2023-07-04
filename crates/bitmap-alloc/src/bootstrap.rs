@@ -95,37 +95,45 @@ where
         })
         .expect("couldn't find a free region large enough to store the allocator bitmap");
 
-    // Allocate and zero the bitmap
+    // Allocate the bitmap and set all regions as used. We default to used and
+    // then free unused because memory maps often have holes. For example,
+    // 0xa0000 through 0xfffff is used for VGA and BIOS memory, and at the time
+    // of writing limine just totally ignores it.
     let bitmap = allocate_bitmap(bitmap_start, bitmap_bytes);
-    bitmap.fill(0);
+    bitmap.fill(u64::MAX);
 
-    // Mark all used regions as used in the bitmap
     let mut alloc = BitmapAllocator::new(bitmap);
 
+    // Mark all unused regions as free in the bitmap
+    for region in iter_regions() {
+        if !region.free {
+            continue;
+        }
+        mark_region(false, &region, page_size, &mut alloc);
+    }
+
+    // Mark the bitmap storage area as used
     let bitmap_region = MemoryRegion {
         start_address: bitmap_start,
         len_bytes: bitmap_bytes as u64,
         free: false,
     };
-    allocate_region(&bitmap_region, page_size, &mut alloc);
-
-    for region in iter_regions() {
-        if region.free {
-            continue;
-        }
-        allocate_region(&region, page_size, &mut alloc);
-    }
+    mark_region(true, &bitmap_region, page_size, &mut alloc);
 
     alloc
 }
 
-fn allocate_region(region: &MemoryRegion, page_size: usize, alloc: &mut BitmapAllocator) {
+fn mark_region(used: bool, region: &MemoryRegion, page_size: usize, alloc: &mut BitmapAllocator) {
     let Some((start_addr, end_addr)) = region.page_aligned_start_end_address(page_size) else { return; };
     let start = start_addr / page_size;
     let end = end_addr / page_size;
 
     for page in start..end {
-        alloc.mark_used(page);
+        if used {
+            alloc.mark_used(page);
+        } else {
+            alloc.mark_unused(page);
+        }
     }
 }
 
@@ -154,9 +162,10 @@ mod tests {
                 len_bytes: 0x200,
                 free: false,
             },
+            // N.B. There is a hole here
             MemoryRegion {
-                start_address: 0x400,
-                len_bytes: 0x100,
+                start_address: 0x419,
+                len_bytes: 0xd1,
                 free: true,
             },
             MemoryRegion {
@@ -179,7 +188,7 @@ mod tests {
         // Check that memory regions are properly occupied
         let bitmap_page = 0x10;
         for region in regions.iter() {
-            let start_page = region.start_address / page_size;
+            let start_page = region.start_address.div_ceil(page_size);
             let end_page = (region.start_address + region.len_bytes as usize) / page_size;
 
             for page in start_page..end_page {
@@ -188,6 +197,13 @@ mod tests {
                 test_page(page, expect_occupied);
             }
         }
+
+        // Check that the memory hole is used
+        test_page(0x390 / page_size, true);
+        test_page(0x400 / page_size, true);
+        test_page(0x410 / page_size, true);
+        test_page(0x420 / page_size, false);
+        test_page(0x430 / page_size, false);
     }
 
     fn test_page(page: usize, expect_occupied: bool) {

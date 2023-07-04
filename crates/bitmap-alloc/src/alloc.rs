@@ -37,7 +37,7 @@ impl<'a> BitmapAllocator<'a> {
         self.bitmap[index] |= 1 << bit;
     }
 
-    fn mark_unused(&mut self, page: usize) {
+    pub(crate) fn mark_unused(&mut self, page: usize) {
         let index = page / Self::BITS_PER_CHUNK;
         let bit = page % Self::BITS_PER_CHUNK;
         // N.B. If this assertion is removed for performance reasons, make sure

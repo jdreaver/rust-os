@@ -263,6 +263,10 @@ fn limine_memory_map_entries() -> impl Iterator<Item = &'static limine::LimineMe
 /// > The bootloader page tables are in bootloader-reclaimable memory [...], and
 /// > their specific layout is undefined as long as they provide the above
 /// > memory mappings.
+///
+/// Also, limine has gaps in its memory map. For example, 0xa0000 through
+/// 0xfffff is reserved for VGA and BIOS memory. In QEMU, limine just doesn't
+/// mention it at all.
 pub(crate) fn limine_memory_regions() -> impl Iterator<Item = bitmap_alloc::MemoryRegion> {
     limine_memory_map_entries().map(|entry| bitmap_alloc::MemoryRegion {
         start_address: entry.base as usize,
