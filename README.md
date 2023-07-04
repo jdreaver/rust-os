@@ -106,8 +106,10 @@ make test
 
 ## TODO
 
-- framebuffer crate removal
-  - Fix page fault caused by `write-framebuffer hello` (I think page table changes broke this)
+- Fix page fault caused by `write-framebuffer hello` (I think page table changes broke this)
+  - It is just when `framebuffer.clear();` is called. When that is commented out stuff works fine.
+  - The address of the page fault changes. It this caused by some kind of interrupt during the clear?
+    - Are interrupts + task switches broken in kernel code? I would expect the prime number thing to break if so. Maybe just the shell for some reason?
 - VFS read/write code:
   - Change inode `write` API to be similar to read (based on blocks)
   - Nuke old block iteration code in ext2 now that write and read don't need it

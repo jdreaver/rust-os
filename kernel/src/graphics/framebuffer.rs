@@ -139,17 +139,11 @@ impl VESAFramebuffer32Bit {
     }
 
     pub(super) fn clear(&mut self) {
-        // for i in 0..(self.pitch * self.height_pixels) {
-        //     unsafe {
-        //         *self.address.add(i) = 0x00;
-        //     }
-        // }
-
-        // This is faster in debug mode, and it is neat, so I'm keeping it
-        // around.
         unsafe {
-            core::slice::from_raw_parts_mut(self.address, self.pitch * self.height_pixels)
-                .fill(0x00);
+            // N.B. `write_bytes` is a highly optimized way to write zeroes.
+            // Making a slice and doing `slice.fill(0)` is supposed to optimize
+            // to this, but it doesn't seem to when compiling in debug mode.
+            self.address.write_bytes(0, self.pitch * self.height_pixels);
         };
     }
 }
