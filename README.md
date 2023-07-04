@@ -107,8 +107,6 @@ make test
 ## TODO
 
 - framebuffer crate removal
-  - Change all `pub` to `pub(super)`
-  - Remove dead code
   - Change tests to use `kernel_test` framework
   - Fix page fault caused by `write-framebuffer hello` (I think page table changes broke this)
 - VFS read/write code:

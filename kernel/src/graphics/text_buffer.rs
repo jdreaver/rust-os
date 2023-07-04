@@ -20,10 +20,6 @@ impl ColorChar {
     pub(super) fn new(char_byte: u8, color: ARGB32Bit) -> Self {
         Self { char_byte, color }
     }
-
-    pub(super) fn white_char(char_byte: u8) -> Self {
-        Self::new(char_byte, ARGB32BIT_WHITE)
-    }
 }
 
 /// A cursor-based text buffer that can print text to a framebuffer.

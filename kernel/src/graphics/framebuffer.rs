@@ -196,6 +196,7 @@ pub(super) const ARGB32BIT_BLACK: ARGB32Bit = ARGB32Bit {
     blue: 0x00,
 };
 
+#[allow(dead_code)]
 pub(super) const ARGB32BIT_RED: ARGB32Bit = ARGB32Bit {
     alpha: 0x00,
     red: 0xFF,
@@ -203,6 +204,7 @@ pub(super) const ARGB32BIT_RED: ARGB32Bit = ARGB32Bit {
     blue: 0x00,
 };
 
+#[allow(dead_code)]
 pub(super) const ARGB32BIT_GREEN: ARGB32Bit = ARGB32Bit {
     alpha: 0xFF,
     red: 0x00,
@@ -210,6 +212,7 @@ pub(super) const ARGB32BIT_GREEN: ARGB32Bit = ARGB32Bit {
     blue: 0x00,
 };
 
+#[allow(dead_code)]
 pub(super) const ARGB32BIT_BLUE: ARGB32Bit = ARGB32Bit {
     alpha: 0xFF,
     red: 0x00,
