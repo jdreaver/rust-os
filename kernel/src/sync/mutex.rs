@@ -43,6 +43,10 @@ impl<T> Mutex<T> {
             // condition where we get woken up before we go to sleep.
             let task_id = sched::prepare_to_sleep();
 
+            self.waiting_tasks
+                .lock_disable_interrupts()
+                .push_back(task_id);
+
             let guard = self.inner.try_lock_allow_preempt();
             if let Some(guard) = guard {
                 // TODO: We should probably remove ourselves from the waiting
@@ -55,10 +59,6 @@ impl<T> Mutex<T> {
                 };
             }
 
-            // Go to sleep
-            self.waiting_tasks
-                .lock_disable_interrupts()
-                .push_back(task_id);
             sched::run_scheduler();
         }
     }
