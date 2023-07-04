@@ -126,21 +126,8 @@ fn early_per_cpu_setup(processor_id: ProcessorID) {
 }
 
 fn global_setup(boot_info_data: &boot_info::BootInfo) {
-    // KLUDGE: Limine just doesn't report on memory below 0x1000, so we
-    // explicitly mark it as reserved. TODO: Perhaps instead of only reserving
-    // reserved regions, we should assume all memory is reserved and instead
-    // explicitly free the regions limine says are free.
-    let make_memory_map = || {
-        core::iter::once(bitmap_alloc::MemoryRegion {
-            start_address: 0,
-            len_bytes: 0x1000,
-            free: false,
-        })
-        .chain(boot_info::limine_memory_regions())
-    };
-
     unsafe {
-        memory::init(boot_info_data, make_memory_map);
+        memory::init(boot_info_data, boot_info::limine_memory_regions);
     };
 
     // N.B. Probing ACPI must happen after heap initialization because the Rust

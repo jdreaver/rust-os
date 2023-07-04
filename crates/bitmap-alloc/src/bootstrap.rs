@@ -98,7 +98,8 @@ where
     // Allocate the bitmap and set all regions as used. We default to used and
     // then free unused because memory maps often have holes. For example,
     // 0xa0000 through 0xfffff is used for VGA and BIOS memory, and at the time
-    // of writing limine just totally ignores it.
+    // of writing limine just totally ignores it. Also, limine just doesn't
+    // report on the first page of memory.
     let bitmap = allocate_bitmap(bitmap_start, bitmap_bytes);
     bitmap.fill(u64::MAX);
 
