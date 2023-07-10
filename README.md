@@ -2,6 +2,33 @@
 
 Inspired by [Writing an OS in Rust](https://os.phil-opp.com/) and <https://github.com/mrgian/felix>.
 
+## Features
+
+- Preemptive multi-tasking
+- Userspace (with syscalls!)
+- Higher half kernel with per-task page tables
+- ELF parsing/execution
+- Symmetric multi-processing (multiple CPUs)
+- Per-cpu variables (similar to Linux using `gs` register and special linker area)
+- PCI: discovery, registration, MSI-X
+- VirtIO: rng device, block device, generic queues, per-driver feature negotiation
+- Framebuffer support with simple font
+- Virtual Filesystem Layer, including physical buffer caching and on demand flushing back to disk
+- ext2 filesystem
+- sysfs-style virtual filesystem
+- "Platform" drivers for HPET, IOAPIC, LAPIC, ACPI
+- Kernel shell (with colors!)
+- Paging
+- Bitmap-based physical memory allocator
+- Safe synchronization primitives (spinlock that can disable preemption and interrupts, mutex with sleeping, atomics, various "cell" types that act as safe channels and queues)
+- Custom "register" and "register array" primitives for volatile reads/writes to specific memory locations
+- Custom test system where tests are annotated with `#[kernel_test]`, compiled into special linker area, and then run by iterating over that area
+- Logging
+- Dynamic interrupt registration
+- Stack traces using ELF symbols and addresses
+- Keyboard support
+- Serial console support
+
 ## Running in QEMU
 
 Default debug mode:
@@ -32,6 +59,16 @@ Provide command line arguments:
 
 ```
 $ make run CMDLINE='hello world'
+```
+
+Run a bunch of shell commands separated by `;`. Here is a nice "bells and
+whistles" command that mounts the test ext2 volume, writes "hello!" to the
+framebuffer, executes 20 instances of [`userspace/primes`](./userspace/primes),
+runs all tests, and does this with UEFI disabled and kernel code compiled with
+`release` mode.
+
+```
+$ make run CMDLINE='mount 2; write-framebuffer hello!; exec 20 /bin/primes 15000; test' UEFI=off RUST_BUILD_MODE=release GRAPHICS=on
 ```
 
 ### QEMU interaction
