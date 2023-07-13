@@ -223,6 +223,7 @@ make test
   - Instead of returning `Vec` for directories, consider returning an `impl Iterator` (except you probably can't do that with traits...)
 - GDB:
   - Add helpers for printing my common data structures better (`OnceCell`, `SpinLock`, `Mutex`, `BTReeMap`. Also third party like `SpinMutex`)
+    - See <https://doc.rust-lang.org/nightly/reference/attributes/debugger.html#using-debugger_visualizer-with-gdb>
   - Also consider Emacs gdb window layout helper
 - Serial port:
   - find a way to implement using `&mut` and locking without deadlocks from e.g. non-maskable interrupts, holding the lock in the shell while trying to debug print inside kernel code, etc.
