@@ -29,6 +29,8 @@ Inspired by [Writing an OS in Rust](https://os.phil-opp.com/) and <https://githu
 - Keyboard support
 - Serial console support
 
+![demo](./img/demo.gif)
+
 ## Running in QEMU
 
 Default debug mode:
